@@ -24,20 +24,15 @@ struct static_model;
 struct transform;
 
 // 20 million triangles... thats a lot - works on desktop
-const sizet MAX_TRIANGLE_COUNT = 20000000;
+const sizet MAX_STATIC_TRIANGLE_COUNT = 2000000;
+const sizet MAX_SKINNED_TRIANGLE_COUNT = 200000;
 // Default ind buffer size (holding all of our inds) in ind count (not byte size)
-const sizet DEFAULT_IND_BUFFER_SIZE = MAX_TRIANGLE_COUNT * 3;
+const sizet MAX_TOTAL_MESH_IND_COUNT = (MAX_STATIC_TRIANGLE_COUNT + MAX_SKINNED_TRIANGLE_COUNT) * 3;
 // Default vert buffer size (holding all of our verts) in vert count (not byte size)
-// Consider there is on average 6 shared triangles per vert - i think dividing the above by 3 is plenty
-const sizet DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE = 1000000;
-// Consider there is on average 6 shared triangles per vert - i think dividing the above by 3 is plenty
-const sizet DEFAULT_SKINNED_MESH_VERT_BUFFER_SIZE = 100000;
-// Initial mem pool size (in element count) for our sbuffer mem pools
-const sizet MAX_FREE_SBUFFER_NODE_COUNT = 1024;
-// Minimum allowed sbuffer_entry block size in the free list for verts
-const sizet MIN_VERT_FREE_BLOCK_SIZE = 4;
-// Minimum allowed sbuffer_entry block size in the free list for indices
-const sizet MIN_IND_FREE_BLOCK_SIZE = 6;
+// Gemeni showed me that on average we will have 2 : 1 triangle to vert ratio
+const sizet MAX_STATIC_MESH_VERT_COUNT = MAX_STATIC_TRIANGLE_COUNT / 2;
+const sizet MAX_SKINNED_MESH_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
+
 // Maximum number of render passes supported
 // const sizet MAX_RENDERPASS_COUNT = 32;
 // Maximum number of techniques the renderer supports
@@ -61,32 +56,34 @@ struct rsubmesh_range
     sizet count;
 };
 
-struct rstatic_mesh_vert_pos_col
+struct rmesh_vert_pos_col
 {
     vec3 pos;
     u32 col;
 };
 
-struct rstatic_mesh_vert_norm_tan_uv
+struct rmesh_vert_norm_tan_uv
 {
     vec3 norm;
     vec3 tangent;
     vec2 uv;
 };
 
-struct rstatic_mesh_vert_bone_weights_ids
+struct rmesh_vert_bone_weights_ids
 {
+    // TODO: Pack these to unorm weights and u8 bonde ids
     vec4 bone_weights;
-    svec4 bone_ids;
+    uvec4 bone_ids;
 };
 
-using ind_t = u32;
+using ind_t = u16;
 
-struct rstatic_mesh
+struct rmesh
 {
-    const rstatic_mesh_vert_pos_col *pos;
-    const rstatic_mesh_vert_norm_tan_uv *norm_tan_uv;
-    const rstatic_mesh_vert_bone_weights_ids *weights_ids;
+    const rmesh_vert_pos_col *pos;
+    const rmesh_vert_norm_tan_uv *norm_tan_uv;
+    // If weight ids are none null then the mesh is skinned
+    const rmesh_vert_bone_weights_ids *weights_ids;
     sizet vert_count;
     
     const ind_t *inds;
@@ -96,17 +93,20 @@ struct rstatic_mesh
     sizet sm_count;
 };
 
-enum rstatic_mesh_vert_stream {
-    RSTATIC_MESH_STREAM_VERT_POS_COL,
-    RSTATIC_MESH_STREAM_VERT_NORM_TAN_UV,
-    RSTATIC_MESH_STREAM_VERT_BONES_WEIGHT_ID,
-    RSTATIC_MESH_STREAM_IND,
-    RSTATIC_MESH_STREAM_COUNT,
+// TODO: Rename these to something more sensible
+enum rvert_stream {
+    RVERT_STREAM_POS_COL,
+    RVERT_STREAM_NORM_TAN_UV,
+    RVERT_STREAM_SKINNED_POS_COL,
+    RVERT_STREAM_SKINNED_NORM_TAN_UV,
+    RVERT_STREAM_SKINNED_BONES_WEIGHT_ID,
+    RVERT_STREAM_COUNT,
 };
 
 enum rvert_layout : u32
 {
     RVERT_LAYOUT_STATIC_MESH,
+    RVERT_LAYOUT_SKINNED_MESH,
     RVERT_LAYOUT_COUNT
 };
 
@@ -169,26 +169,29 @@ struct material_ubo_data
     vec4 misc;
 };
 
-struct rmesh_block_virtual_alloc
-{
-    VmaVirtualAllocation mem{VK_NULL_HANDLE};
-    // This is the byte offset / sizeof(element) amount
-    u32 offset;
-};
-
 // We use a single vertex and indice buffer for all meshes
 struct rmesh_info
 {
+    // Attached to the vert_mem allocation
     small_str name;
-    
-    // Number of verts and inds for each submesh
-    static_array<rsubmesh_range, MAX_SUBMESH_COUNT> submesh_vert_ind_counts;
 
-    // Vert buffers - sub0 verts, sub1 verts, sub2 verts, etc
-    // All vert attribs have the same count for each submesh
-    // To get the final submesh vert offset: att_streams[*_VERT_*].offset + submesh_vert_ind_counts[SUBMESH_IND].verts
-    // To get the final submesh ind offset: att_streams[*_IND].offset + submesh_vert_ind_counts[SUBMESH_IND].inds
-    rmesh_block_virtual_alloc att_streams[RSTATIC_MESH_STREAM_COUNT]{};
+    // Mem for pos buf that will need to be released in pos/buf
+    VmaVirtualAllocation vert_mem{VK_NULL_HANDLE};
+
+    // This is the stream that was used for the virtual block allocations
+    u8 rvert_stream_ind;
+    
+    // This is determined by taking the byte offset / sizeof(stream element)
+    u32 vert_offset;
+
+    // Mem for pos buf that will need to be released in pos/buf
+    VmaVirtualAllocation ind_mem{VK_NULL_HANDLE};
+    
+    // This is determined by taking the byte offset / sizeof(stream element)
+    u32 ind_offset;
+    
+    // Indice range for each submesh
+    static_array<rsubmesh_range, MAX_SUBMESH_COUNT> submesh_vert_ind_counts;
 };
 
 struct imgui_ctxt;
@@ -238,9 +241,14 @@ struct frame_context
     VkSemaphore image_avail;
 };
 
-struct geometry_buffer_info {
+struct virtual_block_info {
     vkr_buffer data{};
     VmaVirtualBlock block_info{VK_NULL_HANDLE};
+};
+
+struct geometry_buffer_info {
+    virtual_block_info vert_streams[RVERT_STREAM_COUNT];
+    virtual_block_info ind_buffer;
 };
 
 struct renderer
@@ -277,7 +285,7 @@ struct renderer
     static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
 
     // Globabl geometry attribute buffers
-    geometry_buffer_info geometry_buffers[RSTATIC_MESH_STREAM_COUNT];
+    geometry_buffer_info geometry_buffers;
 
     // Global pipeline layout
     VkPipelineLayout g_layout{VK_NULL_HANDLE};
@@ -310,7 +318,7 @@ struct renderer
 // rmaterial_handle register_material(rtechnique_handle technique, static_array<rtexture_handle, )
 // rtexture_handle register_texture(const texture *tex, renderer *rndr);
 
-rmesh_handle register_mesh(const rstatic_mesh &mdata, const char *name, renderer *rndr);
+rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr);
 
 // NOTE: All of these mesh operations kind of need to wait on all rendering operations to complete as they modify the
 // vertex and index buffers - not sure yet if this is better done within the functions or in the caller. Also these should be done at the

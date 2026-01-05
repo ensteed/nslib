@@ -272,44 +272,50 @@ intern int setup_diffuse_technique(renderer *rndr)
 
     rndr->default_mat = acquire_slot(&rndr->materials);
 
-    
     auto mat_item = get_slot_item(&rndr->materials, rndr->default_mat);
 
     return err_code::RENDER_NO_ERROR;
 }
 
-intern void teardown_geometry_buffers(renderer *rndr) {
-    for (s32 i = 0; i < RSTATIC_MESH_STREAM_COUNT; ++i) {
-        auto cur_buf = &rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_POS_COL];
-        vkr_terminate_buffer(&cur_buf->data, &rndr->vk);
+intern void teardown_geometry_buffers(renderer *rndr)
+{
+    for (s32 i = 0; i < RVERT_STREAM_COUNT; ++i) {
+        auto cur_buf = &rndr->geometry_buffers.vert_streams[RVERT_STREAM_POS_COL];
         vmaDestroyVirtualBlock(cur_buf->block_info);
-        cur_buf->data = {};
-        cur_buf->block_info = {};
+        vkr_terminate_buffer(&cur_buf->data, &rndr->vk);
+        *cur_buf = {};
     }
+    vmaDestroyVirtualBlock(rndr->geometry_buffers.ind_buffer.block_info);
+    vkr_terminate_buffer(&rndr->geometry_buffers.ind_buffer.data, &rndr->vk);
+    rndr->geometry_buffers.ind_buffer = {};
 }
 
-intern sizet STATIC_MESH_BUFFER_SZS[] = {
-    DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_pos_col),
-    DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_norm_tan_uv),
-    DEFAULT_SKINNED_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_bone_weights_ids),
-    DEFAULT_IND_BUFFER_SIZE * sizeof(ind_t)
+intern const char *RVERT_STREAM_NAMES[] = {
+    "pos-col",
+    "norm-tan-uv",
+    "skinned-pos-col",
+    "skinned-norm-tan-uv",
+    "skinned-bones-weight-id",
 };
 
-intern const char* STATIC_MESH_BUFFER_NAMES[] = {
-    "static-mesh-pos-col-stream",
-    "static-mesh-norm-tan-uv-stream",
-    "static-mesh-bone-weights-ids-stream",
-    "static-mesh-ind-stream"
+intern sizet RVERT_STREAM_ITEM_SIZES[] = {
+    sizeof(rmesh_vert_pos_col),
+    sizeof(rmesh_vert_norm_tan_uv),
+    sizeof(rmesh_vert_pos_col),
+    sizeof(rmesh_vert_norm_tan_uv),
+    sizeof(rmesh_vert_bone_weights_ids),
 };
 
-intern sizet STATIC_MESH_STREAM_ITEM_SIZES[] = {
-    sizeof(rstatic_mesh_vert_pos_col),
-    sizeof(rstatic_mesh_vert_norm_tan_uv),
-    sizeof(rstatic_mesh_vert_bone_weights_ids),
-    sizeof(ind_t)
+intern sizet RVERT_STREAM_BUFFER_SZS[] = {
+    MAX_STATIC_MESH_VERT_COUNT * RVERT_STREAM_ITEM_SIZES[0],
+    MAX_STATIC_MESH_VERT_COUNT *RVERT_STREAM_ITEM_SIZES[1],
+    MAX_SKINNED_MESH_VERT_COUNT *RVERT_STREAM_ITEM_SIZES[2],
+    MAX_SKINNED_MESH_VERT_COUNT *RVERT_STREAM_ITEM_SIZES[3],
+    MAX_SKINNED_MESH_VERT_COUNT *RVERT_STREAM_ITEM_SIZES[4],
 };
 
-intern int setup_geometry_buffers(renderer *rndr) {
+intern int setup_geometry_buffers(renderer *rndr)
+{
     asrt(rndr);
     auto vk = &rndr->vk;
     auto dev = &vk->inst.device;
@@ -326,21 +332,21 @@ intern int setup_geometry_buffers(renderer *rndr) {
     ci.pAllocationCallbacks = &vk->alloc_cbs;
 
     bool failed{false};
-    for (s32 i = 0; i < RSTATIC_MESH_STREAM_COUNT && !failed; ++i) {
-        alloc_cfg.buffer_size = STATIC_MESH_BUFFER_SZS[i];
-        alloc_cfg.user_data = (void*)STATIC_MESH_BUFFER_NAMES[i];
-        auto cur_buf = &rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_POS_COL];
-        int result = vkr_init_buffer(&cur_buf->data, alloc_cfg);
-        failed = result != err_code::VKR_NO_ERROR;
-        if (!failed) {
-            result = vmaCreateVirtualBlock(&ci, &cur_buf->block_info);
-            failed = result != VK_SUCCESS;
-            if (failed) {
-                wlog("Failed to create virtual block - error code: %d", result);
-            }
-        }
-    }
-    
+    // for (s32 i = 0; i < RMESH_VERT_STREAM_COUNT && !failed; ++i) {
+    //     alloc_cfg.buffer_size = RVERT_STREAM_BUFFER_SZS[i];
+    //     alloc_cfg.user_data = (void *)RVERT_STREAM_NAMES[i];
+    //     auto cur_buf = &rndr->geometry_buffers[RVERT_STREAM_POS_COL];
+    //     int result = vkr_init_buffer(&cur_buf->data, alloc_cfg);
+    //     failed = result != err_code::VKR_NO_ERROR;
+    //     if (!failed) {
+    //         result = vmaCreateVirtualBlock(&ci, &cur_buf->block_info);
+    //         failed = result != VK_SUCCESS;
+    //         if (failed) {
+    //             wlog("Failed to create virtual block - error code: %d", result);
+    //         }
+    //     }
+    // }
+
     if (failed) {
         teardown_geometry_buffers(rndr);
         return err_code::RENDER_SETUP_GEOMETRY_BUFFERS_FAIL;
@@ -348,22 +354,16 @@ intern int setup_geometry_buffers(renderer *rndr) {
     return err_code::RENDER_NO_ERROR;
 }
 
-intern bool release_mesh(rmesh_handle hndl, renderer *rndr) {
+intern bool release_mesh(rmesh_handle hndl, renderer *rndr)
+{
     auto sl_item = get_slot_item(&rndr->meshes, hndl);
-    memset(sl_item->name, 0, SMALL_STR_LEN);
-    for (int i = 0; i < sl_item->submesh_vert_ind_counts.size; ++i) {
-        sl_item->submesh_vert_ind_counts[i] = {};
-    }
-    sl_item->submesh_vert_ind_counts.size = 0;
-
-    for (int i = 0; i < RSTATIC_MESH_STREAM_COUNT; ++i) {
-        vmaVirtualFree(rndr->geometry_buffers[i].block_info, sl_item->att_streams[i].mem);
-        sl_item->att_streams[i] = {};
-    }
+    vmaVirtualFree(rndr->geometry_buffers.vert_streams[sl_item->rvert_stream_ind].block_info, sl_item->vert_mem);
+    vmaVirtualFree(rndr->geometry_buffers.ind_buffer.block_info, sl_item->ind_mem);
+    *sl_item = {};
     return release_slot(&rndr->meshes, hndl);
 }
 
-rmesh_handle register_mesh(const rstatic_mesh &mdata, const char *name, renderer *rndr)
+rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
 {
     asrt(rndr);
     asrt(mdata.sm_info);
@@ -371,36 +371,30 @@ rmesh_handle register_mesh(const rstatic_mesh &mdata, const char *name, renderer
     asrt(mdata.inds);
 
     VkCommandBuffer tmp_buf;
-    int result = vkr_alloc_cmd_bufs(&tmp_buf, {.pool=rndr->transient_pool}, &rndr->vk);
+    int result = vkr_alloc_cmd_bufs(&tmp_buf, {.pool = rndr->transient_pool}, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
         return {};
     }
     auto tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
 
-
     rmesh_handle mhndl = acquire_slot(&rndr->meshes);
     auto mesh_item = get_slot_item(&rndr->meshes, mhndl);
 
     // Just in case we ensure null terminated
-    strncpy(mesh_item->name, name, SMALL_STR_LEN-1);
-    mesh_item->name[SMALL_STR_LEN-1] = 0;
+    strncpy(mesh_item->name, name, SMALL_STR_LEN - 1);
+    mesh_item->name[SMALL_STR_LEN - 1] = 0;
 
     VmaVirtualAllocationCreateInfo ci{};
     ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
+    ci.alignment = RVERT_STREAM_ITEM_SIZES[i];
+    ci.size = 0;
+    ci.pUserData = mesh_item->name;
+    sizet att_entry_count = i != RSTATIC_MESH_STREAM_IND ? mdata.vert_count : mdata.ind_count;
+    ci.size += att_entry_count * ci.alignment;
 
-    const void *src_data[] = {
-        mdata.pos,
-        mdata.norm_tan_uv,
-        mdata.norm_tan_uv,
-        mdata.weights_ids
-    };
-    
-    for (u32 i = 0; i < RSTATIC_MESH_STREAM_COUNT; ++i) {
-        ci.alignment = STATIC_MESH_STREAM_ITEM_SIZES[i];        
-        ci.size = 0;
-        ci.pUserData = mesh_item->name;        
-        sizet att_entry_count = i != RSTATIC_MESH_STREAM_IND ? mdata.vert_count : mdata.ind_count;
-        ci.size += att_entry_count * ci.alignment;
+    const void *src_data[] = {mdata.pos, mdata.norm_tan_uv, mdata.norm_tan_uv, mdata.weights_ids};
+
+    for (u32 i = 0; i < RMESH_VERT_STREAM_COUNT; ++i) {
 
         // Do a sub allocation from the larger geometry buffer and save the offset
         auto pos_buf = &rndr->geometry_buffers[i];
@@ -562,7 +556,6 @@ intern int setup_global_descriptor_set_layouts(renderer *rndr)
     b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_MATERIAL].bindings, b);
-    
 
     // Add image sampler to material
     b.binding = 1;
@@ -594,41 +587,113 @@ void setup_vertex_layout_presets(renderer *rndr)
 {
     // TODO: separate positions for this buffer
     rndr->vertex_layouts.size = RVERT_LAYOUT_COUNT;
+
+    /////////////////////////////
+    // STATIC MESH VERT LAYOUT //
+    /////////////////////////////
     auto sm_layout = &rndr->vertex_layouts[RVERT_LAYOUT_STATIC_MESH];
+
+    // Strides (2 streams for static meshes)
     sm_layout->bindings.size = 2;
-    sm_layout->bindings[0].binding = 0;
-    sm_layout->bindings[0].stride = sizeof(rstatic_mesh_vert_pos_col);
+
+    // Pos/color stream
+    sm_layout->bindings[0].binding = RVERT_STREAM_POS_COL;
+    sm_layout->bindings[0].stride = sizeof(rmesh_vert_pos_col);
     sm_layout->bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    sm_layout->bindings[1].binding = 1;
-    sm_layout->bindings[1].stride = sizeof(rstatic_mesh_vert_norm_tan_uv);
+    // Norm/tan/uv stream
+    sm_layout->bindings[1].binding = RVERT_STREAM_NORM_TAN_UV;
+    sm_layout->bindings[1].stride = sizeof(rmesh_vert_norm_tan_uv);
     sm_layout->bindings[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
+    // Attributes - 5 total
     sm_layout->attribs.size = 5;
-    sm_layout->attribs[0].binding = 0;
+
+    // Positions
+    sm_layout->attribs[0].binding = RVERT_STREAM_POS_COL;
     sm_layout->attribs[0].location = 0;
     sm_layout->attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    sm_layout->attribs[0].offset = offsetof(rstatic_mesh_vert_pos_col, pos);    
+    sm_layout->attribs[0].offset = offsetof(rmesh_vert_pos_col, pos);
 
-    sm_layout->attribs[1].binding = 0;
+    // Colors
+    sm_layout->attribs[1].binding = RVERT_STREAM_POS_COL;
     sm_layout->attribs[1].location = 1;
     sm_layout->attribs[1].format = VK_FORMAT_R8G8B8A8_UNORM;
-    sm_layout->attribs[1].offset = offsetof(rstatic_mesh_vert_pos_col, col);
+    sm_layout->attribs[1].offset = offsetof(rmesh_vert_pos_col, col);
 
-    sm_layout->attribs[2].binding = 1;
+    // Normals
+    sm_layout->attribs[2].binding = RVERT_STREAM_NORM_TAN_UV;
     sm_layout->attribs[2].location = 2;
     sm_layout->attribs[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-    sm_layout->attribs[2].offset = offsetof(rstatic_mesh_vert_norm_tan_uv, norm);
+    sm_layout->attribs[2].offset = offsetof(rmesh_vert_norm_tan_uv, norm);
 
-    sm_layout->attribs[3].binding = 1;
+    // Tangents
+    sm_layout->attribs[3].binding = RVERT_STREAM_NORM_TAN_UV;
     sm_layout->attribs[3].location = 3;
     sm_layout->attribs[3].format = VK_FORMAT_R32G32B32_SFLOAT;
-    sm_layout->attribs[3].offset = offsetof(rstatic_mesh_vert_norm_tan_uv, tangent);
+    sm_layout->attribs[3].offset = offsetof(rmesh_vert_norm_tan_uv, tangent);
 
-    sm_layout->attribs[4].binding = 1;
+    // UV Coords
+    sm_layout->attribs[4].binding = RVERT_STREAM_NORM_TAN_UV;
     sm_layout->attribs[4].location = 4;
     sm_layout->attribs[4].format = VK_FORMAT_R32G32_SFLOAT;
-    sm_layout->attribs[4].offset = offsetof(rstatic_mesh_vert_norm_tan_uv, uv);
+    sm_layout->attribs[4].offset = offsetof(rmesh_vert_norm_tan_uv, uv);
+
+    /////////////////////////
+    // SKINNED MESH LAYOUT //
+    /////////////////////////
+    auto skinm_layout = &rndr->vertex_layouts[RVERT_LAYOUT_SKINNED_MESH];
+
+    // Strides (3 stream total). The first two streams are the same stride/inputRate as static mesh
+    skinm_layout->bindings.size = 3;
+
+    // Pos/color stream
+    skinm_layout->bindings[0] = sm_layout->bindings[0];
+    skinm_layout->bindings[0].binding = RVERT_STREAM_SKINNED_POS_COL;
+
+    // Norm/tan/uv stream
+    skinm_layout->bindings[1] = sm_layout->bindings[1];
+    skinm_layout->bindings[1].binding = RVERT_STREAM_SKINNED_NORM_TAN_UV;
+
+    // Bone weights/ids stream
+    skinm_layout->bindings[2].binding = RVERT_STREAM_SKINNED_BONES_WEIGHT_ID;
+    skinm_layout->bindings[2].stride = sizeof(rmesh_vert_bone_weights_ids);
+    skinm_layout->bindings[2].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    // Attributes - 7 total, first 5 are the same as the static meshes except for binding
+    skinm_layout->attribs.size = 7;
+
+    // Positions
+    skinm_layout->attribs[0] = sm_layout->attribs[0];
+    skinm_layout->attribs[0].binding = RVERT_STREAM_SKINNED_POS_COL;
+
+    // Colors
+    skinm_layout->attribs[1] = sm_layout->attribs[1];
+    skinm_layout->attribs[1].binding = RVERT_STREAM_SKINNED_POS_COL;
+
+    // Normals
+    skinm_layout->attribs[2] = sm_layout->attribs[2];
+    skinm_layout->attribs[2].binding = RVERT_STREAM_SKINNED_NORM_TAN_UV;
+
+    // Tangents
+    skinm_layout->attribs[3] = sm_layout->attribs[3];
+    skinm_layout->attribs[3].binding = RVERT_STREAM_SKINNED_NORM_TAN_UV;
+
+    // UV Coords
+    skinm_layout->attribs[4] = sm_layout->attribs[4];
+    skinm_layout->attribs[4].binding = RVERT_STREAM_SKINNED_NORM_TAN_UV;
+
+    // Bone weights
+    skinm_layout->attribs[5].binding = RVERT_STREAM_SKINNED_BONES_WEIGHT_ID;
+    skinm_layout->attribs[5].location = 5;
+    skinm_layout->attribs[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    skinm_layout->attribs[5].offset = offsetof(rmesh_vert_bone_weights_ids, bone_weights);
+
+    // Bone ids
+    skinm_layout->attribs[6].binding = RVERT_STREAM_SKINNED_BONES_WEIGHT_ID;
+    skinm_layout->attribs[6].location = 6;
+    skinm_layout->attribs[6].format = VK_FORMAT_R32G32B32A32_UINT;
+    skinm_layout->attribs[6].offset = offsetof(rmesh_vert_bone_weights_ids, bone_ids);
 }
 
 intern int setup_rendering(renderer *rndr)
@@ -730,8 +795,6 @@ intern int setup_rendering(renderer *rndr)
 intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_context *cur_frame)
 {
     auto dev = &rndr->vk.inst.device;
-    auto vert_buf = &rndr->rmi.verts.buf;
-    auto ind_buf = &rndr->rmi.inds.buf;
 
     int err = vkr_begin_cmd_buf(cur_frame->cmd_buffer, {});
     if (err != err_code::VKR_NO_ERROR) {
@@ -741,10 +804,13 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
     VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
 
     // Bind the global vertex/index buffer/s
-    VkBuffer vert_bufs[] = {vert_buf->hndl};
-    VkDeviceSize offsets[] = {0};
+    VkBuffer vert_bufs[RVERT_STREAM_COUNT]{};
+    VkDeviceSize offsets[RVERT_STREAM_COUNT]{};
+    for (int i = 0; i < RVERT_STREAM_COUNT; ++i) {
+        vert_bufs[i] = rndr->geometry_buffers.vert_streams[i].data.hndl;
+    }
     vkCmdBindVertexBuffers(cur_frame->cmd_buffer, 0, 1, vert_bufs, offsets);
-    vkCmdBindIndexBuffer(cur_frame->cmd_buffer, ind_buf->hndl, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindIndexBuffer(cur_frame->cmd_buffer, rndr->geometry_buffers.ind_buffer.data.hndl, 0, VK_INDEX_TYPE_UINT16);
 
     // TODO: This really can't go in any order we want for render passes.. We might have dependency ordered between
     // them.. for now we just have the one.. I'm not sure if we need to do a
@@ -893,7 +959,7 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
     rndr->upstream_fl_arena = fl_arena;
     mem_init_fl_arena(&rndr->vk_free_list, 500 * MB_SIZE, fl_arena, "vk-fl");
     mem_init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, mem_global_stack_arena(), "vk-frame");
-    
+
     mem_init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "frame-linear");
     mem_init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "frame-stack");
 
@@ -919,8 +985,10 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
     }
 
     // Create transient command pool
-    vkr_init_cmd_pool(
-        &rndr->transient_pool, rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, &rndr->vk);
+    vkr_init_cmd_pool(&rndr->transient_pool,
+                      rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
+                      VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                      &rndr->vk);
 
     // Setup frames in flight
     init_frame_contexts(rndr);
@@ -1043,7 +1111,6 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
     // ind to the command pool
     auto fb = &dev->swapchain.fbs[im_ind];
-    
 
     ///////////////////////////
     // Record Command Buffer //
@@ -1065,7 +1132,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     if (vk_res != VK_SUCCESS) {
         elog("Failed to reset fence");
         return err_code::RENDER_RESET_FENCE_FAIL;
-    }    
+    }
 
     //////////////////////////////////
     // Submit command buffer to GPU //
