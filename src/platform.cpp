@@ -326,7 +326,7 @@ intern void handle_sdl_mwheel_event(platform_ctxt *ctxt, platform_event *event, 
 
 intern void handle_sdl_window_geom_with_prev(platform_ctxt *ctxt,
                                              platform_event *event,
-                                             const ivec2 &prev,
+                                             const svec2 &prev,
                                              platform_event_type et,
                                              const SDL_WindowEvent &ev)
 {
@@ -440,7 +440,7 @@ void *create_window(const platform_window_init_info *settings, float *display_sc
 
     log_display_info();
 
-    ivec2 sz = settings->resolution;
+    svec2 sz = settings->resolution;
     auto sdl_flags = get_sdl_window_flags(settings->win_flags);
 
     auto primary = SDL_GetPrimaryDisplay();
@@ -490,9 +490,9 @@ const char *event_type_to_string(platform_event_type type)
 void process_platform_events(platform_ctxt *pf)
 {
     // Get prev sz and pos for any window resize/move events
-    ivec2 prev_win_sz_screen_coords = get_window_size(pf->win_hndl);
-    ivec2 prev_win_sz_pixels = get_window_pixel_size(pf->win_hndl);
-    ivec2 prev_win_pos = get_window_pos(pf->win_hndl);
+    svec2 prev_win_sz_screen_coords = get_window_size(pf->win_hndl);
+    svec2 prev_win_sz_pixels = get_window_pixel_size(pf->win_hndl);
+    svec2 prev_win_pos = get_window_pos(pf->win_hndl);
 
     arr_clear(&pf->feventq.events);
     SDL_Event event;
@@ -583,27 +583,27 @@ void *get_window(u32 id)
     return SDL_GetWindowFromID(id);
 }
 
-ivec2 get_window_size(void *win)
+svec2 get_window_size(void *win)
 {
-    ivec2 ret;
+    svec2 ret;
     if (!SDL_GetWindowSize((SDL_Window *)win, &ret.w, &ret.h)) {
         log_any_sdl_error();
     }
     return ret;
 }
 
-ivec2 get_window_pixel_size(void *win)
+svec2 get_window_pixel_size(void *win)
 {
-    ivec2 ret;
+    svec2 ret;
     if (!SDL_GetWindowSizeInPixels((SDL_Window *)win, &ret.w, &ret.h)) {
         log_any_sdl_error();
     }
     return ret;
 }
 
-ivec2 get_window_pos(void *win)
+svec2 get_window_pos(void *win)
 {
-    ivec2 ret;
+    svec2 ret;
     if (!SDL_GetWindowPosition((SDL_Window *)win, &ret.w, &ret.h)) {
         log_any_sdl_error();
     }

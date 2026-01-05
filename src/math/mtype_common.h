@@ -36,7 +36,7 @@ struct simd_traits
 };
 
 template<>
-struct simd_traits<float, 4>
+struct simd_traits<f32, 4>
 {
     using _simd_type = __m128;
     // etc
@@ -65,7 +65,7 @@ inline __m128 _sse_dp(const __m128 &left, const __m128 &right)
 
 namespace nslib
 {
-inline constexpr float FLOAT_EPS = 0.001f;
+inline constexpr f32 FLOAT_EPS = 0.001f;
 
 template<class T>
 struct is_vec

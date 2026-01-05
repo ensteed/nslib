@@ -1346,16 +1346,21 @@ void vkr_unmap_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma)
 
 int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
                                      const void *src_data,
-                                     sizet src_data_size,
-                                     const VkBufferCopy *region,
+                                     const VkBufferCopy *regions,
+                                     u32 region_count,
                                      VkCommandBuffer cmd_buf,
                                      VkQueue queue,
                                      const vkr_context *vk)
 {
+    sizet tot_region_size{};
+    for (int i = 0; i < region_count; ++i) {
+        tot_region_size += regions[i].size;
+    }
+    
     vkr_buffer staging_buf{};
     vkr_buffer_cfg buf_cfg{};
-    buf_cfg.buffer_size = src_data_size;
-    buf_cfg.alloc_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    buf_cfg.buffer_size = tot_region_size;
+    buf_cfg.alloc_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
     buf_cfg.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     buf_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     buf_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
@@ -1365,12 +1370,28 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
         return err;
     }
 
-    void *mem = vkr_map_buffer(&staging_buf, &vk->inst.device.vma_alloc);
-    memcpy(mem, src_data, src_data_size);
-    vkr_unmap_buffer(&staging_buf, &vk->inst.device.vma_alloc);
+    array<VkBufferCopy> new_regions;
+    arr_init(&new_regions, vk->cfg.arenas.command_arena);
 
-    err = vkr_copy_buffer(dest_buffer, &staging_buf, region, cmd_buf, queue, vk);
+    // Translate all regions from source buffers to regions from staging buffer
+    sizet cur_offset{};
+    for (int i = 0; i < region_count; ++i) {
+        auto src_addr = (void*)((sizet)src_data + regions[i].srcOffset);
+        auto dst_addr = (void*)((sizet)staging_buf.mem_info.pMappedData + cur_offset);
+        memcpy(src_addr, src_addr, regions[i].size);
+        
+        VkBufferCopy new_region{};
+        new_region.srcOffset = cur_offset;
+        new_region.size = regions[i].size;
+        new_region.dstOffset = regions[i].dstOffset;
+        
+        cur_offset += new_region.size;
+    }
+
+    err = vkr_copy_buffer(dest_buffer, &staging_buf, new_regions.data, (u32)new_regions.size, cmd_buf, queue, vk);
     vkr_terminate_buffer(&staging_buf, vk);
+
+    arr_terminate(&new_regions);    
     return err;
 }
 
@@ -1402,7 +1423,8 @@ int vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg)
     alloc_info.usage = cfg.mem_usage;
     alloc_info.requiredFlags = cfg.required_flags;
     alloc_info.preferredFlags = cfg.preferred_flags;
-
+    alloc_info.pUserData = cfg.user_data;
+    
     int err = vmaCreateBuffer(cfg.vma_alloc->hndl, &cinfo, &alloc_info, &buffer->hndl, &buffer->mem_hndl, &buffer->mem_info);
     if (err != VK_SUCCESS) {
         elog("Failed in creating buffer with vk err %d", err);
@@ -1556,6 +1578,8 @@ int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
     return vkr_stage_and_upload_image_data(dest_buffer, src_data, src_data_size, &region, cmd_buf, queue, vk);
 }
 
+
+// TODO Switch this API - we shouldn't be passing src_data_size - should be calculated from region
 int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
                                     const void *src_data,
                                     sizet src_data_size,
@@ -1961,7 +1985,8 @@ intern int blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const
 
 int vkr_copy_buffer(vkr_buffer *dest,
                     const vkr_buffer *src,
-                    const VkBufferCopy *region,
+                    const VkBufferCopy *regions,
+                    u32 region_count,
                     VkCommandBuffer cmd_buffer,
                     VkQueue queue,
                     const vkr_context *vk)
@@ -1970,7 +1995,7 @@ int vkr_copy_buffer(vkr_buffer *dest,
     if (ret != err_code::VKR_NO_ERROR) {
         return ret;
     }
-    vkCmdCopyBuffer(cmd_buffer, src->hndl, dest->hndl, 1, region);
+    vkCmdCopyBuffer(cmd_buffer, src->hndl, dest->hndl, region_count, regions);
     ret = vkr_end_cmd_buf(cmd_buffer);
     if (ret != err_code::VKR_NO_ERROR) {
         return ret;

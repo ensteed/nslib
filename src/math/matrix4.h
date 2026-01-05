@@ -681,10 +681,10 @@ inline matrix3<float> operator-(const matrix3<float> &lhs, const matrix3<float> 
 
 #endif
 
-using i8mat4 = matrix4<s8>;
-using i16mat4 = matrix4<s16>;
-using imat4 = matrix4<s32>;
-using i64mat4 = matrix4<s64>;
+using s8mat4 = matrix4<s8>;
+using s16mat4 = matrix4<s16>;
+using smat4 = matrix4<s32>;
+using s64mat4 = matrix4<s64>;
 using u8mat4 = matrix4<u8>;
 using u16mat4 = matrix4<u16>;
 using umat4 = matrix4<u32>;

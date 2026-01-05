@@ -295,10 +295,10 @@ inline vector2<float> operator*(const vector2<float> &lhs, const matrix2<float> 
 
 #endif
 
-using i8mat2 = matrix2<s8>;
-using i16mat2 = matrix2<s16>;
-using imat2 = matrix2<s32>;
-using i64mat2 = matrix2<s64>;
+using s8mat2 = matrix2<s8>;
+using s16mat2 = matrix2<s16>;
+using smat2 = matrix2<s32>;
+using s64mat2 = matrix2<s64>;
 using u8mat2 = matrix2<u8>;
 using u16mat2 = matrix2<u16>;
 using umat2 = matrix2<u32>;

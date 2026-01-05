@@ -2,7 +2,6 @@
 #include "robj_common.h"
 #include "math/vector4.h"
 #include "containers/array.h"
-#include "containers/hset.h"
 #include "render_handles.h"
 
 namespace nslib
@@ -10,7 +9,6 @@ namespace nslib
 
 inline constexpr sizet JOINTS_PER_VERTEX = 4;
 inline constexpr sizet MAX_SUBMESH_COUNT = 16;
-using ind_t = u16;
 
 enum mat_sampler_slot
 {
@@ -44,43 +42,73 @@ pup_func(material)
     pup_member(textures);
 }
 
-struct vertex
-{
+struct mvert {
     vec3 pos;
+    vec3 norm;
+    vec3 tan;
     vec2 uv;
-    u32 color;
+    u32 col;
 };
 
-// Connected vertex joint ids and their weights for animation
-struct vertex_cjoints
-{
-    u32 joint_ids[JOINTS_PER_VERTEX];
-    f32 weights[JOINTS_PER_VERTEX];
+pup_func(mvert) {
+    pup_member(pos);
+    pup_member(norm);
+    pup_member(tan);
+    pup_member(uv);
+    pup_member(col);
+}
+
+struct mskinned_vert_info {
+    u16 bone_ids[JOINTS_PER_VERTEX];
+    float bone_weights[JOINTS_PER_VERTEX];
 };
 
-struct submesh
-{
-    array<vertex> verts;
-    array<vertex_cjoints> cjoints;
-    array<ind_t> inds;
+pup_func(mskinned_vert_info) {
+    pup_member(bone_ids);
+    pup_member(bone_weights);
+}
+
+struct submesh_range {
+    // Indice offset
+    u32 offset;
+    // Indice count
+    u32 count;
+    small_str mat_slot_name;
+    u32 mat_slot_ind;
 };
+
+pup_func(submesh_range)
+{
+    pup_member(offset);
+    pup_member(count);
+    pup_member(mat_slot_name);
+    pup_member(mat_slot_ind);
+}
 
 struct mesh
 {
     ROBJ(MESH);
-    
+    array<u32> inds;
+    array<mvert> verts;
+    array<mskinned_vert_info> skinned_verts_info;
+    array<submesh_range> sm_info;
+    rmesh_handle rhndl;
 };
 
 pup_func(mesh)
 {
-    pup_member(submeshes);
+    pup_member(inds);
+    pup_member(verts);
+    pup_member(skinned_verts_info);
+    pup_member(sm_info);
 }
 
 void init_texture(texture *tex, const string &name, mem_arena *arena);
+void release_texture_ram_data(texture *tex);
+void terminate_texture(texture *tex);
 sizet get_texture_memsize(const texture *tex);
 u32 get_texture_pixel_count(const texture *tex);
 bool load_texture(texture *tex, const char *path, cstr *err);
-void terminate_texture(texture *tex);
 
 void init_material(material *mat, const string &name, mem_arena *arena);
 void terminate_material(material *mat);
@@ -89,8 +117,7 @@ void make_rect(mesh *msh, const string &name, mem_arena *arena);
 void make_cube(mesh *msh, const string &name, mem_arena *arena);
 
 void init_mesh(mesh *msh, const string &name, mem_arena *arena);
+void release_mesh_ram_data(mesh *msh);
 void terminate_mesh(mesh *msh);
-void init_submesh(submesh *sm, mem_arena *arena);
-void terminate_submesh(submesh *sm);
 
 } // namespace nslib

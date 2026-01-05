@@ -22,7 +22,7 @@ struct app_data
 
     u32 cam_id;
     vec2 mpos;
-    ivec2 movement{};
+    svec2 movement{};
 
     u32 cube_1;
     u32 plane_1;
@@ -180,7 +180,7 @@ void simulate(platform_ctxt *ctxt, app_data *app, f64 dt)
 {
     // Move the cam if needed
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
-    if (app->movement != ivec2{}) {
+    if (app->movement != svec2{}) {
         auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
         auto right = math::right_vec(cam_tform->orientation);
         auto target = math::target_vec(cam_tform->orientation);

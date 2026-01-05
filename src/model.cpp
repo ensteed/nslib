@@ -6,30 +6,38 @@ namespace nslib
 {
 
 // Colors are ARGB - msb gets alpha
-intern const vertex RECT_VERTS[] = {
+intern const mvert RECT_VERTS[] = {
     {
         {-0.5f, -0.5f, 0.0f},
+        {},
+        {},
         {0.0f, 0.0f},
         0xffff0000,
     },
     {
         {0.5f, -0.5f, 0.0f},
+        {},
+        {},
         {1.0f, 0.0f},
         0xff00ff00,
     },
     {
         {0.5f, 0.5f, 0.0f},
+        {},
+        {},
         {1.0f, 1.0f},
         0xff0000ff,
     },
     {
         {-0.5f, 0.5f, 0.0f},
+        {},
+        {},
         {0.0f, 1.0f},
         0xff00ffff,
     },
 };
 
-intern const ind_t RECT_INDS_TRI_LIST[] = {
+intern const u32 RECT_INDS_TRI_LIST[] = {
     0,
     1,
     2,
@@ -39,50 +47,66 @@ intern const ind_t RECT_INDS_TRI_LIST[] = {
 };
 
 // Colors are ARGB - msb gets alpha
-intern vertex CUBE_VERTS[] = {
+intern mvert CUBE_VERTS[] = {
     {
         {-0.5f, 0.5f, 0.5f},
+        {},
+        {},
         {0.0f, 1.0f},
         0xff000000,
     },
     {
         {0.5f, 0.5f, 0.5f},
+        {},
+        {},
         {1.0f, 1.0f},
         0xff0000ff,
     },
     {
         {-0.5f, -0.5f, 0.5f},
+        {},
+        {},        
         {0.0f, 0.0f},
         0xff00ff00,
     },
     {
         {0.5f, -0.5f, 0.5f},
+        {},
+        {},        
         {1.0f, 0.0f},
         0xff00ffff,
     },
     {
         {-0.5f, 0.5f, -0.5f},
+        {},
+        {},        
         {0.0f, 1.0f},
         0xffff0000,
     },
     {
         {0.5f, 0.5f, -0.5f},
+        {},
+        {},        
         {1.0f, 1.0f},
         0xffff00ff,
     },
     {
         {-0.5f, -0.5f, -0.5f},
+        {},
+        {},        
         {0.0f, 0.0f},
         0xffffff00,
     },
     {
         {0.5f, -0.5f, -0.5f},
+        {},
+        {},        
         {1.0f, 0.0f},
         0xffffffff,
     },
 };
 
-intern const ind_t CUBE_INDS_TRI_LIST[] = {
+intern const u32 CUBE_INDS_TRI_LIST[] = {
     0, 1, 2, // 0
     1, 3, 2, // 1
     4, 6, 5, // 2
@@ -99,8 +123,9 @@ intern const ind_t CUBE_INDS_TRI_LIST[] = {
 
 void init_texture(texture *tex, const string &name, mem_arena *arena)
 {
-    tex->name = name;
+    init_robj(tex, name, arena);
     arr_init(&tex->pixels, arena);
+    tex->name = name;
 }
 
 u32 get_texture_pixel_count(const texture *tex)
@@ -115,7 +140,6 @@ sizet get_texture_memsize(const texture *tex)
 
 bool load_texture(texture *tex, const char *path, cstr *err)
 {
-
     auto stb_pixels = stbi_load(path, (s32 *)&tex->size.w, (s32 *)&tex->size.h, (s32 *)&tex->channels, STBI_rgb_alpha);
     if (stb_pixels) {
         if (tex->channels != STBI_rgb_alpha) {
@@ -135,80 +159,72 @@ bool load_texture(texture *tex, const char *path, cstr *err)
     return false;
 }
 
-void terminate_texture(texture *tex)
+void release_texture_ram_data(texture *tex)
 {
     arr_terminate(&tex->pixels);
 }
 
+void terminate_texture(texture *tex)
+{
+    terminate_robj(tex);
+    release_texture_ram_data(tex);
+}
+
 void init_material(material *mat, const string &name, mem_arena *arena)
 {
-    mat->name = name;
-    asrt(!mat->pipelines.hashf);
-    asrt(mat->textures.size == 0);
-    hset_init(&mat->pipelines, arena);
+    init_robj(mat, name, arena);
 }
 
 void terminate_material(material *mat)
 {
-    hset_terminate(&mat->pipelines);
-}
-
-intern void make_cube_submesh(submesh *sm)
-{
-    arr_copy(&sm->verts, CUBE_VERTS, 8);
-    arr_copy(&sm->inds, CUBE_INDS_TRI_LIST, sizeof(CUBE_INDS_TRI_LIST) / sizeof(ind_t));
-}
-
-intern void make_rect_submesh(submesh *sm)
-{
-    arr_copy(&sm->verts, RECT_VERTS, 4);
-    arr_copy(&sm->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(ind_t));
+    terminate_robj(mat);
 }
 
 void make_rect(mesh *msh, const string &name, mem_arena *arena)
 {
     init_mesh(msh, name, arena);
-    asrt(msh->submeshes.size == 0);
-    arr_resize(&msh->submeshes, 1);
-    init_submesh(msh->submeshes.data, msh->arena);
-    make_rect_submesh(msh->submeshes.data);
+    arr_copy(&msh->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(mvert));
+    arr_copy(&msh->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(u32));
+    arr_resize(&msh->sm_info, 1);
+    msh->sm_info[0].ind_count = msh->inds.size;
+    strncpy(msh->sm_info[0].mat_slot_name, "default", MAX_SUBMESH_COUNT);
 }
 
 void make_cube(mesh *msh, const string &name, mem_arena *arena)
 {
     init_mesh(msh, name, arena);
-    asrt(msh->submeshes.size == 0);
-    arr_resize(&msh->submeshes, 1);
-    init_submesh(msh->submeshes.data, msh->arena);
-    make_cube_submesh(msh->submeshes.data);
-}
-
-void init_submesh(submesh *sm, mem_arena *arena)
-{
-    arr_init(&sm->verts, arena);
-    arr_init(&sm->cjoints, arena);
-    arr_init(&sm->inds, arena);
-}
-
-void terminate_submesh(submesh *sm)
-{
-    arr_terminate(&sm->verts);
-    arr_terminate(&sm->cjoints);
-    arr_terminate(&sm->inds);
+    arr_copy(&msh->verts, CUBE_VERTS, sizeof(CUBE_VERTS) / sizeof(mvert));
+    arr_copy(&msh->inds, CUBE_INDS_TRI_LIST, sizeof(CUBE_INDS_TRI_LIST) / sizeof(u32));
+    arr_resize(&msh->sm_info, 1);
+    msh->sm_info[0].ind_count = msh->inds.size;
+    strncpy(msh->sm_info[0].mat_slot_name, "default", MAX_SUBMESH_COUNT);
 }
 
 void init_mesh(mesh *msh, const string &name, mem_arena *arena)
 {
-    msh->name = name;
-    asrt(msh->submeshes.size == 0);
-    msh->arena = arena;
+    init_robj(msh, name, arena);
+    asrt(msh->sm_info.size==0);
+    asrt(msh->inds.size==0);
+    asrt(msh->verts.size==0);
+    asrt(msh->skinned_verts_info.size==0);
+    arr_init(&msh->verts, arena);
+    arr_init(&msh->skinned_verts_info, arena);
+    arr_init(&msh->inds, arena);
+    arr_init(&msh->sm_info, arena);
+}
+
+void release_mesh_ram_data(mesh *msh)
+{
+    arr_terminate(&msh->verts);
+    arr_terminate(&msh->skinned_verts_info);
+    arr_terminate(&msh->inds);
+    arr_terminate(&msh->sm_info);
 }
 
 void terminate_mesh(mesh *msh)
 {
-    for (int i = 0; i < msh->submeshes.size; ++i) {
-        terminate_submesh(&msh->submeshes[i]);
-    }
+    terminate_robj(msh);
+    release_mesh_ram_data(msh);
 }
 
 } // namespace nslib

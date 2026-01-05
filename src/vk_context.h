@@ -117,6 +117,7 @@ struct vkr_buffer_cfg
     VmaAllocationCreateFlags alloc_flags;
     VkMemoryPropertyFlags required_flags;
     VkMemoryPropertyFlags preferred_flags;
+    void *user_data{nullptr};
     const vkr_gpu_allocator *vma_alloc;
 };
 
@@ -576,8 +577,8 @@ void *vkr_map_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
 void vkr_unmap_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
 int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
                                      const void *src_data,
-                                     sizet src_data_size,
-                                     const VkBufferCopy *region,
+                                     const VkBufferCopy *regions,
+                                     u32 region_count,
                                      VkCommandBuffer cmd_buf,
                                      VkQueue queue,
                                      const vkr_context *vk);
@@ -690,6 +691,7 @@ void vkr_device_wait_idle(vkr_device *dev);
 int vkr_copy_buffer(vkr_buffer *dest,
                     const vkr_buffer *src,
                     const VkBufferCopy *region,
+                    u32 region_count,
                     VkCommandBuffer cmd_buffer,
                     VkQueue queue,
                     const vkr_context *vk);

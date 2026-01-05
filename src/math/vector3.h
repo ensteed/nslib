@@ -195,10 +195,10 @@ vector3<T> cartesian_to_spherical(const vector3<T> &cartesian)
 }
 } // namespace math
 
-using i8vec3 = vector3<s8>;
-using i16vec3 = vector3<s16>;
-using ivec3 = vector3<s32>;
-using i64vec3 = vector3<s64>;
+using s8vec3 = vector3<s8>;
+using s16vec3 = vector3<s16>;
+using svec3 = vector3<s32>;
+using s64vec3 = vector3<s64>;
 using u8vec3 = vector3<u8>;
 using u16vec3 = vector3<u16>;
 using uvec3 = vector3<u32>;

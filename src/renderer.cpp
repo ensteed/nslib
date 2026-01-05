@@ -278,6 +278,37 @@ intern int setup_diffuse_technique(renderer *rndr)
     return err_code::RENDER_NO_ERROR;
 }
 
+intern void teardown_geometry_buffers(renderer *rndr) {
+    for (s32 i = 0; i < RSTATIC_MESH_STREAM_COUNT; ++i) {
+        auto cur_buf = &rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_POS_COL];
+        vkr_terminate_buffer(&cur_buf->data, &rndr->vk);
+        vmaDestroyVirtualBlock(cur_buf->block_info);
+        cur_buf->data = {};
+        cur_buf->block_info = {};
+    }
+}
+
+intern sizet STATIC_MESH_BUFFER_SZS[] = {
+    DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_pos_col),
+    DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_norm_tan_uv),
+    DEFAULT_SKINNED_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_bone_weights_ids),
+    DEFAULT_IND_BUFFER_SIZE * sizeof(ind_t)
+};
+
+intern const char* STATIC_MESH_BUFFER_NAMES[] = {
+    "static-mesh-pos-col-stream",
+    "static-mesh-norm-tan-uv-stream",
+    "static-mesh-bone-weights-ids-stream",
+    "static-mesh-ind-stream"
+};
+
+intern sizet STATIC_MESH_STREAM_ITEM_SIZES[] = {
+    sizeof(rstatic_mesh_vert_pos_col),
+    sizeof(rstatic_mesh_vert_norm_tan_uv),
+    sizeof(rstatic_mesh_vert_bone_weights_ids),
+    sizeof(ind_t)
+};
+
 intern int setup_geometry_buffers(renderer *rndr) {
     asrt(rndr);
     auto vk = &rndr->vk;
@@ -289,137 +320,110 @@ intern int setup_geometry_buffers(renderer *rndr) {
     alloc_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
     alloc_cfg.vma_alloc = &dev->vma_alloc;
     alloc_cfg.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    alloc_cfg.buffer_size = DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_pos_col);
 
-    int result = vkr_init_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_POS_COL], alloc_cfg);
-    if (result != err_code::VKR_NO_ERROR) {
-        return result;
-    }
+    VmaVirtualBlockCreateInfo ci{};
+    ci.size = alloc_cfg.buffer_size;
+    ci.pAllocationCallbacks = &vk->alloc_cbs;
 
-    alloc_cfg.buffer_size = DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_norm_tan_uv);
-    result = vkr_init_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_NORM_TAN_UV], alloc_cfg);
-    if (result != err_code::VKR_NO_ERROR) {
-        vkr_terminate_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_POS_COL], vk);
-        return result;
-    }
-
-    alloc_cfg.buffer_size = DEFAULT_SKINNED_MESH_VERT_BUFFER_SIZE * sizeof(rstatic_mesh_vert_bone_weights_ids);
-    result = vkr_init_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_BONES_WEIGHT_ID], alloc_cfg);
-    if (result != err_code::VKR_NO_ERROR) {
-        vkr_terminate_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_POS_COL], vk);
-        vkr_terminate_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_NORM_TAN_UV], vk);
-        
-        return result;
-    }
-
-    alloc_cfg.buffer_size = DEFAULT_IND_BUFFER_SIZE * sizeof(ind_t);
-    result = vkr_init_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_IND], alloc_cfg);
-    if (result != err_code::VKR_NO_ERROR) {
-        vkr_terminate_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_POS_COL], vk);
-        vkr_terminate_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_NORM_TAN_UV], vk);
-        vkr_terminate_buffer(&rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_BONES_WEIGHT_ID], vk);
-        return result;
-    }
-    
-}
-
-rmesh_handle register_mesh(const rstatic_mesh &mdata, renderer *rndr)
-{
-    
-}
-
-
-intern int setup_rmesh_info(renderer *rndr)
-{
-    auto vk = &rndr->vk;
-    auto dev = &vk->inst.device;
-
-    // Create vertex buffer on GPU
-    vkr_buffer_cfg b_cfg{};
-    rndr->rmi.verts.min_free_block_size = MIN_VERT_FREE_BLOCK_SIZE;
-    rndr->rmi.inds.min_free_block_size = MIN_IND_FREE_BLOCK_SIZE;
-
-    // Common to all buffer options
-    b_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    b_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
-    b_cfg.vma_alloc = &dev->vma_alloc;
-
-    // Vert buffer
-    b_cfg.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    b_cfg.buffer_size = DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE * sizeof(vertex);
-    int err = vkr_init_buffer(&rndr->rmi.verts.buf, b_cfg);
-    if (err != err_code::VKR_NO_ERROR) {
-        return err;
-    }
-
-    // Ind buffer
-    b_cfg.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    b_cfg.buffer_size = DEFAULT_IND_BUFFER_SIZE * sizeof(ind_t);
-    err = vkr_init_buffer(&rndr->rmi.inds.buf, b_cfg);
-    if (err != err_code::VKR_NO_ERROR) {
-        return err;
-    }
-
-    mem_init_pool_arena<sbuffer_entry_slnode>(&rndr->rmi.verts.node_pool, MAX_FREE_SBUFFER_NODE_COUNT, mem_global_stack_arena(), "mesh-verts");
-    mem_init_pool_arena<sbuffer_entry_slnode>(&rndr->rmi.inds.node_pool, MAX_FREE_SBUFFER_NODE_COUNT, mem_global_stack_arena(), "mesh-inds");
-    hmap_init(&rndr->rmi.meshes, hash_type);
-
-    // Create the head nodes of our vert and index buffer free list - indice 0 and full buffer size
-    auto vert_head = mem_alloc<sbuffer_entry_slnode>(&rndr->rmi.verts.node_pool);
-    vert_head->next = nullptr;
-    vert_head->data.size = DEFAULT_STATIC_MESH_VERT_BUFFER_SIZE;
-    vert_head->data.offset = 0;
-    ll_push_back(&rndr->rmi.verts.fl, vert_head);
-
-    auto ind_head = mem_alloc<sbuffer_entry_slnode>(&rndr->rmi.inds.node_pool);
-    ind_head->next = nullptr;
-    ind_head->data.size = DEFAULT_IND_BUFFER_SIZE;
-    ind_head->data.offset = 0;
-    ll_push_back(&rndr->rmi.inds.fl, ind_head);
-
-    return err_code::VKR_NO_ERROR;
-}
-
-intern sbuffer_entry find_sbuffer_block(sbuffer_info *sbuf, sizet req_size)
-{
-    // Find the first node with enough available memory
-    auto node = sbuf->fl.head;
-    sbuffer_entry_slnode *prev_node{};
-    while (node && req_size > node->data.size) {
-        prev_node = node;
-        node = node->next;
-    }
-
-    // Crash if we don't have enough memory spots left
-    asrt(node);
-    auto ret_entry = node->data;
-
-    // Remove the node we just used
-    ll_remove(&sbuf->fl, prev_node, node);
-    mem_free(node, &sbuf->node_pool);
-
-    // If the remaining is enough to hold at least a quad we should insert a new free entry at the proper spot
-    sizet remain = ret_entry.size - req_size;
-    if (remain >= sbuf->min_free_block_size) {
-
-        auto fnode = sbuf->fl.head;
-        sbuffer_entry_slnode *prev_fnode{};
-        while (fnode && fnode->data.size < remain) {
-            prev_fnode = fnode;
-            fnode = fnode->next;
+    bool failed{false};
+    for (s32 i = 0; i < RSTATIC_MESH_STREAM_COUNT && !failed; ++i) {
+        alloc_cfg.buffer_size = STATIC_MESH_BUFFER_SZS[i];
+        alloc_cfg.user_data = (void*)STATIC_MESH_BUFFER_NAMES[i];
+        auto cur_buf = &rndr->geometry_buffers[RSTATIC_MESH_STREAM_VERT_POS_COL];
+        int result = vkr_init_buffer(&cur_buf->data, alloc_cfg);
+        failed = result != err_code::VKR_NO_ERROR;
+        if (!failed) {
+            result = vmaCreateVirtualBlock(&ci, &cur_buf->block_info);
+            failed = result != VK_SUCCESS;
+            if (failed) {
+                wlog("Failed to create virtual block - error code: %d", result);
+            }
         }
-
-        auto new_node = mem_alloc<sbuffer_entry_slnode>(&sbuf->node_pool);
-        ret_entry.size -= remain;
-        new_node->next = nullptr;
-        new_node->data.size = remain;
-        new_node->data.offset = ret_entry.offset + ret_entry.size;
-        ll_insert(&sbuf->fl, prev_fnode, new_node);
     }
-    return ret_entry;
+    
+    if (failed) {
+        teardown_geometry_buffers(rndr);
+        return err_code::RENDER_SETUP_GEOMETRY_BUFFERS_FAIL;
+    }
+    return err_code::RENDER_NO_ERROR;
 }
 
-int init_global_samplers(renderer *rndr)
+intern bool release_mesh(rmesh_handle hndl, renderer *rndr) {
+    auto sl_item = get_slot_item(&rndr->meshes, hndl);
+    memset(sl_item->name, 0, SMALL_STR_LEN);
+    for (int i = 0; i < sl_item->submesh_vert_ind_counts.size; ++i) {
+        sl_item->submesh_vert_ind_counts[i] = {};
+    }
+    sl_item->submesh_vert_ind_counts.size = 0;
+
+    for (int i = 0; i < RSTATIC_MESH_STREAM_COUNT; ++i) {
+        vmaVirtualFree(rndr->geometry_buffers[i].block_info, sl_item->att_streams[i].mem);
+        sl_item->att_streams[i] = {};
+    }
+    return release_slot(&rndr->meshes, hndl);
+}
+
+rmesh_handle register_mesh(const rstatic_mesh &mdata, const char *name, renderer *rndr)
+{
+    asrt(rndr);
+    asrt(mdata.sm_info);
+    asrt(mdata.pos);
+    asrt(mdata.inds);
+
+    VkCommandBuffer tmp_buf;
+    int result = vkr_alloc_cmd_bufs(&tmp_buf, {.pool=rndr->transient_pool}, &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) {
+        return {};
+    }
+    auto tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
+
+
+    rmesh_handle mhndl = acquire_slot(&rndr->meshes);
+    auto mesh_item = get_slot_item(&rndr->meshes, mhndl);
+
+    // Just in case we ensure null terminated
+    strncpy(mesh_item->name, name, SMALL_STR_LEN-1);
+    mesh_item->name[SMALL_STR_LEN-1] = 0;
+
+    VmaVirtualAllocationCreateInfo ci{};
+    ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
+
+    const void *src_data[] = {
+        mdata.pos,
+        mdata.norm_tan_uv,
+        mdata.norm_tan_uv,
+        mdata.weights_ids
+    };
+    
+    for (u32 i = 0; i < RSTATIC_MESH_STREAM_COUNT; ++i) {
+        ci.alignment = STATIC_MESH_STREAM_ITEM_SIZES[i];        
+        ci.size = 0;
+        ci.pUserData = mesh_item->name;        
+        sizet att_entry_count = i != RSTATIC_MESH_STREAM_IND ? mdata.vert_count : mdata.ind_count;
+        ci.size += att_entry_count * ci.alignment;
+
+        // Do a sub allocation from the larger geometry buffer and save the offset
+        auto pos_buf = &rndr->geometry_buffers[i];
+        auto cur_stream = &mesh_item->att_streams[i];
+        VkDeviceSize offset;
+        vmaVirtualAllocate(pos_buf->block_info, &ci, &cur_stream->mem, &offset);
+        cur_stream->offset = offset / ci.alignment;
+
+        VkBufferCopy region{};
+        region.size = ci.size;
+        region.dstOffset = offset;
+        result = vkr_stage_and_upload_buffer_data(&pos_buf->data, src_data[i], &region, 1, tmp_buf, tmp_q, &rndr->vk);
+        if (result != err_code::VKR_NO_ERROR) {
+            release_mesh(mhndl, rndr);
+            return {};
+        }
+    }
+
+    vkr_free_cmd_bufs(&tmp_buf, 1, rndr->transient_pool, &rndr->vk);
+    return mhndl;
+}
+
+intern int setup_global_samplers(renderer *rndr)
 {
     auto dev = &rndr->vk.inst.device;
     rndr->samplers.size = RSAMPLER_TYPE_COUNT;
@@ -496,110 +500,6 @@ rtexture_handle register_texture(const texture *tex, renderer *rndr)
     ret = acquire_slot(&rndr->textures, tex_info);
     asrt(is_valid(ret));
     return ret;
-}
-
-// Upload mesh data to GPU using the shared indice/vertex buffer, also "registers" the mesh with the renderer so it can
-// be drawn
-int upload_to_gpu(const mesh *msh, renderer *rndr)
-{
-    auto fiter = hmap_find(&rndr->rmi.meshes, msh->id);
-    if (fiter) {
-        return false;
-    }
-    auto dev = &rndr->vk.inst.device;
-
-    VkCommandBuffer tmp_cmd_buf;
-    int vk_ret = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
-    if (vk_ret != err_code::VKR_NO_ERROR) {
-        return false;
-    }
-    VkQueue q = dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
-
-    // Find the first available sbuffer entry in the free list
-    rmesh_entry new_mentry{};
-    // arr_init(&new_mentry.submesh_entrees, rndr->upstream_fl_arena);
-    for (int subi = 0; subi < msh->submeshes.size; ++subi) {
-        sizet req_vert_size = arr_len(msh->submeshes[subi].verts);
-        sizet req_vert_byte_size = arr_sizeof(msh->submeshes[subi].verts);
-        sizet req_inds_size = arr_len(msh->submeshes[subi].inds);
-        sizet req_inds_byte_size = arr_sizeof(msh->submeshes[subi].inds);
-
-        // Add an entry in the hashmap for our mesh to refer to this sbuffer entry we just got from the free list
-        rsubmesh_entry new_smentry{};
-        new_smentry.verts = find_sbuffer_block(&rndr->rmi.verts, req_vert_size);
-        new_smentry.inds = find_sbuffer_block(&rndr->rmi.inds, req_inds_size);
-        asrt(new_smentry.verts.size > 0);
-        asrt(new_smentry.inds.size > 0);
-        arr_push_back(&new_mentry.submesh_entrees, new_smentry);
-
-        // Our required vert and ind size might be a little less than the avail block size, if a block was picked that
-        // was big enough to fit our needs but the remaining available in the block was less than the required min block
-        // size for the sbuffer
-        VkBufferCopy vert_region{}, ind_region{};
-        vert_region.size = req_vert_byte_size;
-        vert_region.dstOffset = new_smentry.verts.offset * sizeof(vertex);
-
-        ind_region.size = req_inds_byte_size;
-        ind_region.dstOffset = new_smentry.inds.offset * sizeof(ind_t);
-
-        // Upload our vert data to the GPU
-        int ret = vkr_stage_and_upload_buffer_data(
-            &rndr->rmi.verts.buf, msh->submeshes[subi].verts.data, req_vert_byte_size, &vert_region, tmp_cmd_buf, q, &rndr->vk);
-
-        // TODO: Handle error conditions here - there are several reasons why a buffer upload might fail - for now we
-        // just asrt it worked
-        asrt(ret == err_code::VKR_NO_ERROR);
-
-        // Upload our ind data to the GPU
-        ret = vkr_stage_and_upload_buffer_data(
-            &rndr->rmi.inds.buf, msh->submeshes[subi].inds.data, req_inds_byte_size, &ind_region, tmp_cmd_buf, q, &rndr->vk);
-        asrt(ret == err_code::VKR_NO_ERROR);
-    }
-    ilog("Adding mesh id %s %d submeshes", str_cstr(msh->id.str), new_mentry.submesh_entrees.size);
-    for (int si = 0; si < new_mentry.submesh_entrees.size; ++si) {
-        auto sub = &new_mentry.submesh_entrees[si];
-        ilog("submesh %d:  vertsp(ubo_offset:%d  size:%d)  inds(ubo_offset:%d size:%d)",
-             si,
-             sub->verts.offset,
-             sub->verts.size,
-             sub->inds.offset,
-             sub->inds.size);
-    }
-    // Add the smesh entry we just built to the renderer mesh entry map (stored by id)
-    hmap_set(&rndr->rmi.meshes, msh->id, new_mentry);
-    vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
-    return true;
-}
-
-intern void insert_node_to_free_list(sbuffer_info *sbuf, const sbuffer_entry *entry)
-{
-    // Iterate over the free list and find the lowest index position to insert the new node
-    auto it = sbuf->fl.head;
-    sbuffer_entry_slnode *it_prev{};
-    while (it && entry->offset < it->data.offset) {
-        it_prev = it;
-        it = it->next;
-    }
-    auto new_node = mem_alloc<sbuffer_entry_slnode>(&sbuf->node_pool);
-    new_node->next = nullptr;
-    new_node->data = *entry;
-    ll_insert(&sbuf->fl, it_prev, new_node);
-}
-
-bool remove_from_gpu(mesh *msh, renderer *rndr)
-{
-    // TODO: This code is basically completely untested
-    auto minfo = hmap_find(&rndr->rmi.meshes, msh->id);
-    if (minfo) {
-        for (int subi = 0; subi < minfo->val.submesh_entrees.size; ++subi) {
-            // Insert the block to our free list
-            auto cur_entry = &minfo->val.submesh_entrees[subi];
-            insert_node_to_free_list(&rndr->rmi.verts, &cur_entry->verts);
-            insert_node_to_free_list(&rndr->rmi.inds, &cur_entry->inds);
-        }
-        hmap_remove(&rndr->rmi.meshes, msh->id);
-    }
-    return minfo;
 }
 
 intern int init_swapchain_images_and_framebuffer(renderer *rndr)
@@ -769,9 +669,9 @@ intern int setup_rendering(renderer *rndr)
         return err;
     }
 
-    err = setup_rmesh_info(rndr);
+    err = setup_geometry_buffers(rndr);
     if (err != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup rmeshes");
+        elog("Failed to setup geometry buffers");
         return err;
     }
 
@@ -991,9 +891,11 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
 {
     asrt(fl_arena->alloc_type == mem_alloc_type::FREE_LIST);
     rndr->upstream_fl_arena = fl_arena;
-    mem_init_fl_arena(&rndr->vk_free_list, 500 * MB_SIZE, fl_arena, "vk");
-    mem_init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "frame");
+    mem_init_fl_arena(&rndr->vk_free_list, 500 * MB_SIZE, fl_arena, "vk-fl");
     mem_init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, mem_global_stack_arena(), "vk-frame");
+    
+    mem_init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "frame-linear");
+    mem_init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "frame-stack");
 
     // Render pass names
     hmap_init(&rndr->rpass_name_map, hash_type, fl_arena);
@@ -1064,6 +966,7 @@ int begin_render_frame(renderer *rndr, int finished_frames)
 
     mem_reset_arena(&rndr->vk_frame_linear);
     mem_reset_arena(&rndr->frame_linear);
+    mem_reset_arena(&rndr->frame_stack);
 
     // Finalize IM GUI data - not dependent on our render stuff currently
     ImGui::Render();
@@ -1128,7 +1031,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     }
 
     if (cam) {
-        ivec2 sz = get_window_pixel_size(rndr->vk.cfg.window);
+        svec2 sz = get_window_pixel_size(rndr->vk.cfg.window);
         if (cam->vp_size != sz) {
             rndr->no_resize_frames = 0;
             cam->vp_size = sz;
@@ -1218,6 +1121,7 @@ void terminate_renderer(renderer *rndr)
 
     mem_reset_arena(&rndr->vk_frame_linear);
     mem_reset_arena(&rndr->frame_linear);
+    mem_reset_arena(&rndr->frame_stack);
 
     // These are stack arenas so must go in this order
     hmap_terminate(&rndr->rmi.meshes);
@@ -1278,6 +1182,7 @@ void terminate_renderer(renderer *rndr)
     mem_terminate_arena(&rndr->vk_free_list);
     mem_terminate_arena(&rndr->vk_frame_linear);
     mem_terminate_arena(&rndr->frame_linear);
+    mem_terminate_arena(&rndr->frame_stack);
 }
 
 } // namespace nslib

@@ -186,10 +186,10 @@ inline vector4<float> operator/(vector4<float> lhs, T rhs)
 #endif
 
 
-using i8vec4 = vector4<s8>;
-using i16vec4 = vector4<s16>;
-using ivec4 = vector4<s32>;
-using i64vec4 = vector4<s64>;
+using s8vec4 = vector4<s8>;
+using s16vec4 = vector4<s16>;
+using svec4 = vector4<s32>;
+using s64vec4 = vector4<s64>;
 using u8vec4 = vector4<u8>;
 using u16vec4 = vector4<u16>;
 using uvec4 = vector4<u32>;

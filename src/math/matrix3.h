@@ -574,10 +574,10 @@ inline vector3<float> operator*(const vector3<float> &lhs, const matrix3<float> 
 }
 #endif
 
-using i8mat3 = matrix3<s8>;
-using i16mat3 = matrix3<s16>;
-using imat3 = matrix3<s32>;
-using i64mat3 = matrix3<s64>;
+using s8mat3 = matrix3<s8>;
+using s16mat3 = matrix3<s16>;
+using smat3 = matrix3<s32>;
+using s64mat3 = matrix3<s64>;
 using u8mat3 = matrix3<u8>;
 using u16mat3 = matrix3<u16>;
 using umat3 = matrix3<u32>;

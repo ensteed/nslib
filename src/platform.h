@@ -157,7 +157,7 @@ struct platform_mwheel_event
     // Amount scrolled - left neg x, right pos x, y positive away from user (ie up/increase) and y neg towards the user (down/decrease)
     vec2 delta;
     // Amount scrolled - same as above but accumulated in to ticks
-    ivec2 idelta;
+    svec2 idelta;
     // Which mouse
     u32 mouse_id;
 };
@@ -208,11 +208,11 @@ pup_func(platform_input_event)
 union platform_window_event
 {
     // First is new size, second is prev size - for window resize these are screen coords, for fb resize they are pixels
-    pair<ivec2, ivec2> resize{};
+    pair<svec2, svec2> resize{};
     // First is new pos, second is prev pos
-    pair<ivec2, ivec2> move;
+    pair<svec2, svec2> move;
     // Generic name
-    pair<ivec2, ivec2> data;
+    pair<svec2, svec2> data;
 
     // Gained focus is 1, lost focus is 0
     int focus;
@@ -327,7 +327,7 @@ struct platform_file_err_desc
 struct platform_window_init_info
 {
     u32 win_flags{};
-    ivec2 resolution;
+    svec2 resolution;
     const char *title;
 };
 
@@ -370,13 +370,13 @@ void set_platform_sdl_event_hook(void *window, const platform_sdl_event_hook &ho
 void *create_window(const platform_window_init_info *pf_config, float *display_scale = nullptr);
 
 // Get the window size in screen coords
-ivec2 get_window_size(void *window_hndl);
+svec2 get_window_size(void *window_hndl);
 
 // Get the window size in pixels - could be different than screen coords for HighDPI displays
-ivec2 get_window_pixel_size(void *window_hndl);
+svec2 get_window_pixel_size(void *window_hndl);
 
 // Get the window position in screen coords
-ivec2 get_window_pos(void *window_hndl);
+svec2 get_window_pos(void *window_hndl);
 
 // Get the window scale for the display it is on at the time of this call
 f32 get_window_display_scale(void *window_hndl);

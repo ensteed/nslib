@@ -16,7 +16,8 @@ enum robj_type : u32
     ROBJ_TYPE_USER,
 };
 
-enum robj_flags : u32 {
+enum robj_flags : u32
+{
     ROBJ_FLAG_DIRTY = (1 << 0)
 };
 
@@ -27,7 +28,7 @@ const sizet ROBJ_TYPE_DEFAULT_BUDGET[ROBJ_TYPE_USER] = {256, 256, 256};
     static constexpr const u32 type_id = ROBJ_TYPE_##type;                                                                                 \
     rid id;                                                                                                                                \
     string name;                                                                                                                           \
-    u64 flags; \
+    u64 flags;                                                                                                                             \
     mem_arena *arena;
 
 #define PUP_ROBJ                                                                                                                           \
@@ -220,6 +221,18 @@ handle<T> get_robj(const robj_cache_group *cg, const rid &id)
 {
     auto cache = get_cache<T>(cg);
     return get_robj(cache, id);
+}
+
+template<class T>
+void init_robj(T *robj, const string &name, mem_arena *arena) {
+    robj->arena = arena;
+    str_init(&robj->name, arena);
+    robj->name = name;
+}
+
+template<class T>
+void terminate_robj(T *robj) {
+    str_terminate(&robj->name);
 }
 
 template<class T>

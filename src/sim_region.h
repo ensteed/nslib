@@ -54,7 +54,7 @@ struct camera
     vec2 near_far;
     mat4 proj;
     mat4 view;
-    ivec2 vp_size;
+    svec2 vp_size;
 };
 
 pup_func(camera)

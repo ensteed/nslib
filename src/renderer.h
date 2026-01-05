@@ -53,6 +53,14 @@ const sizet MAX_TEXTURE_COUNT = 4096;
 // Maximum number of objects
 const sizet MAX_OBJECT_COUNT = 1000000;
 
+struct rsubmesh_range
+{
+    // Indice offset
+    sizet offset;
+    // Indice count
+    sizet count;
+};
+
 struct rstatic_mesh_vert_pos_col
 {
     vec3 pos;
@@ -69,15 +77,23 @@ struct rstatic_mesh_vert_norm_tan_uv
 struct rstatic_mesh_vert_bone_weights_ids
 {
     vec4 bone_weights;
-    ivec4 bone_ids;
+    svec4 bone_ids;
 };
+
+using ind_t = u32;
 
 struct rstatic_mesh
 {
     const rstatic_mesh_vert_pos_col *pos;
     const rstatic_mesh_vert_norm_tan_uv *norm_tan_uv;
     const rstatic_mesh_vert_bone_weights_ids *weights_ids;
-    u32 submesh_size;
+    sizet vert_count;
+    
+    const ind_t *inds;
+    sizet ind_count;
+    
+    const rsubmesh_range *sm_info;
+    sizet sm_count;
 };
 
 enum rstatic_mesh_vert_stream {
@@ -122,6 +138,7 @@ enum render
 {
     RENDER_NO_ERROR,
     RENDER_INIT_FAIL,
+    RENDER_SETUP_GEOMETRY_BUFFERS_FAIL,
     RENDER_LOAD_SHADERS_FAIL,
     RENDER_ACQUIRE_IMAGE_FAIL,
     RENDER_INIT_IMAGE_FAIL,
@@ -159,17 +176,13 @@ struct rmesh_block_virtual_alloc
     u32 offset;
 };
 
-struct rsubmesh_counts
-{
-    u32 verts;
-    u32 inds;
-};
-
 // We use a single vertex and indice buffer for all meshes
 struct rmesh_info
 {
+    small_str name;
+    
     // Number of verts and inds for each submesh
-    static_array<rsubmesh_counts, MAX_SUBMESH_COUNT> submesh_vert_ind_counts;
+    static_array<rsubmesh_range, MAX_SUBMESH_COUNT> submesh_vert_ind_counts;
 
     // Vert buffers - sub0 verts, sub1 verts, sub2 verts, etc
     // All vert attribs have the same count for each submesh
@@ -225,6 +238,11 @@ struct frame_context
     VkSemaphore image_avail;
 };
 
+struct geometry_buffer_info {
+    vkr_buffer data{};
+    VmaVirtualBlock block_info{VK_NULL_HANDLE};
+};
+
 struct renderer
 {
     // Passed in
@@ -233,8 +251,9 @@ struct renderer
     // Owned vulkan context and mem arenas used only for vulkan stuff
     vkr_context vk{};
     mem_arena vk_free_list;
-
     mem_arena vk_frame_linear;
+
+    mem_arena frame_stack;
     mem_arena frame_linear;
 
     // Render pass indices referenced by ids which are just pass names - map a pass name to a static array indice
@@ -258,7 +277,7 @@ struct renderer
     static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
 
     // Globabl geometry attribute buffers
-    vkr_buffer geometry_buffers[RSTATIC_MESH_STREAM_COUNT];
+    geometry_buffer_info geometry_buffers[RSTATIC_MESH_STREAM_COUNT];
 
     // Global pipeline layout
     VkPipelineLayout g_layout{VK_NULL_HANDLE};
@@ -291,20 +310,12 @@ struct renderer
 // rmaterial_handle register_material(rtechnique_handle technique, static_array<rtexture_handle, )
 // rtexture_handle register_texture(const texture *tex, renderer *rndr);
 
-rmesh_handle register_mesh(const rstatic_mesh &mdata, renderer *rndr);
+rmesh_handle register_mesh(const rstatic_mesh &mdata, const char *name, renderer *rndr);
 
 // NOTE: All of these mesh operations kind of need to wait on all rendering operations to complete as they modify the
 // vertex and index buffers - not sure yet if this is better done within the functions or in the caller. Also these should be done at the
 // start of a frame because any indices submitted in command buffers will be invalid after these operations. It almost seems like we should
 // get a list of these and then just do it at start of frame after we wait for sync if there are any to do.
-
-// Upload mesh data to GPU using the shared indice/vertex buffer, also "registers" the mesh with the renderer so it can
-// be drawn
-int upload_to_gpu(const mesh *msh, renderer *rdnr);
-
-// Remove from gpu simply adds the meshes block to the free list, indicating that the block can be overwritten, and then
-// removes the mesh from our mesh entry list. It does not do any actual gpu uploading
-bool remove_from_gpu(mesh *msh, renderer *rndr);
 
 int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena);
 
