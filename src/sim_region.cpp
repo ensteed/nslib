@@ -3,6 +3,18 @@
 namespace nslib
 {
 
+void init_static_model(static_model *sm, mem_arena *arena)
+{
+    str_init(&sm->mesh_id.str);
+    arr_init(&sm->mat_mapping, arena);
+}
+
+void terminate_static_model(static_model *sm)
+{
+    arr_terminate(&sm->mat_mapping);
+    str_terminate(&sm->mesh_id.str);
+}
+
 void init_comp_db(comp_db *cdb, mem_arena *arena)
 {
     arr_init(&cdb->comp_tables, arena);

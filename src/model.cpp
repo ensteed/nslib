@@ -186,8 +186,8 @@ void make_rect(mesh *msh, const string &name, mem_arena *arena)
     arr_copy(&msh->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(mvert));
     arr_copy(&msh->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(u32));
     arr_resize(&msh->sm_info, 1);
-    msh->sm_info[0].ind_count = msh->inds.size;
-    strncpy(msh->sm_info[0].mat_slot_name, "default", MAX_SUBMESH_COUNT);
+    msh->sm_info[0].count = msh->inds.size;
+    strncpy(msh->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
 void make_cube(mesh *msh, const string &name, mem_arena *arena)
@@ -196,8 +196,8 @@ void make_cube(mesh *msh, const string &name, mem_arena *arena)
     arr_copy(&msh->verts, CUBE_VERTS, sizeof(CUBE_VERTS) / sizeof(mvert));
     arr_copy(&msh->inds, CUBE_INDS_TRI_LIST, sizeof(CUBE_INDS_TRI_LIST) / sizeof(u32));
     arr_resize(&msh->sm_info, 1);
-    msh->sm_info[0].ind_count = msh->inds.size;
-    strncpy(msh->sm_info[0].mat_slot_name, "default", MAX_SUBMESH_COUNT);
+    msh->sm_info[0].count = msh->inds.size;
+    strncpy(msh->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
 void init_mesh(mesh *msh, const string &name, mem_arena *arena)

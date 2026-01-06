@@ -1404,7 +1404,7 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
 {
     VkBufferCopy region{};
     region.size = src_data_size;
-    return vkr_stage_and_upload_buffer_data(dest_buffer, src_data, src_data_size, &region, cmd_buf, queue, vk);
+    return vkr_stage_and_upload_buffer_data(dest_buffer, src_data, &region, 1, cmd_buf, queue, vk);
 }
 
 int vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg)
@@ -1459,6 +1459,19 @@ VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, bool need_stenci
         }
     }
     return VK_FORMAT_UNDEFINED;
+}
+
+VkIndexType get_vk_index_type(sizet ind_size) {
+    if (ind_size == 1) {
+        return VK_INDEX_TYPE_UINT8;
+    }
+    if (ind_size == 2) {
+        return VK_INDEX_TYPE_UINT16;
+    }
+    if (ind_size == 4) {
+        return VK_INDEX_TYPE_UINT32;
+    }
+    return VK_INDEX_TYPE_MAX_ENUM;
 }
 
 int vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg)

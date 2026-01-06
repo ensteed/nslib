@@ -116,23 +116,14 @@ int init(platform_ctxt *ctxt, void *user_data)
     make_rect(rect_msh.ptr, "rect", mem_global_arena());
     make_cube(cube_msh.ptr, "cube", mem_global_arena());
 
-    ilog("Rect mesh submesh count %d and vert count %d and ind count %d",
-         rect_msh->submeshes.size,
-         rect_msh->submeshes[0].verts.size,
-         rect_msh->submeshes[0].inds.size);
-    ilog("Cube mesh submesh count %d and vert count %d and ind count %d",
-         cube_msh->submeshes.size,
-         cube_msh->submeshes[0].verts.size,
-         cube_msh->submeshes[0].inds.size);
-
     // Initialize our renderer - fail early if init fails
     int ret = init_renderer(&app->rndr, ctxt->win_hndl, &ctxt->arenas.free_list);
     if (ret != err_code::RENDER_NO_ERROR) {
         return ret;
     }
 
-    upload_to_gpu(cube_msh.ptr, &app->rndr);
-    upload_to_gpu(rect_msh.ptr, &app->rndr);
+    //register_mesh(cube_msh.ptr, &app->rndr);
+    //upload_to_gpu(rect_msh.ptr, &app->rndr);
 
     // Create our sim region aka scene
     init_sim_region(&app->rgn, mem_global_arena());

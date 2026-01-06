@@ -25,8 +25,8 @@ enum comp_flags : u64
     u32 ent_id;                                                                                                                            \
     u64 flags;
 
-#define PUP_COMP_COMMON \
-    pup_member(ent_id); \
+#define PUP_COMP_COMMON                                                                                                                    \
+    pup_member(ent_id);                                                                                                                    \
     pup_member(flags)
 
 struct transform
@@ -38,13 +38,19 @@ struct transform
     vec3 scale{1};
 };
 
+struct material_submesh_mapping
+{
+    rid mat_id;
+    u32 sm_mat_slot;
+};
+
 struct static_model
 {
     COMP(STATIC_MODEL)
     rid mesh_id;
     // This is fixed to max submesh arraty so that each ind in this array matches an ind in the submesh array
     // We might have some of the submeshes with no materials for example, for those the rid will be 0
-    static_array<rid, MAX_SUBMESH_COUNT> mat_ids{{}, MAX_SUBMESH_COUNT};
+    array<material_submesh_mapping> mat_mapping{};
 };
 
 struct camera
@@ -65,9 +71,9 @@ pup_func(camera)
     pup_member(proj);
     pup_member(view);
     pup_member(vp_size);
-}    
+}
 
-template<class T>
+template<typename T>
 struct comp_table
 {
     array<T> entries;
@@ -94,21 +100,21 @@ struct sim_region
     u32 last_id{};
 };
 
-template<class T>
+template<typename T>
 void init_comp_tbl(comp_table<T> *tbl, mem_arena *arena, sizet initial_capacity)
 {
     arr_init(&tbl->entries, arena, initial_capacity);
     hmap_init(&tbl->entc_hm, hash_type, arena);
 }
 
-template<class T>
+template<typename T>
 void terminate_comp_tbl(comp_table<T> *tbl)
 {
     hmap_terminate(&tbl->entc_hm);
     arr_terminate(&tbl->entries);
 }
 
-template<class T>
+template<typename T>
 comp_table<T> *add_comp_tbl(comp_db *cdb, sizet initial_capacity = 64)
 {
     if ((T::type_id + 1) > cdb->comp_tables.size) {
@@ -122,7 +128,7 @@ comp_table<T> *add_comp_tbl(comp_db *cdb, sizet initial_capacity = 64)
     return (comp_table<T> *)cdb->comp_tables[T::type_id];
 }
 
-template<class T>
+template<typename T>
 comp_table<T> *get_comp_tbl(comp_db *cdb)
 {
     if (T::type_id < cdb->comp_tables.size) {
@@ -131,7 +137,7 @@ comp_table<T> *get_comp_tbl(comp_db *cdb)
     return nullptr;
 }
 
-template<class T>
+template<typename T>
 const comp_table<T> *get_comp_tbl(const comp_db *cdb)
 {
     if (T::type_id < cdb->comp_tables.size) {
@@ -140,7 +146,7 @@ const comp_table<T> *get_comp_tbl(const comp_db *cdb)
     return nullptr;
 }
 
-template<class T>
+template<typename T>
 bool remove_comp_tbl(comp_db *cdb)
 {
     auto ctbl = get_comp_tbl<T>(cdb);
@@ -156,10 +162,10 @@ bool remove_comp_tbl(comp_db *cdb)
 void init_comp_db(comp_db *cdb, mem_arena *arena);
 void terminate_comp_db(comp_db *cdb);
 
-template<class T>
+template<typename T>
 T *add_comp(u32 ent_id, comp_table<T> *ctbl, const T &copy = {})
 {
-    T* ret{};
+    T *ret{};
     sizet cid = ctbl->entries.size;
     auto item = hmap_insert(&ctbl->entc_hm, ent_id, cid);
     if (item) {
@@ -170,20 +176,20 @@ T *add_comp(u32 ent_id, comp_table<T> *ctbl, const T &copy = {})
     return ret;
 }
 
-template<class T>
+template<typename T>
 T *add_comp(u32 ent_id, comp_db *cdb, const T &copy = {})
 {
     auto ctbl = get_comp_tbl<T>(cdb);
     return add_comp<T>(ent_id, ctbl, copy);
 }
 
-template<class T>
+template<typename T>
 T *add_comp(entity *ent, const T &copy = {})
 {
     return add_comp<T>(ent->id, ent->cdb, copy);
 }
 
-template<class T>
+template<typename T>
 T *get_comp(u32 ent_id, comp_table<T> *ctbl)
 {
     auto fiter = hmap_find(&ctbl->entc_hm, ent_id);
@@ -193,30 +199,33 @@ T *get_comp(u32 ent_id, comp_table<T> *ctbl)
     return &ctbl->entries[fiter->val];
 }
 
-template<class T>
+template<typename T>
 T *get_comp(u32 ent_id, comp_db *cdb)
 {
     auto ctbl = get_comp_tbl<T>(cdb);
     return get_comp<T>(ent_id, ctbl);
 }
 
-template<class T>
+template<typename T>
 T *get_comp(entity *ent)
 {
     return get_comp<T>(ent->id, ent->cdb);
 }
 
-template<class T>
+template<typename T>
 sizet get_comp_ind(const T *comp, const comp_table<T> *ctbl)
 {
     return (comp - ctbl->entries.data);
 }
 
-template<class T>
+template<typename T>
 sizet get_comp_ind(const T *comp, const comp_db *cdb)
 {
     return get_comp_ind(comp, get_comp_tbl<T>(cdb));
 }
+
+void init_static_model(static_model *sm, mem_arena *arena);
+void terminate_static_model(static_model *sm);
 
 sizet add_entities(sizet count, sim_region *reg);
 entity *add_entity(const entity &copy, sim_region *reg);

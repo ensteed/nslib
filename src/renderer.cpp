@@ -298,20 +298,12 @@ intern const char *RVERT_STREAM_NAMES[] = {
     "skinned-bones-weight-id",
 };
 
-intern sizet RVERT_STREAM_ITEM_SIZES[] = {
-    sizeof(rmesh_vert_pos_col),
-    sizeof(rmesh_vert_norm_tan_uv),
-    sizeof(rmesh_vert_pos_col),
-    sizeof(rmesh_vert_norm_tan_uv),
-    sizeof(rmesh_vert_bone_weights_ids),
-};
-
 intern sizet RVERT_STREAM_BUFFER_SZS[] = {
-    MAX_STATIC_MESH_VERT_COUNT * RVERT_STREAM_ITEM_SIZES[0],
-    MAX_STATIC_MESH_VERT_COUNT *RVERT_STREAM_ITEM_SIZES[1],
-    MAX_SKINNED_MESH_VERT_COUNT *RVERT_STREAM_ITEM_SIZES[2],
-    MAX_SKINNED_MESH_VERT_COUNT *RVERT_STREAM_ITEM_SIZES[3],
-    MAX_SKINNED_MESH_VERT_COUNT *RVERT_STREAM_ITEM_SIZES[4],
+    MAX_STATIC_MESH_VERT_COUNT * sizeof(rmesh_vert_pos_col),
+    MAX_STATIC_MESH_VERT_COUNT * sizeof(rmesh_vert_norm_tan_uv),
+    MAX_SKINNED_MESH_VERT_COUNT * sizeof(rmesh_vert_pos_col),
+    MAX_SKINNED_MESH_VERT_COUNT * sizeof(rmesh_vert_norm_tan_uv),
+    MAX_SKINNED_MESH_VERT_COUNT * sizeof(rmesh_vert_bone_weights_ids),
 };
 
 intern int setup_geometry_buffers(renderer *rndr)
@@ -367,7 +359,7 @@ rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
 {
     asrt(rndr);
     asrt(mdata.sm_info);
-    asrt(mdata.pos);
+    asrt(mdata.pos_col);
     asrt(mdata.inds);
 
     VkCommandBuffer tmp_buf;
@@ -384,29 +376,73 @@ rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
     strncpy(mesh_item->name, name, SMALL_STR_LEN - 1);
     mesh_item->name[SMALL_STR_LEN - 1] = 0;
 
+    // We use vma to do memory management for us using a vk buffer as a virtual block. For non skinned meshes (where
+    // mdata.weight_ids is nullptr), we use the pos/col stream as the "leader" of the other blocks. That is we just
+    // insert stuff in the other
     VmaVirtualAllocationCreateInfo ci{};
+    virtual_block_info *vert_streams = rndr->geometry_buffers.vert_streams;
+    virtual_block_info *pos_col_stream =
+        !mdata.weights_ids ? &vert_streams[RVERT_STREAM_POS_COL] : &vert_streams[RVERT_STREAM_SKINNED_POS_COL];
+    virtual_block_info *norm_tan_uv_stream =
+        !mdata.weights_ids ? &vert_streams[RVERT_STREAM_NORM_TAN_UV] : &vert_streams[RVERT_STREAM_SKINNED_NORM_TAN_UV];
+    virtual_block_info *bones_weight_id_stream = &vert_streams[RVERT_STREAM_SKINNED_BONES_WEIGHT_ID];
+    virtual_block_info *ind_stream = &rndr->geometry_buffers.ind_buffer;
+
     ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
-    ci.alignment = RVERT_STREAM_ITEM_SIZES[i];
-    ci.size = 0;
     ci.pUserData = mesh_item->name;
-    sizet att_entry_count = i != RSTATIC_MESH_STREAM_IND ? mdata.vert_count : mdata.ind_count;
-    ci.size += att_entry_count * ci.alignment;
 
-    const void *src_data[] = {mdata.pos, mdata.norm_tan_uv, mdata.norm_tan_uv, mdata.weights_ids};
+    // Alignment really should be to 16 byte boundaries
+    ci.alignment = sizeof(rmesh_vert_pos_col);
 
-    for (u32 i = 0; i < RMESH_VERT_STREAM_COUNT; ++i) {
+    // Cache byte size to use later
+    VkDeviceSize pos_col_byte_size = mdata.vert_count * ci.alignment;
+    ci.size = pos_col_byte_size;
 
+    // Fill the vert mem and byte offset
+    VkDeviceSize pos_col_byte_offset;
+    vmaVirtualAllocate(pos_col_stream->block_info, &ci, &mesh_item->vert_mem, &pos_col_byte_offset);
+
+    // Calculate the vertex offset from the byte offset - assert that our byte offset is exactly a multiple of alignment
+    // or else everything will get messed up
+    asrt(pos_col_byte_offset % ci.alignment == 0);
+    mesh_item->vert_offset = pos_col_byte_offset / ci.alignment;
+
+    // Reuse and update our vma virtual alloc create struct - need to update alignment and size
+    ci.alignment = sizeof(ind_t);
+
+    // Cache byte size to use later
+    VkDeviceSize ind_byte_size = mdata.ind_count * ci.alignment;
+    ci.size = ind_byte_size;
+
+    // Fill the vert mem and byte offset for ind buf
+    VkDeviceSize ind_byte_offset;
+    vmaVirtualAllocate(ind_stream->block_info, &ci, &mesh_item->ind_mem, &ind_byte_offset);
+
+    // Calculate the ind offset from the byte offset - assert that our byte offset is exactly a multiple of alignment
+    // or else everything will get messed up
+    asrt(ind_byte_offset % ci.alignment == 0);
+    mesh_item->ind_offset = ind_byte_offset / ci.alignment;
+
+    sizet vbuf_cnt = !mdata.weights_ids ? 3 : 4;
+
+    // Align up all our data so a for i loop can just straight copy this stuff
+    const void *src_data[] = {mdata.pos_col, mdata.norm_tan_uv, mdata.inds, mdata.weights_ids};
+    virtual_block_info *dest_streams[] = {pos_col_stream, norm_tan_uv_stream, ind_stream, bones_weight_id_stream};
+    VkDeviceSize byte_offsets[] = {pos_col_byte_offset,
+                                   sizeof(rmesh_vert_norm_tan_uv) * mesh_item->vert_offset,
+                                   ind_byte_offset,
+                                   sizeof(rmesh_vert_bone_weights_ids) * mesh_item->vert_offset};
+    VkDeviceSize byte_sizes[] = {pos_col_byte_size,
+                                 sizeof(rmesh_vert_norm_tan_uv) * mdata.vert_count,
+                                 sizeof(ind_t) * mdata.ind_count,
+                                 sizeof(rmesh_vert_bone_weights_ids) * mdata.vert_count};
+
+    for (u32 i = 0; i < vbuf_cnt; ++i) {
         // Do a sub allocation from the larger geometry buffer and save the offset
-        auto pos_buf = &rndr->geometry_buffers[i];
-        auto cur_stream = &mesh_item->att_streams[i];
-        VkDeviceSize offset;
-        vmaVirtualAllocate(pos_buf->block_info, &ci, &cur_stream->mem, &offset);
-        cur_stream->offset = offset / ci.alignment;
-
         VkBufferCopy region{};
-        region.size = ci.size;
-        region.dstOffset = offset;
-        result = vkr_stage_and_upload_buffer_data(&pos_buf->data, src_data[i], &region, 1, tmp_buf, tmp_q, &rndr->vk);
+        region.size = byte_sizes[i];
+        region.dstOffset = byte_offsets[i];
+        result = vkr_stage_and_upload_buffer_data(&dest_streams[i]->data, src_data[i], &region, 1, tmp_buf, tmp_q, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
             release_mesh(mhndl, rndr);
             return {};
@@ -810,7 +846,7 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
         vert_bufs[i] = rndr->geometry_buffers.vert_streams[i].data.hndl;
     }
     vkCmdBindVertexBuffers(cur_frame->cmd_buffer, 0, 1, vert_bufs, offsets);
-    vkCmdBindIndexBuffer(cur_frame->cmd_buffer, rndr->geometry_buffers.ind_buffer.data.hndl, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindIndexBuffer(cur_frame->cmd_buffer, rndr->geometry_buffers.ind_buffer.data.hndl, 0, get_vk_index_type(sizeof(ind_t)));
 
     // TODO: This really can't go in any order we want for render passes.. We might have dependency ordered between
     // them.. for now we just have the one.. I'm not sure if we need to do a
@@ -1190,11 +1226,6 @@ void terminate_renderer(renderer *rndr)
     mem_reset_arena(&rndr->frame_linear);
     mem_reset_arena(&rndr->frame_stack);
 
-    // These are stack arenas so must go in this order
-    hmap_terminate(&rndr->rmi.meshes);
-    mem_terminate_arena(&rndr->rmi.inds.node_pool);
-    mem_terminate_arena(&rndr->rmi.verts.node_pool);
-
     // Device needs to be idle before finishing with everything
     vkr_device_wait_idle(&rndr->vk.inst.device);
 
@@ -1239,10 +1270,6 @@ void terminate_renderer(renderer *rndr)
 
     // Don't free the depth image view/image (or other swapchain atts) as they will just have been freed
     vkr_terminate_swapchain_framebuffers(&rndr->vk.inst.device, &rndr->vk);
-
-    // Vert and ind buf
-    vkr_terminate_buffer(&rndr->rmi.inds.buf, &rndr->vk);
-    vkr_terminate_buffer(&rndr->rmi.verts.buf, &rndr->vk);
 
     terminate_frame_contexts(rndr);
     vkr_terminate(&rndr->vk);

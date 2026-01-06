@@ -499,6 +499,8 @@ struct vkr_context
 // Get the best depth format for the current device
 VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, bool need_stencil = true);
 
+VkIndexType get_vk_index_type(sizet ind_size);
+
 u32 vkr_find_mem_type(u32 type_flags, VkMemoryPropertyFlags property_flags, const vkr_phys_device *pdev);
 
 VkShaderStageFlagBits vkr_shader_stage_type_bits(vkr_shader_stage_type st_type);

@@ -8,7 +8,6 @@ namespace nslib
 {
 
 inline constexpr sizet JOINTS_PER_VERTEX = 4;
-inline constexpr sizet MAX_SUBMESH_COUNT = 16;
 
 enum mat_sampler_slot
 {

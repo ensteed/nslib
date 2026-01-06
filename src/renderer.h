@@ -1,10 +1,9 @@
 #pragma once
 
-#include "model.h"
 #include "math/matrix4.h"
 #include "containers/slot_pool.h"
-#include "containers/hmap.h"
-#include "sim_region.h"
+//#include "containers/hmap.h"
+//#include "sim_region.h"
 #include "vk_context.h"
 #include "render_handles.h"
 
@@ -47,6 +46,8 @@ const sizet MAX_MESH_COUNT = 4096;
 const sizet MAX_TEXTURE_COUNT = 4096;
 // Maximum number of objects
 const sizet MAX_OBJECT_COUNT = 1000000;
+// Max submeshes per rmesh_info - easy to change later
+const sizet MAX_SUBMESH_COUNT = 16;
 
 struct rsubmesh_range
 {
@@ -80,7 +81,7 @@ using ind_t = u16;
 
 struct rmesh
 {
-    const rmesh_vert_pos_col *pos;
+    const rmesh_vert_pos_col *pos_col;
     const rmesh_vert_norm_tan_uv *norm_tan_uv;
     // If weight ids are none null then the mesh is skinned
     const rmesh_vert_bone_weights_ids *weights_ids;
