@@ -2,8 +2,7 @@
 
 #include "math/matrix4.h"
 #include "containers/slot_pool.h"
-//#include "containers/hmap.h"
-//#include "sim_region.h"
+#include "containers/hmap.h"
 #include "vk_context.h"
 #include "render_handles.h"
 
@@ -250,6 +249,10 @@ struct virtual_block_info {
 struct geometry_buffer_info {
     virtual_block_info vert_streams[RVERT_STREAM_COUNT];
     virtual_block_info ind_buffer;
+};
+
+struct rview {
+    
 };
 
 struct renderer

@@ -1,7 +1,3 @@
-#include "sim_region.h"
-#include "containers/string.h"
-#include "containers/linked_list.h"
-#include "stb_image.h"
 #include "platform.h"
 #include "vk_context.h"
 #include "renderer.h"
