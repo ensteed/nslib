@@ -281,7 +281,7 @@ intern void teardown_geometry_buffers(renderer *rndr)
     vmaDestroyVirtualBlock(rndr->geometry_buffers.skinned_mesh_block);
     vmaDestroyVirtualBlock(rndr->geometry_buffers.static_mesh_block);
     for (s32 i = 0; i < RVERT_STREAM_COUNT; ++i) {
-        auto cur_buf = &rndr->geometry_buffers.vert_buffers[RVERT_STREAM_POS_COL];
+        auto cur_buf = &rndr->geometry_buffers.vert_buffers[i];
         vkr_terminate_buffer(cur_buf, &rndr->vk);
     }
     vkr_terminate_buffer(&rndr->geometry_buffers.ind_buffer, &rndr->vk);
@@ -1285,6 +1285,9 @@ void terminate_renderer(renderer *rndr)
         vkr_terminate_sampler(rndr->samplers[i].vk_hndl, &rndr->vk);
     }
     arr_clear(&rndr->samplers);
+
+    // Remove source geometry buffers
+    teardown_geometry_buffers(rndr);
 
     // Terminate our default descriptor layout sets
     dlog("Should be terminating %d layouts", rndr->set_layouts.size);
