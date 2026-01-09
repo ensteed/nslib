@@ -3,7 +3,6 @@
 #include "renderer.h"
 #include "input_mapping.h"
 #include "sim_region.h"
-#include "vk_context.h"
 #include "basic_types.h"
 #include "json_archive.h"
 #include "imgui/imgui.h"
@@ -66,8 +65,6 @@ intern void setup_camera_controller(platform_ctxt *ctxt, app_data *app)
         camt->cached = math::model_tform(camt->world_pos, camt->orientation, camt->scale);
         camc->view = math::inverse(camt->cached);
     };
-    auto ins = add_input_trigger_func(&app->stack, "cam-turn", {cam_turn_func, app});
-    asrt(ins);
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
         auto app = (app_data *)data;
@@ -85,11 +82,12 @@ intern void setup_camera_controller(platform_ctxt *ctxt, app_data *app)
         auto app = (app_data *)data;
         app->movement.x -= (t.ev->key.action - 1) * (-2) + 1;
     };
-
-    set_input_trigger_func(&app->stack, "move-forward", {move_forward_action, app});
-    set_input_trigger_func(&app->stack, "move-back", {move_back_action, app});
-    set_input_trigger_func(&app->stack, "move-right", {move_right_action, app});
-    set_input_trigger_func(&app->stack, "move-left", {move_left_action, app});
+    
+    set_input_trigger(&app->stack, "cam-turn", {cam_turn_func, app});
+    set_input_trigger(&app->stack, "move-forward", {move_forward_action, app});
+    set_input_trigger(&app->stack, "move-back", {move_back_action, app});
+    set_input_trigger(&app->stack, "move-right", {move_right_action, app});
+    set_input_trigger(&app->stack, "move-left", {move_left_action, app});
 
     set_keymap_entry(&app->global_km, KMCODE_MMOTION, 0, MBUTTON_MASK_MIDDLE, {"cam-turn"});
 

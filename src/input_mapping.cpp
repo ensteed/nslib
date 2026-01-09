@@ -276,7 +276,7 @@ void map_input_frame(input_keymap_stack *stack, const platform_frame_event_queue
     }
 }
 
-bool add_input_trigger_func(input_keymap_stack *stack, const char *name, const input_trigger_cb &cb)
+bool add_input_trigger(input_keymap_stack *stack, const char *name, const input_trigger_cb &cb)
 {
     asrt(stack);
     if (!name) {
@@ -288,7 +288,7 @@ bool add_input_trigger_func(input_keymap_stack *stack, const char *name, const i
     return ins;
 }
 
-void set_input_trigger_func(input_keymap_stack *stack, const char *name, const input_trigger_cb &cb)
+void set_input_trigger(input_keymap_stack *stack, const char *name, const input_trigger_cb &cb)
 {
     asrt(stack);
     if (!name) {
@@ -299,7 +299,7 @@ void set_input_trigger_func(input_keymap_stack *stack, const char *name, const i
     hmap_set(&stack->trigger_funcs, nkey, cb);
 }
 
-bool remove_input_trigger_func(input_keymap_stack *stack, const char *name)
+bool remove_input_trigger(input_keymap_stack *stack, const char *name)
 {
     u64 nkey = hash_type(name, 0, 0);
     return hmap_remove(&stack->trigger_funcs, nkey);
