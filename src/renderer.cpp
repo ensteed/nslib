@@ -1,6 +1,7 @@
 #include "platform.h"
 #include "vk_context.h"
 #include "renderer.h"
+#include "sim_region.h"
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_sdl3.h"
@@ -275,15 +276,16 @@ intern int setup_diffuse_technique(renderer *rndr)
 
 intern void teardown_geometry_buffers(renderer *rndr)
 {
+    // Destroy virtual blocks
+    vmaDestroyVirtualBlock(rndr->geometry_buffers.indices_block);
+    vmaDestroyVirtualBlock(rndr->geometry_buffers.skinned_mesh_block);
+    vmaDestroyVirtualBlock(rndr->geometry_buffers.static_mesh_block);
     for (s32 i = 0; i < RVERT_STREAM_COUNT; ++i) {
-        auto cur_buf = &rndr->geometry_buffers.vert_streams[RVERT_STREAM_POS_COL];
-        vmaDestroyVirtualBlock(cur_buf->block_info);
-        vkr_terminate_buffer(&cur_buf->data, &rndr->vk);
-        *cur_buf = {};
+        auto cur_buf = &rndr->geometry_buffers.vert_buffers[RVERT_STREAM_POS_COL];
+        vkr_terminate_buffer(cur_buf, &rndr->vk);
     }
-    vmaDestroyVirtualBlock(rndr->geometry_buffers.ind_buffer.block_info);
-    vkr_terminate_buffer(&rndr->geometry_buffers.ind_buffer.data, &rndr->vk);
-    rndr->geometry_buffers.ind_buffer = {};
+    vkr_terminate_buffer(&rndr->geometry_buffers.ind_buffer, &rndr->vk);
+    rndr->geometry_buffers = {};
 }
 
 intern const char *RVERT_STREAM_NAMES[] = {
@@ -293,6 +295,8 @@ intern const char *RVERT_STREAM_NAMES[] = {
     "skinned-norm-tan-uv",
     "skinned-bones-weight-id",
 };
+
+intern const char *RIND_STREAM_NAME = "indices";
 
 intern sizet RVERT_STREAM_BUFFER_SZS[] = {
     MAX_STATIC_MESH_VERT_COUNT * sizeof(rmesh_vert_pos_col),
@@ -313,27 +317,62 @@ intern int setup_geometry_buffers(renderer *rndr)
     alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     alloc_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
     alloc_cfg.vma_alloc = &dev->vma_alloc;
-    alloc_cfg.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    alloc_cfg.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    VmaVirtualBlockCreateInfo ci{};
-    ci.size = alloc_cfg.buffer_size;
-    ci.pAllocationCallbacks = &vk->alloc_cbs;
-
+    // Create the vert buffers
     bool failed{false};
-    // for (s32 i = 0; i < RMESH_VERT_STREAM_COUNT && !failed; ++i) {
-    //     alloc_cfg.buffer_size = RVERT_STREAM_BUFFER_SZS[i];
-    //     alloc_cfg.user_data = (void *)RVERT_STREAM_NAMES[i];
-    //     auto cur_buf = &rndr->geometry_buffers[RVERT_STREAM_POS_COL];
-    //     int result = vkr_init_buffer(&cur_buf->data, alloc_cfg);
-    //     failed = result != err_code::VKR_NO_ERROR;
-    //     if (!failed) {
-    //         result = vmaCreateVirtualBlock(&ci, &cur_buf->block_info);
-    //         failed = result != VK_SUCCESS;
-    //         if (failed) {
-    //             wlog("Failed to create virtual block - error code: %d", result);
-    //         }
-    //     }
-    // }
+    for (s32 i = 0; i < RVERT_STREAM_COUNT && !failed; ++i) {
+        alloc_cfg.buffer_size = RVERT_STREAM_BUFFER_SZS[i];
+        alloc_cfg.user_data = (void *)RVERT_STREAM_NAMES[i];
+        auto cur_buf = &rndr->geometry_buffers.vert_buffers[i];
+        int result = vkr_init_buffer(cur_buf, alloc_cfg);
+        failed = result != err_code::VKR_NO_ERROR;
+    }
+
+    // Create the virtual block for static meshes (using pos/col stream as the BOSS)
+    if (!failed) {
+        VmaVirtualBlockCreateInfo ci{};
+        ci.size = RVERT_STREAM_BUFFER_SZS[RVERT_STREAM_POS_COL];
+        ci.pAllocationCallbacks = &vk->alloc_cbs;
+        int result = vmaCreateVirtualBlock(&ci, &rndr->geometry_buffers.static_mesh_block);
+        failed = result != VK_SUCCESS;
+        if (failed) {
+            wlog("Failed to create virtual block - error code: %d", result);
+        }
+    }
+
+    // Create the virtual block for skinned meshes (using pos/col stream as the BOSS)
+    if (!failed) {
+        VmaVirtualBlockCreateInfo ci{};
+        ci.size = RVERT_STREAM_BUFFER_SZS[RVERT_STREAM_SKINNED_POS_COL];
+        ci.pAllocationCallbacks = &vk->alloc_cbs;
+        int result = vmaCreateVirtualBlock(&ci, &rndr->geometry_buffers.skinned_mesh_block);
+        failed = result != VK_SUCCESS;
+        if (failed) {
+            wlog("Failed to create virtual block - error code: %d", result);
+        }
+    }
+
+    // Create the indice buffer and virtual block for the indice buffer
+    if (!failed) {
+        alloc_cfg.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        alloc_cfg.buffer_size = (MAX_STATIC_MESH_VERT_COUNT + MAX_SKINNED_MESH_VERT_COUNT) * sizeof(ind_t);
+        alloc_cfg.user_data = (void *)RIND_STREAM_NAME;
+        
+        auto cur_buf = &rndr->geometry_buffers.ind_buffer;
+        int result = vkr_init_buffer(cur_buf, alloc_cfg);
+        failed = result != err_code::VKR_NO_ERROR;
+        if (!failed) {
+            VmaVirtualBlockCreateInfo ci{};
+            ci.size = alloc_cfg.buffer_size;
+            ci.pAllocationCallbacks = &vk->alloc_cbs;
+            result = vmaCreateVirtualBlock(&ci, &rndr->geometry_buffers.indices_block);
+            failed = result != VK_SUCCESS;
+            if (failed) {
+                wlog("Failed to create virtual block - error code: %d", result);
+            }
+        }
+    }
 
     if (failed) {
         teardown_geometry_buffers(rndr);
@@ -345,13 +384,13 @@ intern int setup_geometry_buffers(renderer *rndr)
 intern bool release_mesh(rmesh_handle hndl, renderer *rndr)
 {
     auto sl_item = get_slot_item(&rndr->meshes, hndl);
-    vmaVirtualFree(rndr->geometry_buffers.vert_streams[sl_item->rvert_stream_ind].block_info, sl_item->vert_mem);
-    vmaVirtualFree(rndr->geometry_buffers.ind_buffer.block_info, sl_item->ind_mem);
+    vmaVirtualFree(sl_item->vert_block, sl_item->vert_mem);
+    vmaVirtualFree(rndr->geometry_buffers.indices_block, sl_item->ind_mem);
     *sl_item = {};
     return release_slot(&rndr->meshes, hndl);
 }
 
-rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
+rmesh_handle create_mesh(const rmesh &mdata, const char *name, renderer *rndr)
 {
     asrt(rndr);
     asrt(mdata.sm_info);
@@ -376,13 +415,14 @@ rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
     // mdata.weight_ids is nullptr), we use the pos/col stream as the "leader" of the other blocks. That is we just
     // insert stuff in the other
     VmaVirtualAllocationCreateInfo ci{};
-    virtual_block_info *vert_streams = rndr->geometry_buffers.vert_streams;
-    virtual_block_info *pos_col_stream =
+    vkr_buffer *vert_streams = rndr->geometry_buffers.vert_buffers;
+    vkr_buffer *pos_col_stream =
         !mdata.weights_ids ? &vert_streams[RVERT_STREAM_POS_COL] : &vert_streams[RVERT_STREAM_SKINNED_POS_COL];
-    virtual_block_info *norm_tan_uv_stream =
+    VmaVirtualBlock pos_col_block = !mdata.weights_ids ? rndr->geometry_buffers.static_mesh_block : rndr->geometry_buffers.skinned_mesh_block;
+    vkr_buffer *norm_tan_uv_stream =
         !mdata.weights_ids ? &vert_streams[RVERT_STREAM_NORM_TAN_UV] : &vert_streams[RVERT_STREAM_SKINNED_NORM_TAN_UV];
-    virtual_block_info *bones_weight_id_stream = &vert_streams[RVERT_STREAM_SKINNED_BONES_WEIGHT_ID];
-    virtual_block_info *ind_stream = &rndr->geometry_buffers.ind_buffer;
+    vkr_buffer *bones_weight_id_stream = &vert_streams[RVERT_STREAM_SKINNED_BONES_WEIGHT_ID];
+    vkr_buffer *ind_stream = &rndr->geometry_buffers.ind_buffer;
 
     ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
     ci.pUserData = mesh_item->name;
@@ -396,7 +436,7 @@ rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
 
     // Fill the vert mem and byte offset
     VkDeviceSize pos_col_byte_offset;
-    vmaVirtualAllocate(pos_col_stream->block_info, &ci, &mesh_item->vert_mem, &pos_col_byte_offset);
+    vmaVirtualAllocate(pos_col_block, &ci, &mesh_item->vert_mem, &pos_col_byte_offset);
 
     // Calculate the vertex offset from the byte offset - assert that our byte offset is exactly a multiple of alignment
     // or else everything will get messed up
@@ -412,7 +452,7 @@ rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
 
     // Fill the vert mem and byte offset for ind buf
     VkDeviceSize ind_byte_offset;
-    vmaVirtualAllocate(ind_stream->block_info, &ci, &mesh_item->ind_mem, &ind_byte_offset);
+    vmaVirtualAllocate(rndr->geometry_buffers.indices_block, &ci, &mesh_item->ind_mem, &ind_byte_offset);
 
     // Calculate the ind offset from the byte offset - assert that our byte offset is exactly a multiple of alignment
     // or else everything will get messed up
@@ -423,7 +463,7 @@ rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
 
     // Align up all our data so a for i loop can just straight copy this stuff
     const void *src_data[] = {mdata.pos_col, mdata.norm_tan_uv, mdata.inds, mdata.weights_ids};
-    virtual_block_info *dest_streams[] = {pos_col_stream, norm_tan_uv_stream, ind_stream, bones_weight_id_stream};
+    vkr_buffer *dest_streams[] = {pos_col_stream, norm_tan_uv_stream, ind_stream, bones_weight_id_stream};
     VkDeviceSize byte_offsets[] = {pos_col_byte_offset,
                                    sizeof(rmesh_vert_norm_tan_uv) * mesh_item->vert_offset,
                                    ind_byte_offset,
@@ -438,7 +478,7 @@ rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr)
         VkBufferCopy region{};
         region.size = byte_sizes[i];
         region.dstOffset = byte_offsets[i];
-        result = vkr_stage_and_upload_buffer_data(&dest_streams[i]->data, src_data[i], &region, 1, tmp_buf, tmp_q, &rndr->vk);
+        result = vkr_stage_and_upload_buffer_data(dest_streams[i], src_data[i], &region, 1, tmp_buf, tmp_q, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
             release_mesh(mhndl, rndr);
             return {};
@@ -477,6 +517,7 @@ intern int setup_global_samplers(renderer *rndr)
     return err_code::RENDER_NO_ERROR;
 }
 
+#if 0
 rtexture_handle register_texture(const texture *tex, renderer *rndr)
 {
     rtexture_handle ret{};
@@ -527,6 +568,7 @@ rtexture_handle register_texture(const texture *tex, renderer *rndr)
     asrt(is_valid(ret));
     return ret;
 }
+#endif
 
 intern int init_swapchain_images_and_framebuffer(renderer *rndr)
 {
@@ -839,10 +881,10 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
     VkBuffer vert_bufs[RVERT_STREAM_COUNT]{};
     VkDeviceSize offsets[RVERT_STREAM_COUNT]{};
     for (int i = 0; i < RVERT_STREAM_COUNT; ++i) {
-        vert_bufs[i] = rndr->geometry_buffers.vert_streams[i].data.hndl;
+        vert_bufs[i] = rndr->geometry_buffers.vert_buffers[i].hndl;
     }
     vkCmdBindVertexBuffers(cur_frame->cmd_buffer, 0, 1, vert_bufs, offsets);
-    vkCmdBindIndexBuffer(cur_frame->cmd_buffer, rndr->geometry_buffers.ind_buffer.data.hndl, 0, get_vk_index_type(sizeof(ind_t)));
+    vkCmdBindIndexBuffer(cur_frame->cmd_buffer, rndr->geometry_buffers.ind_buffer.hndl, 0, get_vk_index_type(sizeof(ind_t)));
 
     // TODO: This really can't go in any order we want for render passes.. We might have dependency ordered between
     // them.. for now we just have the one.. I'm not sure if we need to do a
@@ -1216,6 +1258,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
 
 void terminate_renderer(renderer *rndr)
 {
+    ilog("Terminating");
     hmap_terminate(&rndr->rpass_name_map);
 
     mem_reset_arena(&rndr->vk_frame_linear);
@@ -1228,12 +1271,14 @@ void terminate_renderer(renderer *rndr)
     // IMGUI
     terminate_imgui(rndr);
 
+    // TODO: Terminate all meshes
+
     // Terminate all images and image views
     for (int i = 0; i < rndr->textures.slots.size; ++i) {
         vkr_terminate_image(&rndr->textures.slots[i].item.im, &rndr->vk);
         vkr_terminate_image_view(rndr->textures.slots[i].item.im_view, &rndr->vk);
-        clear_slot_pool(&rndr->textures);
     }
+    clear_slot_pool(&rndr->textures);
 
     // Terminate all texture samplers
     for (int i = 0; i < rndr->samplers.size; ++i) {

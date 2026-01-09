@@ -178,8 +178,9 @@ struct rmesh_info
     // Mem for pos buf that will need to be released in pos/buf
     VmaVirtualAllocation vert_mem{VK_NULL_HANDLE};
 
-    // This is the stream that was used for the virtual block allocations
-    u8 rvert_stream_ind;
+    // This is the block that was used for the vert virtual block allocations (either static or skinned mesh pos/col
+    // stream block)
+    VmaVirtualBlock vert_block;
     
     // This is determined by taking the byte offset / sizeof(stream element)
     u32 vert_offset;
@@ -241,14 +242,12 @@ struct frame_context
     VkSemaphore image_avail;
 };
 
-struct virtual_block_info {
-    vkr_buffer data{};
-    VmaVirtualBlock block_info{VK_NULL_HANDLE};
-};
-
 struct geometry_buffer_info {
-    virtual_block_info vert_streams[RVERT_STREAM_COUNT];
-    virtual_block_info ind_buffer;
+    VmaVirtualBlock static_mesh_block{VK_NULL_HANDLE};
+    VmaVirtualBlock skinned_mesh_block{VK_NULL_HANDLE};
+    VmaVirtualBlock indices_block{VK_NULL_HANDLE};
+    vkr_buffer vert_buffers[RVERT_STREAM_COUNT];
+    vkr_buffer ind_buffer;
 };
 
 struct rview {
@@ -322,7 +321,7 @@ struct renderer
 // rmaterial_handle register_material(rtechnique_handle technique, static_array<rtexture_handle, )
 // rtexture_handle register_texture(const texture *tex, renderer *rndr);
 
-rmesh_handle register_mesh(const rmesh &mdata, const char *name, renderer *rndr);
+rmesh_handle create_mesh(const rmesh &mdata, const char *name, renderer *rndr);
 
 // NOTE: All of these mesh operations kind of need to wait on all rendering operations to complete as they modify the
 // vertex and index buffers - not sure yet if this is better done within the functions or in the caller. Also these should be done at the

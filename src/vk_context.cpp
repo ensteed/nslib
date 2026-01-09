@@ -511,8 +511,6 @@ int vkr_init_device(vkr_device *dev,
                     const char *const *device_extensions,
                     u32 dev_ext_count)
 {
-    arr_init(&dev->buffers, vk->cfg.arenas.persistent_arena);
-
     ilog("Creating vk device and queues");
     const vkr_queue_families *qfams = &vk->inst.pdev_info.qfams;
 
@@ -1855,12 +1853,6 @@ void vkr_terminate_device(vkr_device *dev, const vkr_context *vk)
 {
     ilog("Terminating vkr device");
     vkr_terminate_swapchain(&dev->swapchain, vk);
-
-    for (int i = 0; i < dev->buffers.size; ++i) {
-        vkr_terminate_buffer(&dev->buffers[i], vk);
-    }
-
-    arr_terminate(&dev->buffers);
 
     for (sizet qfam_i = 0; qfam_i < VKR_QUEUE_FAM_TYPE_COUNT; ++qfam_i) {
         auto cur_fam = &dev->qfams[qfam_i];

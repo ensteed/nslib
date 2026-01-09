@@ -444,7 +444,6 @@ struct vkr_device
 {
     VkDevice hndl{VK_NULL_HANDLE};
     vkr_device_queue_fam_info qfams[VKR_QUEUE_FAM_TYPE_COUNT];
-    array<vkr_buffer> buffers;
     vkr_swapchain swapchain;
     vkr_gpu_allocator vma_alloc;
 };
