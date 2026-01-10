@@ -143,7 +143,7 @@ intern void init_mem_arenas(const platform_memory_init_info *info, platform_memo
     mem_init_stack_arena(&mem->stack, info->stack_size, nullptr, "global");
     mem_init_lin_arena(&mem->frame_linear, info->frame_linear_size, nullptr, "global");
     // 213 KB is about the min needed for SDL - we'll give it 500 to be safe
-    mem_init_fl_arena(&mem->sdl_fl, 500*KB_SIZE, &mem->free_list, "sdl");
+    mem_init_fl_arena(&mem->sdl_fl, 500 * KB_SIZE, &mem->free_list, "sdl");
 
     // Then these become our global mem arenas
     mem_set_global_arena(&mem->free_list);
@@ -383,32 +383,41 @@ int init_platform(const platform_init_info *settings, platform_ctxt *ctxt)
 {
     set_logging_level(GLOBAL_LOGGER, settings->default_log_level);
     init_mem_arenas(&settings->mem, &ctxt->arenas);
-    
-    ilog("Platform init version %d.%d.%d", NSLIB_VERSION_MAJOR, NSLIB_VERSION_MINOR, NSLIB_VERSION_PATCH);
-    SDL_SetMemoryFunctions(sdl_malloc, sdl_calloc, sdl_realloc, sdl_free);
-    SDL_SetLogOutputFunction(sdl_log_callback, nullptr);
-    SDL_SetAppMetadata("Rdev", "1.0.0", "rdev");
-    if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO)) {
-        elog("Could not initialize SDL");
-        return err_code::PLATFORM_INIT_FAIL;
-    }
-    ilog("Initialized SDL");
 
-    ctxt->win_hndl = create_window(&settings->wind, &ctxt->display_scale);
-    if (!ctxt->win_hndl) {
-        log_any_sdl_error("Failed to create window");
-        return err_code::PLATFORM_INIT_FAIL;
-    }
-    auto props = SDL_GetWindowProperties((SDL_Window *)ctxt->win_hndl);
-    if (props == 0) {
-        log_any_sdl_error("Failed to get window props");
-    }
-    else {
-        if (!SDL_SetPointerProperty(props, "platform", ctxt)) {
-            log_any_sdl_error("Failed to set platform ptr in window props");
+    ctxt->init_flags = settings->flags;
+    bool init_audio = test_flags(settings->flags, PLATFORM_INIT_FLAG_AUDIO);
+    bool init_window = test_flags(settings->flags, PLATFORM_INIT_FLAG_WINDOW);
+    ilog("Platform init version %d.%d.%d", NSLIB_VERSION_MAJOR, NSLIB_VERSION_MINOR, NSLIB_VERSION_PATCH);
+
+    if (init_window || init_audio) {
+        SDL_SetMemoryFunctions(sdl_malloc, sdl_calloc, sdl_realloc, sdl_free);
+        SDL_SetLogOutputFunction(sdl_log_callback, nullptr);
+        SDL_SetAppMetadata("Rdev", "1.0.0", "rdev");
+        int sdl_init_flag = (init_audio ? SDL_INIT_AUDIO : 0) | (init_window ? SDL_INIT_VIDEO : 0);
+        if (!SDL_Init(sdl_init_flag)) {
+            elog("Could not initialize SDL");
+            return err_code::PLATFORM_INIT_FAIL;
+        }
+        ilog("Initialized SDL");
+
+        if (init_window) {
+            ctxt->win_hndl = create_window(&settings->wind, &ctxt->display_scale);
+            if (!ctxt->win_hndl) {
+                log_any_sdl_error("Failed to create window");
+                return err_code::PLATFORM_INIT_FAIL;
+            }
+            auto props = SDL_GetWindowProperties((SDL_Window *)ctxt->win_hndl);
+            if (props == 0) {
+                log_any_sdl_error("Failed to get window props");
+            }
+            else {
+                if (!SDL_SetPointerProperty(props, "platform", ctxt)) {
+                    log_any_sdl_error("Failed to set platform ptr in window props");
+                }
+            }
+            SDL_SetWindowPosition((SDL_Window *)ctxt->win_hndl, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         }
     }
-    SDL_SetWindowPosition((SDL_Window *)ctxt->win_hndl, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
     // Seed random number generator
     srand((u32)time(NULL));
@@ -420,10 +429,17 @@ int init_platform(const platform_init_info *settings, platform_ctxt *ctxt)
 int terminate_platform(platform_ctxt *ctxt)
 {
     ilog("Platform terminate");
-    SDL_DestroyWindow((SDL_Window *)ctxt->win_hndl);
-    SDL_QuitSubSystem(SDL_INIT_AUDIO | SDL_INIT_VIDEO);
-    SDL_Quit();
-    ilog("Terminated SDL");
+    bool init_audio = test_flags(ctxt->init_flags, PLATFORM_INIT_FLAG_AUDIO);
+    bool init_window = test_flags(ctxt->init_flags, PLATFORM_INIT_FLAG_WINDOW);
+    if (init_window || init_audio) {
+        if (ctxt->win_hndl) {
+            SDL_DestroyWindow((SDL_Window *)ctxt->win_hndl);
+        }
+        int sdl_init_flag = (init_audio ? SDL_INIT_AUDIO : 0) | (init_window ? SDL_INIT_VIDEO : 0);
+        SDL_QuitSubSystem(sdl_init_flag);
+        SDL_Quit();
+        ilog("Terminated SDL");
+    }
     terminate_mem_arenas(&ctxt->arenas);
     return err_code::PLATFORM_NO_ERROR;
 }
@@ -642,7 +658,9 @@ bool window_resized_this_frame(void *win_hndl)
 void start_platform_frame(platform_ctxt *ctxt)
 {
     ptimer_split(&ctxt->time_pts);
-    process_platform_events(ctxt);
+    if (ctxt->win_hndl) {
+        process_platform_events(ctxt);
+    }
     mem_reset_arena(&ctxt->arenas.frame_linear);
 }
 

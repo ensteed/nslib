@@ -303,6 +303,7 @@ struct platform_memory
 
 struct platform_ctxt
 {
+    u32 init_flags;
     void *win_hndl{};
     f32 display_scale{};
 
@@ -345,10 +346,16 @@ struct platform_user_hooks
     platform_user_hook *terminate;
 };
 
+enum platform_init_flag {
+    PLATFORM_INIT_FLAG_AUDIO,
+    PLATFORM_INIT_FLAG_WINDOW
+};
+
 struct platform_init_info
 {
     int argc;
     char **argv;
+    u32 flags;
     platform_user_hooks user_hooks;
     platform_window_init_info wind;
     platform_memory_init_info mem;

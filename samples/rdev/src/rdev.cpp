@@ -271,6 +271,7 @@ int terminate(platform_ctxt *ctxt, void *user_data)
 
 int configure_platform(platform_init_info *settings, app_data *app)
 {
+    settings->flags = PLATFORM_INIT_FLAG_AUDIO | PLATFORM_INIT_FLAG_WINDOW;
     settings->wind.resolution = {1000, 800};
     settings->wind.title = "RDev";
     settings->wind.win_flags = WINDOW_RESIZABLE | WINDOW_INPUT_FOCUS | WINDOW_VULKAN | WINDOW_SHOWN | WINDOW_ALLOW_HIGHDPI;
@@ -279,7 +280,6 @@ int configure_platform(platform_init_info *settings, app_data *app)
     settings->user_hooks.run_frame = run_frame;
     settings->user_hooks.terminate = terminate;
     settings->mem.free_list_size = 4 * 1024 * MB_SIZE;
-
     return err_code::PLATFORM_NO_ERROR;
 }
 
