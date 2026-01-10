@@ -71,12 +71,6 @@ string to_str(const custom_type_2 &item)
     return ret;
 }
 
-u64 hash_u32_same(const u32 &item, u64, u64)
-{
-    (void)item;
-    return 1u;
-}
-
 template<typename Key, typename Val>
 sizet hmap_count_items(const hmap<Key, Val> *hm)
 {
@@ -113,16 +107,8 @@ void test_hmap_basic_api()
     asrt(hmap_load_factor(&hm, 0) == 0.0f);
     asrt(hmap_current_load_factor(&hm, 0) == 0.0f);
 
-    hm.load_factor = 0.1f;
-    asrt(hmap_should_rehash_on_insert(&hm));
-    hm.load_factor = 1.25f;
-    asrt(!hmap_should_rehash_on_insert(&hm));
-    hm.load_factor = HMAP_DEFAULT_LOAD_FACTOR;
-
-    asrt(hmap_find_bucket(&hm, (u32)1) == INVALID_IND);
-
     for (u32 i = 0; i < 6; ++i) {
-        auto ins = hmap_insert(&hm, i, (s32)(i * 10));
+        auto ins = hmap_insert(&hm, (u32)i, (s32)(i * 10));
         asrt(ins);
     }
 
@@ -137,14 +123,10 @@ void test_hmap_basic_api()
         u32 head_key = head_item->key;
         sizet count_before = hmap_count_items(&hm);
         auto head_next = hmap_erase(&hm, head_item);
-        asrt(!hmap_find(&hm, head_key));
+        asrt(!hmap_find(&hm, (u32)head_key));
         asrt(hmap_count_items(&hm) + 1 == count_before);
         asrt(head_next);
     }
-
-    sizet bckt_ind = hmap_find_bucket(&hm, (u32)3);
-    asrt(is_valid(bckt_ind));
-    asrt(hmap_find_bucket(&hm, (u32)99) == INVALID_IND);
 
     auto dup = hmap_insert(&hm, (u32)3, (s32)300);
     asrt(!dup);
@@ -199,38 +181,9 @@ void test_hmap_basic_api()
     asrt(hmap_find(&hm, (u32)3));
     asrt(hmap_find(&hm, (u32)100));
 
-    hmap_print_internal(hm.buckets);
-
     hmap_clear(&hm);
     asrt(hmap_empty(&hm));
     asrt(hmap_begin(&hm) == nullptr);
-
-    hmap_terminate(&hm);
-}
-
-void test_hmap_bucket_ops()
-{
-    ilog("Starting hashmap bucket test");
-
-    hmap<u32, s32> hm{};
-    hmap_init(&hm, hash_u32_same, mem_global_arena(), 8);
-
-    hmap_insert(&hm, (u32)1, 10);
-    hmap_insert(&hm, (u32)2, 20);
-    hmap_insert(&hm, (u32)3, 30);
-
-    sizet bckt_3 = hmap_find_bucket(&hm, (u32)3);
-    asrt(is_valid(bckt_3));
-    hmap_clear_bucket(&hm, bckt_3);
-    asrt(!hmap_find(&hm, (u32)3));
-    asrt(hmap_find(&hm, (u32)1));
-    asrt(hmap_find(&hm, (u32)2));
-
-    sizet bckt_1 = hmap_find_bucket(&hm, (u32)1);
-    asrt(is_valid(bckt_1));
-    hmap_remove_bucket(&hm, bckt_1);
-    asrt(!hmap_find(&hm, (u32)1));
-    asrt(hmap_find(&hm, (u32)2));
 
     hmap_terminate(&hm);
 }
@@ -411,9 +364,6 @@ void test_hashsets()
         ilog("item: %s", to_cstr(iter->val));
         iter = hset_prev(&hs1, iter);
     }
-    ilog("Buckets...");
-    hset_print_internal(hs1.buckets);
-
     auto fnd = hset_find(&hs1, 'a');
     ilog("Found value %c", fnd->val);
     fnd = hset_find(&hs1, 'e');
@@ -457,9 +407,6 @@ void test_hashsets()
         ilog("item: %s", to_cstr(iter->val));
         iter = hset_prev(&hs1, iter);
     }
-    ilog("Buckets...");
-    hset_print_internal(hs1.buckets);
-
     auto ins = hset_insert(&hs1, 'a');
     ilog("Inserted a ptr: %p", ins);
 
@@ -497,9 +444,6 @@ void test_hashsets()
         ilog("item: %s", to_cstr(iter->val));
         iter = hset_prev(&hs1, iter);
     }
-
-    ilog("Buckets...");
-    hset_print_internal(hs1.buckets);
 
     hset_terminate(&hs1);
 }
@@ -549,9 +493,6 @@ void test_hashmaps()
         ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
-    ilog("Buckets...");
-    hmap_print_internal(hm1.buckets);
-
     auto fnd = hmap_find(&hm1, 'a');
     ilog("Found value %s for key %s", to_cstr(fnd->val));
     fnd = hmap_find(&hm1, 'e');
@@ -595,9 +536,6 @@ void test_hashmaps()
         ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
-    ilog("Buckets...");
-    hmap_print_internal(hm1.buckets);
-
     auto ins = hmap_insert(&hm1, 'a', string("a"));
     ilog("Inserted a ptr: %p", ins);
 
@@ -636,9 +574,6 @@ void test_hashmaps()
         iter = hmap_prev(&hm1, iter);
     }
 
-    ilog("Buckets...");
-    hmap_print_internal(hm1.buckets);
-
     hmap_terminate(&hm1);
 }
 
@@ -674,9 +609,6 @@ void test_hashmaps_string_keys()
         iter = hmap_prev(&hm1, iter);
     }
 
-    ilog("Buckets...");
-    hmap_print_internal(hm1.buckets);
-
     ilog("Removing 4 entries");
     hmap_remove(&hm1, make_rid("do-the-dance"));
     hmap_remove(&hm1, make_rid("booty_cake"));
@@ -696,9 +628,6 @@ void test_hashmaps_string_keys()
         ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
-
-    ilog("Buckets...");
-    hmap_print_internal(hm1.buckets);
 
     ilog("Inserting 5 more strange strings");
     hmap_insert(&hm1, make_rid("another"), string("another-data"));
@@ -721,12 +650,54 @@ void test_hashmaps_string_keys()
         iter = hmap_prev(&hm1, iter);
     }
 
-    ilog("Buckets...");
-    hmap_print_internal(hm1.buckets);
     hmap_terminate(&hm1);
 }
 
-void test_hashset_string_keys()
+void test_hset_basic_api()
+{
+    ilog("Starting hashset api test");
+
+    hset<u32> hs{};
+    hset_init(&hs, mem_global_arena(), hash_type, 8);
+
+    asrt(hset_empty(&hs));
+    asrt(hset_begin(&hs) == nullptr);
+    asrt(hset_rbegin(&hs) == nullptr);
+
+    for (u32 i = 0; i < 6; ++i) {
+        auto ins = hset_insert(&hs, (u32)i);
+        asrt(ins);
+    }
+
+    asrt(!hset_empty(&hs));
+    auto fnd = hset_find(&hs, (u32)2);
+    asrt(fnd);
+    asrt(!hset_find(&hs, (u32)99));
+
+    auto head_item = hset_begin(&hs);
+    asrt(head_item);
+    if (head_item) {
+        u32 head_val = head_item->val;
+        auto head_next = hset_erase(&hs, head_item);
+        asrt(!hset_find(&hs, (u32)head_val));
+        asrt(head_next);
+    }
+
+    auto dup = hset_insert(&hs, (u32)3);
+    asrt(!dup);
+
+    bool removed = hset_remove(&hs, (u32)4);
+    asrt(removed);
+    asrt(!hset_remove(&hs, (u32)444));
+
+    hset_clear(&hs);
+    asrt(hset_empty(&hs));
+    asrt(hset_begin(&hs) == nullptr);
+
+    hset_terminate(&hs);
+}
+
+void test_hset_string_keys()
 {
     ilog("Starting new hashset string test");
 
@@ -747,19 +718,16 @@ void test_hashset_string_keys()
     ilog("Forward...");
     auto iter = hset_begin(&hs1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->val));
+        ilog("item: %s", to_cstr(iter->val));
         iter = hset_next(&hs1, iter);
     }
 
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->val));
+        ilog("item: %s", to_cstr(iter->val));
         iter = hset_prev(&hs1, iter);
     }
-
-    ilog("Buckets...");
-    hset_print_internal(hs1.buckets);
 
     ilog("Removing 4 strings");
     hset_remove(&hs1, make_rid("do-the-dance"));
@@ -770,19 +738,16 @@ void test_hashset_string_keys()
     ilog("Forward...");
     iter = hset_begin(&hs1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->val));
+        ilog("item: %s", to_cstr(iter->val));
         iter = hset_next(&hs1, iter);
     }
 
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->val));
+        ilog("item: %s", to_cstr(iter->val));
         iter = hset_prev(&hs1, iter);
     }
-
-    ilog("Buckets...");
-    hset_print_internal(hs1.buckets);
 
     ilog("Inserting 5 more strange strings");
     hset_insert(&hs1, make_rid("another"));
@@ -794,19 +759,17 @@ void test_hashset_string_keys()
     ilog("Forward...");
     iter = hset_begin(&hs1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->val));
+        ilog("item: %s", to_cstr(iter->val));
         iter = hset_next(&hs1, iter);
     }
 
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->val));
+        ilog("item: %s", to_cstr(iter->val));
         iter = hset_prev(&hs1, iter);
     }
 
-    ilog("Buckets...");
-    hset_print_internal(hs1.buckets);
     hset_terminate(&hs1);
 }
 
@@ -816,20 +779,18 @@ int app_init(platform_ctxt *ctxt, void *)
     test_strings();
     test_arrays();
     test_hmap_basic_api();
-    test_hmap_bucket_ops();
     test_hmap_copy_and_set();
     test_hmap_pack_unpack();
     test_hashmaps();
     test_hashmaps_string_keys();
+    test_hset_basic_api();
     test_hashsets();
-    test_hashset_string_keys();
+    test_hset_string_keys();
     return err_code::PLATFORM_NO_ERROR;
 }
 
 int configure_platform(platform_init_info *config, app_data *app)
 {
-    config->wind.resolution = {1920, 1080};
-    config->wind.title = "Containers";
     config->user_hooks.init = app_init;
     return err_code::PLATFORM_NO_ERROR;
 }

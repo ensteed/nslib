@@ -457,7 +457,7 @@ void pack_unpack(json_archive *ar, hset<T> &val, const pack_var_info &vinfo)
         for (int i = 0; i < count; ++i) {
             T item;
             pup_var(ar, item, {});
-            hset_set(&val, item);
+            hset_insert(&val, item);
             ++ar->stack[frame_ind].cur_arr_ind;
         }
     }
