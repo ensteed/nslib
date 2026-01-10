@@ -412,7 +412,7 @@ void test_hashsets()
         iter = hset_prev(&hs1, iter);
     }
     ilog("Buckets...");
-    hset_debug_print(hs1.buckets);
+    hset_print_internal(hs1.buckets);
 
     auto fnd = hset_find(&hs1, 'a');
     ilog("Found value %c", fnd->val);
@@ -458,7 +458,7 @@ void test_hashsets()
         iter = hset_prev(&hs1, iter);
     }
     ilog("Buckets...");
-    hset_debug_print(hs1.buckets);
+    hset_print_internal(hs1.buckets);
 
     auto ins = hset_insert(&hs1, 'a');
     ilog("Inserted a ptr: %p", ins);
@@ -499,7 +499,7 @@ void test_hashsets()
     }
 
     ilog("Buckets...");
-    hset_debug_print(hs1.buckets);
+    hset_print_internal(hs1.buckets);
 
     hset_terminate(&hs1);
 }
@@ -759,7 +759,7 @@ void test_hashset_string_keys()
     }
 
     ilog("Buckets...");
-    hset_debug_print(hs1.buckets);
+    hset_print_internal(hs1.buckets);
 
     ilog("Removing 4 strings");
     hset_remove(&hs1, make_rid("do-the-dance"));
@@ -782,7 +782,7 @@ void test_hashset_string_keys()
     }
 
     ilog("Buckets...");
-    hset_debug_print(hs1.buckets);
+    hset_print_internal(hs1.buckets);
 
     ilog("Inserting 5 more strange strings");
     hset_insert(&hs1, make_rid("another"));
@@ -806,7 +806,7 @@ void test_hashset_string_keys()
     }
 
     ilog("Buckets...");
-    hset_debug_print(hs1.buckets);
+    hset_print_internal(hs1.buckets);
     hset_terminate(&hs1);
 }
 

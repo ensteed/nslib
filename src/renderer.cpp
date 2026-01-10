@@ -1110,9 +1110,11 @@ int begin_render_frame(renderer *rndr, int finished_frames)
     mem_reset_arena(&rndr->frame_linear);
     mem_reset_arena(&rndr->frame_stack);
 
-    // Finalize IM GUI data - not dependent on our render stuff currently
-    ImGui::Render();
-
+    // Start GUI frame
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+    
     // Update finished frames which is used to get the current frame
     rndr->finished_frames = finished_frames;
     int current_frame_ind = rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
@@ -1180,6 +1182,9 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
             cam->proj = (math::perspective(cam->fov, (f32)cam->vp_size.w / (f32)cam->vp_size.h, cam->near_far.x, cam->near_far.y));
         }
     }
+
+    // Finalize IM GUI data - not dependent on our render stuff currently
+    ImGui::Render();
 
     // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and

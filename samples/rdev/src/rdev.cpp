@@ -228,10 +228,10 @@ int run_frame(platform_ctxt *ctxt, void *user_data)
     ptimer_split(&pt);
     update_tm += pt.dt;
 
+    int res = begin_render_frame(&app->rndr, ctxt->finished_frames);
+
     // Gather visible items and do stuff
     ImGui::ShowDebugLogWindow();
-
-    int res = begin_render_frame(&app->rndr, ctxt->finished_frames);
 
     res = end_render_frame(&app->rndr, cam, ctxt->time_pts.dt);
 

@@ -644,10 +644,6 @@ void start_platform_frame(platform_ctxt *ctxt)
     ptimer_split(&ctxt->time_pts);
     process_platform_events(ctxt);
     mem_reset_arena(&ctxt->arenas.frame_linear);
-
-    ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
 }
 
 void end_platform_frame(platform_ctxt *ctxt)
