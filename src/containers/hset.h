@@ -55,7 +55,7 @@ struct hset
 };
 
 template<typename Val>
-void hset_debug_print(const array<hset_bucket<Val>> &buckets)
+void hset_print_internal(const array<hset_bucket<Val>> &buckets)
 {
     for (sizet i = 0; i < buckets.size; ++i) {
         auto b = &buckets[i];
@@ -89,14 +89,16 @@ void hset_init(hset<Val> *hs,
 template<typename Val>
 void hset_rehash(hset<Val> *hs, sizet new_size)
 {
+    // Make tmp copy of buckets and head index, then clear the hashmap, then resize the buckets to the new size
     auto tmp = hs->buckets;
     sizet ind = hs->head;
-    hset_clear(hs);
+    hmap_clear(hs);
     arr_resize(&hs->buckets, new_size);
-    do {
-        hset_insert(hs, tmp[ind].item.val);
+    // And finally insert all of the items in the tmp copy in to the new bucket array
+    while (is_valid(ind)) {
+        hmap_insert(hs, tmp[ind].item.key, tmp[ind].item.val);
         ind = tmp[ind].item.next;
-    } while (is_valid(ind));
+    }
 }
 
 template<typename Val>
@@ -132,17 +134,20 @@ sizet hset_find_bucket(const hset<Val> *hs, const Val &v)
     sizet bckt_ind = hashval % hs->buckets.size;
     sizet cur_bckt_ind = bckt_ind;
     sizet i = 0;
+
     // Find the correct bucket first - hashed_v mod bucket count should give us bckt_ind if a match
-    while (cur_bckt_ind >= bckt_ind && is_valid(hs->buckets[cur_bckt_ind].prev) &&
+    while (i < hs->buckets.size && is_valid(hs->buckets[cur_bckt_ind].prev) &&
            (bckt_ind != (hs->buckets[cur_bckt_ind].hashed_v % hs->buckets.size))) {
-        cur_bckt_ind = (hashval + ++i) % hs->buckets.size;
+        ++i;
+        cur_bckt_ind = (hashval + i) % hs->buckets.size;
     }
 
     // If we found a matching bucket
-    if (cur_bckt_ind != hs->buckets.size && is_valid(hs->buckets[cur_bckt_ind].prev)) {
+    if (i < hs->buckets.size && is_valid(hs->buckets[cur_bckt_ind].prev) &&
+        (bckt_ind == (hs->buckets[cur_bckt_ind].hashed_v % hs->buckets.size))) {
         // Follow the bucket linked list to check for matches on any of the items in the bucket
         while (is_valid(cur_bckt_ind)) {
-            if ((hashval != hs->buckets[cur_bckt_ind].hashed_v || v != hs->buckets[cur_bckt_ind].item.val)) {
+            if ((hashval != hs->buckets[cur_bckt_ind].hashed_v || k != hs->buckets[cur_bckt_ind].item.key)) {
                 cur_bckt_ind = hs->buckets[cur_bckt_ind].next;
             }
             else {

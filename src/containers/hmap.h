@@ -142,14 +142,17 @@ sizet hmap_find_bucket(const hmap<Key, Val> *hm, const Key &k)
     sizet bckt_ind = hashval % hm->buckets.size;
     sizet cur_bckt_ind = bckt_ind;
     sizet i = 0;
+    
     // Find the correct bucket first - hashed_v mod bucket count should give us bckt_ind if a match
-    while (cur_bckt_ind >= bckt_ind && is_valid(hm->buckets[cur_bckt_ind].prev) &&
+    while (i < hm->buckets.size && is_valid(hm->buckets[cur_bckt_ind].prev) &&
            (bckt_ind != (hm->buckets[cur_bckt_ind].hashed_v % hm->buckets.size))) {
-        cur_bckt_ind = (hashval + ++i) % hm->buckets.size;
+        ++i;
+        cur_bckt_ind = (hashval + i) % hm->buckets.size;
     }
 
     // If we found a matching bucket
-    if (cur_bckt_ind != hm->buckets.size && is_valid(hm->buckets[cur_bckt_ind].prev)) {
+    if (i < hm->buckets.size && is_valid(hm->buckets[cur_bckt_ind].prev) &&
+        (bckt_ind == (hm->buckets[cur_bckt_ind].hashed_v % hm->buckets.size))) {
         // Follow the bucket linked list to check for matches on any of the items in the bucket
         while (is_valid(cur_bckt_ind)) {
             if ((hashval != hm->buckets[cur_bckt_ind].hashed_v || k != hm->buckets[cur_bckt_ind].item.key)) {
@@ -272,21 +275,31 @@ void hmap_remove_bucket(hmap<Key, Val> *hm, sizet bckt_ind)
     if (!is_valid(hm->buckets[bckt_ind].prev)) {
         return;
     }
-    sizet next_bckt = bckt_ind;
+    bool was_last = (hm->count == 1);
+    sizet hole_ind = bckt_ind;
+    sizet bckt_cnt = hm->buckets.size;
     hmap_clear_bucket(hm, bckt_ind);
-    while (1) {
-        next_bckt = (next_bckt + 1) % hm->buckets.size;
-        if (next_bckt < bckt_ind || !is_valid(hm->buckets[next_bckt].prev)) {
+    sizet next_bckt = (hole_ind + 1) % bckt_cnt;
+    while (next_bckt != hole_ind) {
+        if (!is_valid(hm->buckets[next_bckt].prev)) {
             break;
         }
-        sizet target_bckt = hm->buckets[next_bckt].hashed_v % hm->buckets.size;
-        if (next_bckt > bckt_ind && (target_bckt <= bckt_ind || target_bckt > next_bckt)) {
-            hmap_copy_bucket(hm, bckt_ind, next_bckt);
-            bckt_ind = next_bckt;
+        // Compare circular distance from the bucket's ideal slot to its current location
+        // versus the open hole; if the hole is closer, this entry must slide back.
+        sizet target_bckt = hm->buckets[next_bckt].hashed_v % bckt_cnt;
+        sizet dist_to_next = (next_bckt + bckt_cnt - target_bckt) % bckt_cnt;
+        sizet dist_to_hole = (hole_ind + bckt_cnt - target_bckt) % bckt_cnt;
+        if (dist_to_hole < dist_to_next) {
+            hmap_copy_bucket(hm, hole_ind, next_bckt);
+            hole_ind = next_bckt;
         }
+        next_bckt = (next_bckt + 1) % bckt_cnt;
     }
-    hm->buckets[bckt_ind] = {};
+    hm->buckets[hole_ind] = {};
     --hm->count;
+    if (was_last) {
+        hm->head = INVALID_IND;
+    }
 }
 
 template<typename Key, typename Val>
