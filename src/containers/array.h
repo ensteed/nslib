@@ -167,7 +167,9 @@ template<typename T>
 void arr_copy(array<T> *dest, const T *src, sizet src_size)
 {
     arr_resize(dest, src_size);
-    memcpy(dest->data, src, src_size*sizeof(T));
+    for (sizet i = 0; i < dest->size; ++i) {
+        (*dest)[i] = src[i];
+    }
 }
 
 template<typename T>
@@ -175,8 +177,9 @@ void arr_append(array<T> *arr, const T *src, sizet src_size)
 {
     sizet offset = arr->size;
     arr_resize(arr, offset + src_size);
-    // Pointer arithmetic happens before converting pointer to void*
-    memcpy(arr->data+offset, src, src_size*sizeof(T));
+    for (sizet i = offset; i < arr->size; ++i) {
+        (*arr)[i] = src[i];
+    }
 }
 
 template<typename T>

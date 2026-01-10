@@ -5,6 +5,7 @@
 #include "containers/string.h"
 #include "containers/hmap.h"
 #include "containers/hset.h"
+#include "binary_archive.h"
 
 using namespace nslib;
 
@@ -68,6 +69,234 @@ string to_str(const custom_type_2 &item)
     string ret;
     str_printf(&ret, "val1:%d val2:%d", item.val1, item.val2);
     return ret;
+}
+
+u64 hash_u32_same(const u32 &item, u64, u64)
+{
+    (void)item;
+    return 1u;
+}
+
+template<typename Key, typename Val>
+sizet hmap_count_items(const hmap<Key, Val> *hm)
+{
+    sizet count{};
+    auto iter = hmap_begin(hm);
+    while (iter) {
+        ++count;
+        iter = hmap_next(hm, iter);
+    }
+    return count;
+}
+
+template<typename Key, typename Val>
+void hmap_expect_value(const hmap<Key, Val> *hm, const Key &key, const Val &val)
+{
+    auto iter = hmap_find(hm, key);
+    asrt(iter);
+    if (iter) {
+        asrt(iter->val == val);
+    }
+}
+
+void test_hmap_basic_api()
+{
+    ilog("Starting hashmap api test");
+
+    hmap<u32, s32> hm{};
+    hmap_init(&hm, hash_type, mem_global_arena(), 8);
+
+    asrt(hmap_empty(&hm));
+    asrt(hmap_begin(&hm) == nullptr);
+    asrt(hmap_rbegin(&hm) == nullptr);
+
+    asrt(hmap_load_factor(&hm, 0) == 0.0f);
+    asrt(hmap_current_load_factor(&hm, 0) == 0.0f);
+
+    hm.load_factor = 0.1f;
+    asrt(hmap_should_rehash_on_insert(&hm));
+    hm.load_factor = 1.25f;
+    asrt(!hmap_should_rehash_on_insert(&hm));
+    hm.load_factor = HMAP_DEFAULT_LOAD_FACTOR;
+
+    asrt(hmap_find_bucket(&hm, (u32)1) == INVALID_IND);
+
+    for (u32 i = 0; i < 6; ++i) {
+        auto ins = hmap_insert(&hm, i, (s32)(i * 10));
+        asrt(ins);
+    }
+
+    asrt(!hmap_empty(&hm));
+    asrt(hmap_count_items(&hm) == 6);
+    hmap_expect_value(&hm, (u32)2, (s32)20);
+    asrt(!hmap_find(&hm, (u32)99));
+
+    auto head_item = hmap_begin(&hm);
+    asrt(head_item);
+    if (head_item) {
+        u32 head_key = head_item->key;
+        sizet count_before = hmap_count_items(&hm);
+        auto head_next = hmap_erase(&hm, head_item);
+        asrt(!hmap_find(&hm, head_key));
+        asrt(hmap_count_items(&hm) + 1 == count_before);
+        asrt(head_next);
+    }
+
+    sizet bckt_ind = hmap_find_bucket(&hm, (u32)3);
+    asrt(is_valid(bckt_ind));
+    asrt(hmap_find_bucket(&hm, (u32)99) == INVALID_IND);
+
+    auto dup = hmap_insert(&hm, (u32)3, (s32)300);
+    asrt(!dup);
+
+    auto direct_insert = hmap_insert_or_set(&hm, (u32)200, (s32)2000, false);
+    asrt(direct_insert);
+
+    auto direct_set = hmap_insert_or_set(&hm, (u32)200, (s32)2001, true);
+    asrt(direct_set);
+    if (direct_set) {
+        asrt(direct_set->val == 2001);
+    }
+
+    hmap_set(&hm, (u32)3, (s32)333);
+    hmap_expect_value(&hm, (u32)3, (s32)333);
+
+    auto ins_or = hmap_find_or_insert(&hm, (u32)100);
+    asrt(ins_or);
+    if (ins_or) {
+        asrt(ins_or->val == 0);
+        ins_or->val = 1000;
+    }
+
+    const hmap<u32, s32> *hm_const = &hm;
+    auto citer = hmap_begin(hm_const);
+    asrt(citer);
+    if (citer) {
+        asrt(hmap_prev(hm_const, citer) == nullptr);
+        auto cnext = hmap_next(hm_const, citer);
+        if (cnext) {
+            asrt(hmap_prev(hm_const, cnext) == citer);
+        }
+    }
+
+    auto erase_item = hmap_find(&hm, (u32)2);
+    asrt(erase_item);
+    auto erase_next = hmap_erase(&hm, erase_item);
+    asrt(!hmap_find(&hm, (u32)2));
+    if (erase_next) {
+        asrt(erase_next->key != 2);
+    }
+
+    s32 removed_val{};
+    bool removed = hmap_remove(&hm, (u32)4, &removed_val);
+    asrt(removed);
+    asrt(removed_val == 40);
+    asrt(!hmap_remove(&hm, (u32)444));
+
+    sizet before_rehash = hmap_count_items(&hm);
+    hmap_rehash(&hm, 32);
+    asrt(hmap_count_items(&hm) == before_rehash);
+    asrt(hmap_find(&hm, (u32)3));
+    asrt(hmap_find(&hm, (u32)100));
+
+    hmap_print_internal(hm.buckets);
+
+    hmap_clear(&hm);
+    asrt(hmap_empty(&hm));
+    asrt(hmap_begin(&hm) == nullptr);
+
+    hmap_terminate(&hm);
+}
+
+void test_hmap_bucket_ops()
+{
+    ilog("Starting hashmap bucket test");
+
+    hmap<u32, s32> hm{};
+    hmap_init(&hm, hash_u32_same, mem_global_arena(), 8);
+
+    hmap_insert(&hm, (u32)1, 10);
+    hmap_insert(&hm, (u32)2, 20);
+    hmap_insert(&hm, (u32)3, 30);
+
+    sizet bckt_3 = hmap_find_bucket(&hm, (u32)3);
+    asrt(is_valid(bckt_3));
+    hmap_clear_bucket(&hm, bckt_3);
+    asrt(!hmap_find(&hm, (u32)3));
+    asrt(hmap_find(&hm, (u32)1));
+    asrt(hmap_find(&hm, (u32)2));
+
+    sizet bckt_1 = hmap_find_bucket(&hm, (u32)1);
+    asrt(is_valid(bckt_1));
+    hmap_remove_bucket(&hm, bckt_1);
+    asrt(!hmap_find(&hm, (u32)1));
+    asrt(hmap_find(&hm, (u32)2));
+
+    hmap_terminate(&hm);
+}
+
+void test_hmap_copy_and_set()
+{
+    ilog("Starting hashmap copy and set test");
+
+    hmap<u32, s32> hm_src{};
+    hmap<u32, s32> hm_dest{};
+    hmap_init(&hm_src, hash_type, mem_global_arena(), 8);
+    hmap_init(&hm_dest, hash_type, mem_global_arena(), 8);
+
+    hmap_insert(&hm_src, (u32)1, 10);
+    hmap_insert(&hm_src, (u32)2, 20);
+    hmap_insert(&hm_src, (u32)3, 30);
+
+    hmap_insert(&hm_dest, (u32)1, 100);
+    hmap_insert(&hm_dest, (u32)4, 40);
+
+    array<u32> not_inserted{};
+    sizet inserted = hmap_insert(&hm_dest, &hm_src, &not_inserted);
+    asrt(inserted == 2);
+    asrt(not_inserted.size == 1);
+    if (not_inserted.size == 1) {
+        asrt(not_inserted[0] == 1);
+    }
+
+    hmap_set(&hm_dest, &hm_src);
+    hmap_expect_value(&hm_dest, (u32)1, (s32)10);
+    hmap_expect_value(&hm_dest, (u32)2, (s32)20);
+    hmap_expect_value(&hm_dest, (u32)3, (s32)30);
+
+    hmap_terminate(&hm_src);
+    hmap_terminate(&hm_dest);
+}
+
+void test_hmap_pack_unpack()
+{
+    ilog("Starting hashmap pack/unpack test");
+
+    hmap<u32, s32> hm{};
+    hmap<u32, s32> hm_out{};
+    hmap_init(&hm, hash_type, mem_global_arena(), 8);
+    hmap_init(&hm_out, hash_type, mem_global_arena(), 8);
+
+    hmap_insert(&hm, (u32)10, 100);
+    hmap_insert(&hm, (u32)20, 200);
+    hmap_insert(&hm, (u32)30, 300);
+
+    static_binary_buffer_archive<256> ar{};
+    ar.opmode = archive_opmode::PACK;
+    pack_unpack(&ar, hm, {"hm"});
+
+    static_binary_buffer_archive<256> ar_in{};
+    ar_in.opmode = archive_opmode::UNPACK;
+    ar_in.cur_offset = 0;
+    memcpy(ar_in.data, ar.data, ar.cur_offset);
+    pack_unpack(&ar_in, hm_out, {"hm"});
+
+    hmap_expect_value(&hm_out, (u32)10, (s32)100);
+    hmap_expect_value(&hm_out, (u32)20, (s32)200);
+    hmap_expect_value(&hm_out, (u32)30, (s32)300);
+
+    hmap_terminate(&hm);
+    hmap_terminate(&hm_out);
 }
 
 void test_strings()
@@ -586,6 +815,10 @@ int app_init(platform_ctxt *ctxt, void *)
 {
     test_strings();
     test_arrays();
+    test_hmap_basic_api();
+    test_hmap_bucket_ops();
+    test_hmap_copy_and_set();
+    test_hmap_pack_unpack();
     test_hashmaps();
     test_hashmaps_string_keys();
     test_hashsets();
