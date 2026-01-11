@@ -97,7 +97,13 @@ bool add_keymap_entry(input_keymap *km, input_kmcode kmcode, u16 keymods, u8 mbu
 
     auto id = generate_keymap_id(kmcode, keymods, mbutton_mask);
     bool ret = add_keymap_entry(km, id, entry);
-    ilog("Generating keymap entry %u for %s: %s", id, to_cstr(entry.name), ret ? "true" : "false");
+    ilog("Generating keymap entry %u (kmcode %u, keymods %u, mbutton_mask %u) for %s: %s",
+         id,
+         kmcode,
+         keymods,
+         mbutton_mask,
+         to_cstr(entry.name),
+         ret ? "true" : "false");
     return ret;
 }
 
@@ -229,7 +235,6 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
             u8 mbutton_mask = t.ev->mbutton_mask & cur_map->mbutton_mask;
             u16 keymods = t.ev->keymods & cur_map->kmod_mask;
             auto id = generate_keymap_id(t.ev->kmcode, keymods, mbutton_mask);
-            dlog("Got event for %u", id);
             const input_keymap_entry *kentry = find_keymap_entry(cur_map, id);
             if (kentry) {
                 input_trigger_cb cb{};

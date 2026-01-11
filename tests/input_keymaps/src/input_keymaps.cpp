@@ -34,7 +34,7 @@ static void add_keymap_entry_with_trigger(
     entry.flags = 0;
 
     bool added = add_keymap_entry(km, kmcode, keymods, mbutton_mask, entry);
-    ilog("Generating keymap entry %s for %s");
+    ilog("Generating keymap entry %s for %s", entry_name, map_name);
     asrt(added);
 
     input_trigger_cb cb{};
@@ -53,20 +53,20 @@ int app_init(platform_ctxt *ctxt, void *user_data)
     init_keymap(&app->km2, "km2", mem_global_arena());
     init_keymap(&app->km3, "km3", mem_global_arena());
 
-    add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_K, KEYMOD_CTRL, MBUTTON_MASK_NONE, "km1_ctrl_k", "km1");
-    add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_M, KEYMOD_SHIFT, MBUTTON_MASK_NONE, "km1_shift_m", "km1");
-    add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_J, KEYMOD_ALT, MBUTTON_MASK_NONE, "km1_alt_j", "km1");
+    add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_K, KEYMOD_LCTRL, MBUTTON_MASK_NONE, "km1_ctrl_k", "km1");
+    add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_M, KEYMOD_LSHIFT, MBUTTON_MASK_NONE, "km1_shift_m", "km1");
+    add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_J, KEYMOD_LALT, MBUTTON_MASK_NONE, "km1_alt_j", "km1");
     add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_F1, KEYMOD_NONE, MBUTTON_MASK_NONE, "km1_f1", "km1");
 
-    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_K, KEYMOD_CTRL, MBUTTON_MASK_NONE, "km2_ctrl_k", "km2");
-    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_M, KEYMOD_SHIFT, MBUTTON_MASK_NONE, "km2_shift_m", "km2");
-    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_L, KEYMOD_ALT, MBUTTON_MASK_NONE, "km2_alt_l", "km2");
-    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_Q, (u16)(KEYMOD_CTRL | KEYMOD_SHIFT), MBUTTON_MASK_NONE, "km2_ctrl_shift_q", "km2");
+    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_K, KEYMOD_LCTRL, MBUTTON_MASK_NONE, "km2_ctrl_k", "km2");
+    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_M, KEYMOD_LSHIFT, MBUTTON_MASK_NONE, "km2_shift_m", "km2");
+    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_L, KEYMOD_LALT, MBUTTON_MASK_NONE, "km2_alt_l", "km2");
+    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_Q, (u16)(KEYMOD_LCTRL | KEYMOD_LSHIFT), MBUTTON_MASK_NONE, "km2_ctrl_shift_q", "km2");
 
-    add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_K, KEYMOD_CTRL, MBUTTON_MASK_NONE, "km3_ctrl_k", "km3");
-    add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_M, KEYMOD_SHIFT, MBUTTON_MASK_NONE, "km3_shift_m", "km3");
-    add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_J, KEYMOD_ALT, MBUTTON_MASK_NONE, "km3_alt_j", "km3");
-    add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_U, KEYMOD_CTRL, MBUTTON_MASK_NONE, "km3_ctrl_u", "km3");
+    add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_K, KEYMOD_LCTRL, MBUTTON_MASK_NONE, "km3_ctrl_k", "km3");
+    add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_M, KEYMOD_LSHIFT, MBUTTON_MASK_NONE, "km3_shift_m", "km3");
+    add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_J, KEYMOD_LALT, MBUTTON_MASK_NONE, "km3_alt_j", "km3");
+    add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_U, KEYMOD_LCTRL, MBUTTON_MASK_NONE, "km3_ctrl_u", "km3");
 
     push_keymap(&app->stack, &app->km1);
     push_keymap(&app->stack, &app->km2);
