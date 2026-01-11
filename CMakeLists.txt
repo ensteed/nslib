@@ -13,7 +13,7 @@ set(NSLIB_VERSION_PATCH 0)
 
 set(NSLIB_TARGET_NAME noblesteed-${NSLIB_VERSION_MAJOR}.${NSLIB_VERSION_MINOR}.${NSLIB_VERSION_PATCH})
 set(NSLIB_SRC_DIR ${CMAKE_SOURCE_DIR}/src)
-set(SAMPLES_DIR ${CMAKE_SOURCE_DIR}/samples)
+set(TESTS_DIR ${CMAKE_SOURCE_DIR}/tests)
 set(DEPS_DIR ${CMAKE_SOURCE_DIR}/deps)
 
 if(${CMAKE_BUILD_TYPE} STREQUAL Release)
@@ -83,8 +83,11 @@ else() # Unix
   endif()
 endif()
 
-# Add samples
-add_subdirectory(${SAMPLES_DIR})
+# Add tests
+add_subdirectory(${TESTS_DIR})
+
+# Add rdev
+add_subdirectory(${CMAKE_SOURCE_DIR}/rdev)
 
 
 # target_link_libraries(${TARGET_NAME} lib1 lib2 ... libn)

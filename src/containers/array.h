@@ -204,8 +204,8 @@ void arr_append(array<T> *arr, const T *src, sizet src_size)
 {
     sizet offset = arr->size;
     arr_resize(arr, offset + src_size);
-    for (sizet i = offset; i < arr->size; ++i) {
-        (*arr)[i] = src[i];
+    for (sizet i = 0; i < src_size; ++i) {
+        (*arr)[offset+i] = src[i];
     }
 }
 

@@ -186,6 +186,7 @@ void test_hmap_basic_api()
     asrt(hmap_begin(&hm) == nullptr);
 
     hmap_terminate(&hm);
+    ilog("Hashmap api test succeeded");
 }
 
 void test_hmap_copy_and_set()
@@ -219,6 +220,7 @@ void test_hmap_copy_and_set()
 
     hmap_terminate(&hm_src);
     hmap_terminate(&hm_dest);
+    ilog("Hashmap copy and set test succeeded");
 }
 
 void test_hmap_pack_unpack()
@@ -250,73 +252,197 @@ void test_hmap_pack_unpack()
 
     hmap_terminate(&hm);
     hmap_terminate(&hm_out);
+    ilog("Hashmap pack/unpack test succeeded");
 }
 
 void test_strings()
 {
     ilog("Starting string test");
-    string s = "test this range we are going to make a big fatty string";
-    auto first = &s[4];
-    auto last = &s[9];
-    ilog("String before erase: %s  size:%lu  cap:%lu", str_cstr(s), str_len(s), str_capacity(s));
-    str_erase(&s, first, last);
-    ilog("String after erase: %s  size:%lu  cap:%lu", str_cstr(s), str_len(s), str_capacity(s));
-    str_shrink_to_fit(&s);
-    ilog("String cap after shrink to fit:%lu", str_capacity(s));
-    str_erase(&s, &s[2], &s[10]);
-    str_erase(&s, &s[2], &s[10]);
-    ilog("String after more erasing: %s  size:%lu  cap:%lu", str_cstr(s), str_len(s), str_capacity(s));
-    str_shrink_to_fit(&s);
-    ilog("String cap after shrink to fit:%lu", str_capacity(s));
-    str_erase(&s, &s[2], &s[10]);
-    str_erase(&s, &s[2], &s[10]);
-    ilog("String after even more erasing: %s  size:%lu  cap:%lu", str_cstr(s), str_len(s), str_capacity(s));
-    str_shrink_to_fit(&s);
-    ilog("String cap after shrink to fit:%lu", str_capacity(s));
+    string s;
+    asrt(str_empty(s));
+    ilog("String empty ok");
+    asrt(str_len(s) == 0);
+    ilog("String length 0 ok");
+
+    str_append(&s, "hello");
+    asrt(str_len(s) == 5);
+    ilog("String append length ok");
+    asrt(str_cstr(s)[0] == 'h');
+    ilog("String append contents ok");
+
+    str_push_back(&s, '!');
+    asrt(str_len(s) == 6);
+    ilog("String push_back length ok");
+    asrt(s[5] == '!');
+    ilog("String push_back contents ok");
+
+    str_pop_back(&s);
+    asrt(str_len(s) == 5);
+    ilog("String pop_back length ok");
+    asrt(s[4] == 'o');
+    ilog("String pop_back contents ok");
+
+    string t;
+    str_copy(&t, s);
+    asrt(t == s);
+    ilog("String copy equals ok");
+
+    str_append(&t, " world");
+    asrt(str_len(t) == 11);
+    ilog("String append length 2 ok");
+    asrt(t[5] == ' ');
+    ilog("String append contents 2 ok");
+
+    sizet removed = str_remove(&t, 'l');
+    asrt(removed == 3);
+    ilog("String remove count ok");
+    asrt(str_len(t) == 8);
+    ilog("String remove length ok");
+
+    auto begin = str_begin(&t);
+    asrt(begin);
+    ilog("String begin ok");
+    str_erase(&t, begin, begin + 3);
+    asrt(str_len(t) == 5);
+    ilog("String erase length ok");
+
+    str_clear(&t);
+    asrt(str_empty(t));
+    ilog("String clear empty ok");
+    ilog("String test succeeded");
 }
 
 void test_arrays()
 {
     ilog("Starting array test");
     array<int> arr1;
-    array<rid> rids;
-    array<array<int>> arr_arr;
-    string output;
+    asrt(arr_len(&arr1) == 0);
+    ilog("Array len 0 ok");
+    asrt(arr_begin(&arr1) == nullptr);
+    ilog("Array begin null ok");
+    asrt(arr_end(&arr1) == nullptr);
+    ilog("Array end null ok");
 
-    arr_emplace_back(&arr1, 35);
-    arr_emplace_back(&arr1, 22);
-    arr_emplace_back(&arr1, 12);
-    arr_emplace_back(&arr1, 9);
-    arr_emplace_back(&arr1, -122);
+    arr_push_back(&arr1, 10);
+    arr_push_back(&arr1, 20);
+    arr_push_back(&arr1, 30);
+    asrt(arr_len(&arr1) == 3);
+    ilog("Array push length ok");
+    asrt(arr_front(&arr1) && *arr_front(&arr1) == 10);
+    ilog("Array front ok");
+    asrt(arr_back(&arr1) && *arr_back(&arr1) == 30);
+    ilog("Array back ok");
 
-    arr_push_back(&arr_arr, arr1);
+    auto iter = arr_find(&arr1, 20);
+    asrt(iter && *iter == 20);
+    ilog("Array find ok");
+    asrt(arr_index_of(&arr1, iter) == 1);
+    ilog("Array index_of ok");
 
-    for (int i = 0; i < arr1.size; ++i) {
-        ilog("Arr1[%d]: %d", i, arr1[i]);
-        auto arr2(arr1);
-        for (int i = 0; i < arr2.size; ++i) {
-            ilog("Arr2[%d]: %d", i, arr2[i]);
-        }
-        // arr_push_back(&arr_arr, arr2);
-    }
+    bool removed = arr_remove(&arr1, (sizet)1);
+    asrt(removed);
+    ilog("Array remove ok");
+    asrt(arr_len(&arr1) == 2);
+    ilog("Array length after remove ok");
+    asrt(arr1[0] == 10);
+    ilog("Array remove contents 0 ok");
+    asrt(arr1[1] == 30);
+    ilog("Array remove contents 1 ok");
 
-    arr_push_back(&rids, make_rid("key1"));
-    arr_push_back(&rids, make_rid("key2"));
-    arr_push_back(&rids, make_rid("key3"));
-    arr_push_back(&rids, make_rid("key4"));
+    arr_push_back(&arr1, 40);
+    bool swap_removed = arr_swap_remove(&arr1, 0);
+    asrt(swap_removed);
+    ilog("Array swap_remove ok");
+    asrt(arr_len(&arr1) == 2);
+    ilog("Array length after swap_remove ok");
+    asrt(arr1[0] == 40);
+    ilog("Array swap_remove contents ok");
 
-    auto iter = arr_begin(&rids);
-    while (iter != arr_end(&rids)) {
-        output += to_str(*iter);
-        ++iter;
-    }
+    array<int> arr2(arr1);
+    asrt(arr_len(&arr2) == arr_len(&arr1));
+    ilog("Array copy length ok");
+    asrt(arr2[0] == arr1[0]);
+    ilog("Array copy contents 0 ok");
+    asrt(arr2[1] == arr1[1]);
+    ilog("Array copy contents 1 ok");
 
-    // auto iter2 = arr_begin(&arr_arr);
-    // while (iter2 != arr_end(&arr_arr)) {
-    //     output += to_str(*iter2);
-    //     ++iter2;
-    // }
-    ilog("Output: %s", str_cstr(&output));
+    array<int> arr3;
+    arr_append(&arr3, &arr1);
+    asrt(arr_len(&arr3) == arr_len(&arr1));
+    ilog("Array append length ok");
+    asrt(arr3[0] == arr1[0]);
+    ilog("Array append contents 0 ok");
+    asrt(arr3[1] == arr1[1]);
+    ilog("Array append contents 1 ok");
+    asrt(arr3[0] == 40);
+    ilog("Array append contents value ok");
+
+    int raw_vals[2] = {5, 15};
+    arr_append(&arr3, raw_vals, 2);
+    asrt(arr_len(&arr3) == 4);
+    ilog("Array append raw length ok");
+    asrt(arr3[2] == 5);
+    ilog("Array append raw contents 0 ok");
+    asrt(arr3[3] == 15);
+    ilog("Array append raw contents 1 ok");
+
+    array<array<int>> arr_of_arrs;
+    arr_push_back(&arr_of_arrs, arr1);
+    asrt(arr_len(&arr_of_arrs) == 1);
+    ilog("Array of arrays length ok");
+    asrt(arr_len(&arr_of_arrs[0]) == arr_len(&arr1));
+    ilog("Array of arrays inner length ok");
+    asrt(arr_of_arrs[0][0] == arr1[0]);
+    ilog("Array of arrays contents ok");
+
+    arr_push_back(&arr1, 99);
+    asrt(arr_len(&arr1) == 3);
+    ilog("Array after push length ok");
+    asrt(arr_len(&arr_of_arrs[0]) == 2);
+    ilog("Array of arrays copy isolation ok");
+
+    array<string> arr_of_strs;
+    arr_push_back(&arr_of_strs, string("one"));
+    arr_push_back(&arr_of_strs, string("two"));
+    asrt(arr_len(&arr_of_strs) == 2);
+    ilog("Array of strings length ok");
+    asrt(arr_of_strs[0] == string("one"));
+    ilog("Array of strings contents 0 ok");
+    asrt(arr_of_strs[1] == string("two"));
+    ilog("Array of strings contents 1 ok");
+
+    array<string> arr_of_strs_copy(arr_of_strs);
+    asrt(arr_len(&arr_of_strs_copy) == 2);
+    ilog("Array of strings copy length ok");
+    asrt(arr_of_strs_copy[0] == arr_of_strs[0]);
+    ilog("Array of strings copy contents ok");
+
+    array<int> arr_nested;
+    arr_push_back(&arr_nested, 7);
+    arr_push_back(&arr_nested, 14);
+
+    array<array<int>> arr_of_arrs_extra;
+    arr_push_back(&arr_of_arrs_extra, arr_nested);
+    arr_append(&arr_of_arrs, &arr_of_arrs_extra);
+    asrt(arr_len(&arr_of_arrs) == 2);
+    ilog("Array of arrays append length ok");
+    asrt(arr_len(&arr_of_arrs[1]) == 2);
+    ilog("Array of arrays append inner length ok");
+    asrt(arr_of_arrs[1][0] == 7);
+    ilog("Array of arrays append contents 0 ok");
+
+    array<string> arr_of_strs_extra;
+    arr_push_back(&arr_of_strs_extra, string("three"));
+    arr_append(&arr_of_strs, &arr_of_strs_extra);
+    asrt(arr_len(&arr_of_strs) == 3);
+    ilog("Array of strings append length ok");
+    asrt(arr_of_strs[2] == string("three"));
+    ilog("Array of strings append contents ok");
+
+    arr_clear(&arr3);
+    asrt(arr_len(&arr3) == 0);
+    ilog("Array clear length ok");
+    ilog("Array test succeeded");
 }
 
 void test_hashsets()
@@ -446,6 +572,7 @@ void test_hashsets()
     }
 
     hset_terminate(&hs1);
+    ilog("Hashset test succeeded");
 }
 
 void test_hashmaps()
@@ -494,19 +621,19 @@ void test_hashmaps()
         iter = hmap_prev(&hm1, iter);
     }
     auto fnd = hmap_find(&hm1, 'a');
-    ilog("Found value %s for key %s", to_cstr(fnd->val));
+    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'e');
-    ilog("Found value %s for key %s", to_cstr(fnd->val));
+    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'i');
-    ilog("Found value %s for key %s", to_cstr(fnd->val));
+    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'o');
-    ilog("Found value %s for key %s", to_cstr(fnd->val));
+    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'u');
-    ilog("Found value %s for key %s", to_cstr(fnd->val));
+    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'd');
-    ilog("Found value %s for key %s", to_cstr(fnd->val));
+    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'c');
-    ilog("Found value %s for key %s", to_cstr(fnd->val));
+    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'z');
     if (fnd) {
         ilog("Found value %s for key %s", to_cstr(fnd->val));
@@ -575,6 +702,7 @@ void test_hashmaps()
     }
 
     hmap_terminate(&hm1);
+    ilog("Hashmap test succeeded");
 }
 
 void test_hashmaps_string_keys()
@@ -651,6 +779,7 @@ void test_hashmaps_string_keys()
     }
 
     hmap_terminate(&hm1);
+    ilog("Hashmap string key test succeeded");
 }
 
 void test_hset_basic_api()
@@ -695,6 +824,7 @@ void test_hset_basic_api()
     asrt(hset_begin(&hs) == nullptr);
 
     hset_terminate(&hs);
+    ilog("Hashset api test succeeded");
 }
 
 void test_hset_string_keys()
@@ -771,8 +901,8 @@ void test_hset_string_keys()
     }
 
     hset_terminate(&hs1);
+    ilog("Hashset string key test succeeded");
 }
-
 
 int app_init(platform_ctxt *ctxt, void *)
 {
@@ -787,11 +917,16 @@ int app_init(platform_ctxt *ctxt, void *)
     test_hashsets();
     test_hset_string_keys();
     return err_code::PLATFORM_NO_ERROR;
+    ctxt->running = false;
 }
 
 int configure_platform(platform_init_info *config, app_data *app)
 {
     config->user_hooks.init = app_init;
+    config->user_hooks.run_frame = [](platform_ctxt *ctxt, void *) -> int {
+        ctxt->running = false;
+        return 0;
+    };
     return err_code::PLATFORM_NO_ERROR;
 }
 
