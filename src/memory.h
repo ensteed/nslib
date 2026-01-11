@@ -1,7 +1,6 @@
 #pragma once
 
-#include <utility>
-
+#include <new>
 #include "basic_types.h"
 #include "containers/linked_list.h"
 
@@ -33,6 +32,7 @@ struct alloc_header
 struct stack_alloc_header
 {
     sizet padding;
+    sizet block_size;
     void *prev;
 };
 
@@ -46,7 +46,7 @@ using mem_node = slnode<free_header>;
 
 struct mem_free_list
 {
-    placement_policy p_policy;
+    placement_policy p_policy{FIND_FIRST};
     slist<free_header> free_list;
 };
 
@@ -135,7 +135,7 @@ template<class T, class... Args>
 T *mem_new(mem_arena *arena, Args &&...args)
 {
     T *item = mem_alloc<T>(arena);
-    new (item) T(std::forward<Args>(args)...);
+    new (item) T(static_cast<Args &&>(args)...);
     return item;
 }
 
@@ -143,7 +143,7 @@ template<class T>
 void mem_delete(T *item, mem_arena *arena)
 {
     item->~T();
-    mem_free(arena, item);
+    mem_free(item, arena);
 }
 
 // Reset the store without actually freeing the memory so it can be reused
