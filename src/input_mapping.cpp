@@ -24,7 +24,7 @@ u32 generate_keymap_id(u16 code, u16 keymods, u8 mbutton_mask)
 {
     // | ---- kmcode (10 bits) --- | ---- keymods (14 bits) ---- | ---- mbutton_mask (8 bits) ---- |
     // Kmcode is fine because its type safe, need to make sure keymods and mbutton_mask don't have anything in upper
-    // bits so that's why they are anded with 0x3FFF (0011111111111111b) and 0x3F (00111111b)
+    // bits so that's why they are anded with 0x3FFF (0011111111111111b)
     return (code << 22) | ((keymods & 0x3FFF) << 8) | mbutton_mask;
 }
 
@@ -47,8 +47,6 @@ void init_keymap(input_keymap *km, const char *name, mem_arena *arena)
 {
     asrt(km);
     asrt(name);
-    int seed0 = rand();
-    int seed1 = rand();
     km->name = name;
     hmap_init(&km->hm, hash_type, arena, DEFAULT_KEYMAP_BUCKET_COUNT);
 }
@@ -96,8 +94,11 @@ bool add_keymap_entry(input_keymap *km, u32 id, const input_keymap_entry &entry)
 
 bool add_keymap_entry(input_keymap *km, input_kmcode kmcode, u16 keymods, u8 mbutton_mask, const input_keymap_entry &entry)
 {
+
     auto id = generate_keymap_id(kmcode, keymods, mbutton_mask);
-    return add_keymap_entry(km, id, entry);
+    bool ret = add_keymap_entry(km, id, entry);
+    ilog("Generating keymap entry %u for %s: %s", id, to_cstr(entry.name), ret ? "true" : "false");
+    return ret;
 }
 
 input_keymap_entry *find_keymap_entry(input_keymap *km, u32 id)
@@ -140,7 +141,7 @@ const input_keymap_entry *find_keymap_entry(const input_keymap *km, const char *
     asrt(km);
     auto iter = hmap_begin(&km->hm);
     while (iter) {
-        if (name == iter->val.name) {
+        if (strcmp(name, str_cstr(iter->val.name)) == 0) {
             return &iter->val;
         }
         iter = hmap_next(&km->hm, iter);
@@ -196,7 +197,7 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
     bool key_or_mbtn = t.ev_type == EVENT_TYPE_INPUT_KEY || t.ev_type == EVENT_TYPE_INPUT_MBUTTON;
     // We can use key.action for both mouse button and key because they are unioned
     bool key_or_mbtn_release = key_or_mbtn && t.ev->key.action == INPUT_ACTION_RELEASE;
-    
+
     // If it is a key/mouse button release, we wan't to check our stack actively pressed actions rather than the
     // keymaps.. If a key/mouse button trigger are set to respond to releases, they are added to this list. If we were
     // to just generate the id and look them up directly, the release action would also be dependent on key/mouse
@@ -228,6 +229,7 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
             u8 mbutton_mask = t.ev->mbutton_mask & cur_map->mbutton_mask;
             u16 keymods = t.ev->keymods & cur_map->kmod_mask;
             auto id = generate_keymap_id(t.ev->kmcode, keymods, mbutton_mask);
+            dlog("Got event for %u", id);
             const input_keymap_entry *kentry = find_keymap_entry(cur_map, id);
             if (kentry) {
                 input_trigger_cb cb{};
@@ -238,18 +240,18 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
                 if (fiter) {
                     cb = fiter->val;
                 }
-                
+
                 // If this is a key or mbutton press and our kentry has the release flag set in its action mask, we should add
                 // an entry for this key/mbutton to our cur_pressed map (again ev->key.action == ev->mbutton.action)
                 bool call_func = true;
                 if (key_or_mbtn) {
                     if (t.ev->key.action == INPUT_ACTION_PRESS && test_flags(kentry->action_mask, INPUT_ACTION_RELEASE)) {
                         auto cur_press_item = hmap_find_or_insert(&stack->cur_pressed, t.ev->kmcode);
-                        arr_push_back(&cur_press_item->val, input_pressed_entry{.kme=kentry, .cb=cb});
+                        arr_push_back(&cur_press_item->val, input_pressed_entry{.kme = kentry, .cb = cb});
                     }
                     call_func = test_flags(kentry->action_mask, t.ev->key.action);
                 }
-                
+
                 if (call_func && cb.func) {
                     cb.func(t, cb.user);
                 }
