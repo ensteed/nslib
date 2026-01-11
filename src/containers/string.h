@@ -95,6 +95,8 @@ string *str_copy(string *dest, const string &src);
 
 string *str_copy(string *dest, const char *src);
 
+string *str_copy(string *dest, const char *src, sizet src_len);
+
 string *str_resize(string *str, sizet new_size, char c);
 
 string *str_resize(string *str, sizet new_size);
@@ -120,6 +122,8 @@ sizet str_remove(string *str, char c);
 string *str_append(string *str, const string &to_append);
 
 string *str_append(string *str, const char *to_append);
+
+string *str_append(string *str, const char *to_append, sizet to_append_len);
 
 template<class... Args>
 string *str_printf(string *dest, const char *format_txt, Args &&...args)
