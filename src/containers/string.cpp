@@ -180,10 +180,23 @@ bool str_remove(string *str, sizet ind)
 
 sizet str_remove(string *str, char c)
 {
-    auto iter = std::remove(str_begin(str), str_end(str), c);
-    sizet ret = str_end(str) - iter;
-    str_resize(str, str_len(str) - ret);
-    return ret;
+    sizet removed{};
+    sizet write_ind{};
+    sizet len = str_len(str);
+    for (sizet read_ind = 0; read_ind < len; ++read_ind) {
+        char cur = (*str)[read_ind];
+        if (cur == c) {
+            ++removed;
+        }
+        else {
+            if (write_ind != read_ind) {
+                (*str)[write_ind] = cur;
+            }
+            ++write_ind;
+        }
+    }
+    str_resize(str, len - removed);
+    return removed;
 }
 
 bool str_empty(const string &str)
@@ -194,7 +207,9 @@ bool str_empty(const string &str)
 void swap(string *lhs, string *rhs)
 {
     for (sizet i = 0; i < string::SMALL_STR_SIZE; ++i) {
-        std::swap(lhs->sos[i], rhs->sos[i]);
+        auto tmp = lhs->sos[i];
+        lhs->sos[i] = rhs->sos[i];
+        rhs->sos[i] = tmp;
     }
     swap(&lhs->buf, &rhs->buf);
 }

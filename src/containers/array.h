@@ -1,8 +1,6 @@
 #pragma once
 
-#include <utility>
-#include <algorithm>
-
+#include <new>
 #include "../archive_common.h"
 #include "../memory.h"
 
@@ -76,10 +74,21 @@ struct array
 template<typename T>
 void swap(array<T> *lhs, array<T> *rhs)
 {
-    std::swap(lhs->arena, rhs->arena);
-    std::swap(lhs->size, rhs->size);
-    std::swap(lhs->capacity, rhs->capacity);
-    std::swap(lhs->data, rhs->data);
+    auto tmp_arena = lhs->arena;
+    lhs->arena = rhs->arena;
+    rhs->arena = tmp_arena;
+
+    auto tmp_size = lhs->size;
+    lhs->size = rhs->size;
+    rhs->size = tmp_size;
+
+    auto tmp_capacity = lhs->capacity;
+    lhs->capacity = rhs->capacity;
+    rhs->capacity = tmp_capacity;
+
+    auto tmp_data = lhs->data;
+    lhs->data = rhs->data;
+    rhs->data = tmp_data;
 }
 
 template<typename T>
@@ -142,19 +151,37 @@ sizet arr_sizeof(const static_array<T, N> &arr)
 template<typename T>
 typename T::iterator arr_end(T *arrobj)
 {
-    return arr_begin(arrobj) + arrobj->size;
+    // NOTE: When data is null (no storage), this returns null. Callers must not do
+    // pointer arithmetic or dereference on a null iterator. This is a deliberate
+    // contract to avoid allocating sentinel storage for empty arrays.
+    if (!arrobj->data) {
+        return nullptr;
+    }
+    return arrobj->data + arrobj->size;
 }
 
 template<typename T>
 typename T::const_iterator arr_begin(const T *arrobj)
 {
-    return &arrobj->data[0];
+    // NOTE: When data is null (no storage), this returns null. Callers must not do
+    // pointer arithmetic or dereference on a null iterator. This is a deliberate
+    // contract to avoid allocating sentinel storage for empty arrays.
+    if (!arrobj->data) {
+        return nullptr;
+    }
+    return arrobj->data;
 }
 
 template<typename T>
 typename T::const_iterator arr_end(const T *arrobj)
 {
-    return arr_begin(arrobj) + arrobj->size;
+    // NOTE: When data is null (no storage), this returns null. Callers must not do
+    // pointer arithmetic or dereference on a null iterator. This is a deliberate
+    // contract to avoid allocating sentinel storage for empty arrays.
+    if (!arrobj->data) {
+        return nullptr;
+    }
+    return arrobj->data + arrobj->size;
 }
 
 template<typename T>
@@ -195,28 +222,40 @@ void arr_set_capacity(array<T> *arr, sizet new_cap)
         return;
     }
 
-    // Shrink the old size if its greater than the new capacity calling dtor on each item
-    if (arr->size > new_cap) {
-        for (sizet i = new_cap; i < arr->size; ++i) {
-            arr->data[i].~T();
-        }
-        arr->size = new_cap;
-    }
-
     if (new_cap > 0) {
         // New cap can't be any smaller than mem_nod since we are using free list allocator
         while (new_cap * sizeof(T) < sizeof(mem_node)) {
             ++new_cap;
         }
+    }
+
+    sizet new_size = arr->size;
+    if (new_cap < new_size) {
+        new_size = new_cap;
+    }
+
+    T *new_data{};
+    // NOTE: This always move-constructs into new storage. Types must be move-constructible.
+    // Copy-only types will not compile; we intentionally do not provide a copy fallback here.
+    if (new_cap > 0) {
         auto alignment = alignof(T);
-        arr->data = (T *)mem_realloc(
-            arr->data, new_cap * sizeof(T), arr->arena, alignment > DEFAULT_MIN_ALIGNMENT ? alignment : DEFAULT_MIN_ALIGNMENT);
+        new_data = (T *)mem_alloc(
+            new_cap * sizeof(T), arr->arena, alignment > DEFAULT_MIN_ALIGNMENT ? alignment : DEFAULT_MIN_ALIGNMENT);
+        for (sizet i = 0; i < new_size; ++i) {
+            new (&new_data[i]) T(static_cast<T &&>(arr->data[i]));
+        }
     }
-    else if (arr->data) {
+
+    if (arr->data) {
+        for (sizet i = 0; i < arr->size; ++i) {
+            arr->data[i].~T();
+        }
         mem_free(arr->data, arr->arena);
-        arr->data = nullptr;
     }
+
+    arr->data = new_data;
     arr->capacity = new_cap;
+    arr->size = new_size;
 }
 
 template<typename T>
@@ -248,7 +287,7 @@ T *arr_push_back(array<T> *arr, const T &item)
 template<typename T, sizet N>
 T *arr_push_back(static_array<T, N> *arr, const T &item)
 {
-    asrt(arr->size <= arr->capacity);
+    asrt(arr->size < arr->capacity);
     sizet sz = arr->size;
     ++arr->size;
     arr->data[sz] = item;
@@ -259,9 +298,19 @@ template<typename T, typename... Args>
 T *arr_emplace_back(array<T> *arr, Args &&...args)
 {
     sizet sz = arr->size;
-    arr_resize(arr, sz + 1);
+    if (sz + 1 > arr->capacity) {
+        sizet cap = arr->capacity;
+        if (cap < 1) {
+            cap = 1;
+        }
+        while (cap < sz + 1) {
+            cap *= 2;
+        }
+        arr_set_capacity(arr, cap);
+    }
     T *ret = &arr->data[sz];
-    new (ret) T(std::forward<Args>(args)...);
+    new (ret) T(static_cast<Args &&>(args)...);
+    arr->size = sz + 1;
     return ret;
 }
 
@@ -287,6 +336,9 @@ void arr_clear(array<T> *arr)
 template<typename T, sizet N>
 void arr_clear(static_array<T, N> *arr)
 {
+    for (sizet i = 0; i < arr->size; ++i) {
+        arr->data[i].~T();
+    }
     arr->size = 0;
 }
 
@@ -304,6 +356,7 @@ void arr_pop_back(static_array<T, N> *arr)
 {
     if (arr->size == 0)
         return;
+    arr->data[arr->size - 1].~T();
     --arr->size;
 }
 
@@ -328,7 +381,15 @@ typename T::value_type *arr_front(T *bufobj)
 template<typename T>
 typename T::iterator arr_find(T *bufobj, const typename T::value_type &item)
 {
-    return std::find(arr_begin(bufobj), arr_end(bufobj), item);
+    auto iter = arr_begin(bufobj);
+    auto end = arr_end(bufobj);
+    while (iter && iter != end) {
+        if (*iter == item) {
+            return iter;
+        }
+        ++iter;
+    }
+    return end;
 }
 
 template<typename T, typename... Args>
@@ -336,6 +397,14 @@ array<T> *arr_resize(array<T> *arr, sizet new_size, Args &&...args)
 {
     if (arr->size == new_size)
         return arr;
+
+    if (new_size < arr->size) {
+        for (sizet i = new_size; i < arr->size; ++i) {
+            arr->data[i].~T();
+        }
+        arr->size = new_size;
+        return arr;
+    }
 
     // Make sure our current size doesn't exceed the capacity - it shouldnt that would definitely be a bug if it did.
     asrt(arr->size <= arr->capacity);
@@ -349,7 +418,7 @@ array<T> *arr_resize(array<T> *arr, sizet new_size, Args &&...args)
         arr_set_capacity(arr, cap);
     }
     for (sizet i = arr->size; i < new_size; ++i) {
-        new (&arr->data[i]) T(std::forward<Args>(args)...);
+        new (&arr->data[i]) T(static_cast<Args &&>(args)...);
     }
     arr->size = new_size;
     return arr;
@@ -359,8 +428,15 @@ template<typename T, sizet N, typename... Args>
 static_array<T, N> *arr_resize(static_array<T, N> *arr, sizet new_size, Args &&...args)
 {
     asrt(new_size <= N);
+    if (new_size < arr->size) {
+        for (sizet i = new_size; i < arr->size; ++i) {
+            arr->data[i].~T();
+        }
+        arr->size = new_size;
+        return arr;
+    }
     for (sizet i = arr->size; i < new_size; ++i) {
-        new (&arr->data[i]) T(std::forward<Args>(args)...);
+        new (&arr->data[i]) T(static_cast<Args &&>(args)...);
     }
     arr->size = new_size;
     return arr;
@@ -435,10 +511,23 @@ bool arr_remove(T *bufobj, sizet index)
 template<typename T>
 sizet arr_remove(T *bufobj, const typename T::value_type &val)
 {
-    auto iter = std::remove(arr_begin(bufobj), arr_end(bufobj), val);
-    sizet ret = arr_end(bufobj) - iter;
-    arr_resize(bufobj, bufobj->size - ret);
-    return ret;
+    sizet removed{};
+    sizet write_ind{};
+    for (sizet read_ind = 0; read_ind < bufobj->size; ++read_ind) {
+        if (bufobj->data[read_ind] == val) {
+            bufobj->data[read_ind].~T();
+            ++removed;
+        }
+        else {
+            if (write_ind != read_ind) {
+                new (&bufobj->data[write_ind]) T(static_cast<T &&>(bufobj->data[read_ind]));
+                bufobj->data[read_ind].~T();
+            }
+            ++write_ind;
+        }
+    }
+    bufobj->size = write_ind;
+    return removed;
 }
 
 template<typename T>
@@ -461,4 +550,3 @@ void pack_unpack(ArchiveT *ar, static_array<T, N> &val, const pack_var_info &vin
 }
 
 } // namespace nslib
-

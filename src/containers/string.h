@@ -124,7 +124,7 @@ string *str_append(string *str, const char *to_append);
 template<class... Args>
 string *str_printf(string *dest, const char *format_txt, Args &&...args)
 {
-    sizet needed_space = snprintf(nullptr, 0, format_txt, std::forward<Args>(args)...);
+    sizet needed_space = snprintf(nullptr, 0, format_txt, static_cast<Args &&>(args)...);
     sizet sz = str_len(*dest);
     str_resize(dest, sz + needed_space);
     snprintf(str_data(dest) + sz, needed_space + 1, format_txt, args...);
@@ -134,20 +134,20 @@ string *str_printf(string *dest, const char *format_txt, Args &&...args)
 template<class... Args>
 void str_scanf(const char* src, const char *format_txt, Args &&...args)
 {
-    sscanf(src, format_txt, std::forward<Args>(args)...);
+    sscanf(src, format_txt, static_cast<Args &&>(args)...);
 }
 
 template<class... Args>
 void str_scanf(const string &src, const char *format_txt, Args &&...args)
 {
-    str_scanf(str_cstr(src), format_txt, std::forward<Args>(args)...);
+    str_scanf(str_cstr(src), format_txt, static_cast<Args &&>(args)...);
 }
 
 template<class... Args>
 string to_str(const char *format_txt, Args &&...args)
 {
     string ret{};
-    sizet needed_space = snprintf(nullptr, 0, format_txt, std::forward<Args>(args)...);
+    sizet needed_space = snprintf(nullptr, 0, format_txt, static_cast<Args &&>(args)...);
     sizet sz = str_len(ret);
     str_resize(&ret, sz + needed_space);
     snprintf(str_data(&ret) + sz, needed_space + 1, format_txt, args...);
