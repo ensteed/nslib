@@ -8,24 +8,27 @@ namespace nslib
 template<typename T>
 struct slot_handle
 {
-    union {
+    union
+    {
         u64 id;
-        struct {
+        struct
+        {
             u32 index;
             u32 generation;
         };
     };
 };
 
-
-op_eq_func_tt(slot_handle) {
+op_eq_func_tt(slot_handle)
+{
     return lhs.id == rhs.id;
 }
 
 op_neq_func_tt(slot_handle);
 
 template<typename T>
-bool is_valid(slot_handle<T> h) {
+bool is_valid(slot_handle<T> h)
+{
     return h.id != 0;
 }
 
@@ -69,6 +72,15 @@ template<typename T, sizet N>
 bool is_slot_available(const slot_pool<T, N> *pool)
 {
     return (pool->free_list.size > 0) || (pool->slots.size < pool->slots.capacity);
+}
+
+template<typename T, sizet N>
+slot_handle<T> get_slot_current_handle(slot_pool<T, N> *pool, u32 index)
+{
+    if (index >= pool->slots.size) {
+        return {};
+    }
+    return {.index = index, .generation = pool->slots[index].gen_id};
 }
 
 template<typename T, sizet N>
@@ -140,7 +152,7 @@ bool release_slot(slot_pool<T, N> *pool, slot_handle<T> handle)
     // Add the handle to our free list
     slot_free_entry<T> free_entry{.handle{handle}};
     arr_push_back(&pool->free_list, free_entry);
-    
+
     // Set gen id to 0 to indicate this slot isn't used
     auto *entry = &pool->slots.data[handle.index];
     entry->gen_id = 0;
