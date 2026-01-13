@@ -104,10 +104,10 @@ sizet mem_block_user_size(void *ptr, mem_arena *arena);
 void *mem_alloc(sizet size, mem_arena *arena, sizet alignment = DEFAULT_MIN_ALIGNMENT);
 
 template<class T>
-T *mem_alloc(mem_arena *arena)
+T *mem_alloc(mem_arena *arena, sizet n = 1)
 {
     auto alignment = alignof(T);
-    return (T *)mem_alloc(sizeof(T), arena, (alignment > DEFAULT_MIN_ALIGNMENT) ? alignment : DEFAULT_MIN_ALIGNMENT);
+    return (T *)mem_alloc(sizeof(T) * n, arena, (alignment > DEFAULT_MIN_ALIGNMENT) ? alignment : DEFAULT_MIN_ALIGNMENT);
 }
 
 void *mem_calloc(sizet nmemb, sizet memb, mem_arena *arena, sizet alignment = DEFAULT_MIN_ALIGNMENT);

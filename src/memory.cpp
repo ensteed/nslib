@@ -388,6 +388,9 @@ intern void mem_linear_free(mem_arena *, void *)
 
 void *mem_alloc(sizet bytes, mem_arena *arena, sizet alignment)
 {
+    if (bytes == 0) {
+        return nullptr;
+    }
     if (alignment < DEFAULT_MIN_ALIGNMENT) {
         alignment = DEFAULT_MIN_ALIGNMENT;
     }
@@ -433,10 +436,8 @@ void *mem_realloc(void *ptr, sizet new_size, mem_arena *arena, sizet alignment, 
     if (arena) {
         // Create a new block and copy the mem to it from the old block (we use the lesser of the block sizes)
         auto new_block = mem_alloc(new_size, arena, alignment);
-        sizet old_block_size{0};
-
         if (ptr && new_block) {
-            old_block_size = mem_block_user_size(ptr, arena);
+            sizet old_block_size = mem_block_user_size(ptr, arena);
             sizet block_size{new_size};
             asrt(old_block_size > 0);
 
@@ -446,9 +447,9 @@ void *mem_realloc(void *ptr, sizet new_size, mem_arena *arena, sizet alignment, 
             }
 
             memcpy(new_block, ptr, block_size);
-            if (free_ptr_after_copy) {
-                mem_free(ptr, arena);
-            }
+        }
+        if (free_ptr_after_copy) {
+            mem_free(ptr, arena);
         }
         return new_block;
     }
@@ -491,10 +492,7 @@ sizet mem_block_user_size(void *ptr, mem_arena *arena)
 
 void mem_free(void *ptr, mem_arena *arena)
 {
-    if (!ptr)
-        return;
-
-    if (arena) {
+    if (ptr && arena) {
         switch (arena->alloc_type) {
         case (mem_alloc_type::FREE_LIST):
             mem_free_list_free(arena, ptr);
@@ -510,7 +508,7 @@ void mem_free(void *ptr, mem_arena *arena)
             break;
         }
     }
-    else {
+    else if (ptr) {
         platform_free(ptr);
     }
 }
