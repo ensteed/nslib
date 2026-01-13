@@ -131,12 +131,10 @@ inline __m128 _sse_dp(const __m128 &left, const __m128 &right)
 #endif
 }
 
-template<>
 inline float dot(const vector4<float> &lhs, const vector4<float> &rhs)
 {
     return _mm_cvtss_f32(_sse_dp(lhs._v4, rhs._v4));
 }
-
 #endif
 
 } // namespace math

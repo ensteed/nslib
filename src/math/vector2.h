@@ -66,14 +66,12 @@ struct is_vec<vector2<U>>
 namespace math
 {
 #if NOBLE_STEED_SIMD
-template<>
 inline float dot(const vector2<float> &lhs, const vector2<float> &rhs)
 {
     __m128 l = _mm_set_ps(0.0f, 0.0f, lhs.y, lhs.x);
     __m128 r = _mm_set_ps(0.0f, 0.0f, rhs.y, rhs.x);
     return _mm_cvtss_f32(_sse_dp(l, r));
 }
-
 #endif
 
 template<floating_pt T>

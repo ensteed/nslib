@@ -106,15 +106,12 @@ namespace math
 {
 
 #if NOBLE_STEED_SIMD
-
-template<>
 inline float dot(const vector3<float> &lhs, const vector3<float> &rhs)
 {
     __m128 l = _mm_set_ps(0.0f, lhs.z, lhs.y, lhs.x);
     __m128 r = _mm_set_ps(0.0f, rhs.z, rhs.y, rhs.x);
     return _mm_cvtss_f32(_sse_dp(l, r));
 }
-
 #endif
 
 template<arithmetic_type T>

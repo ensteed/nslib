@@ -3,7 +3,6 @@
 #include "../basic_type_traits.h"
 #include "../archive_common.h" // IWYU pragma: export
 
-
 #define NOBLE_STEED_SSE_BIT (0x00000001)
 #define NOBLE_STEED_SSE2_BIT (0x00000002)
 #define NOBLE_STEED_SSE3_BIT (0x00000004)
@@ -26,7 +25,7 @@
 #define NOBLE_STEED_SIMD (NSLIB_ENABLE_SIMD & NOBLE_STEED_USE_SSE42) // | NOBLE_STEED_SSE_SQRT_BIT)
 
 #if NOBLE_STEED_SIMD
-#include <immintrin.h>
+    #include <immintrin.h>
 namespace nslib
 {
 template<typename T, s8 SZ>
@@ -44,21 +43,21 @@ struct simd_traits<f32, 4>
 
 inline __m128 _sse_dp(const __m128 &left, const __m128 &right)
 {
-#if (NOBLE_STEED_SIMD & NOBLE_STEED_SSE41_BIT)
+    #if (NOBLE_STEED_SIMD & NOBLE_STEED_SSE41_BIT)
     return _mm_dp_ps(left, right, 0xff);
-#elif (NOBLE_STEED_SIMD & NOBLE_STEED_SSE3_BIT)
+    #elif (NOBLE_STEED_SIMD & NOBLE_STEED_SSE3_BIT)
     __m128 mul0 = _mm_mul_ps(left, right);
     __m128 hadd0 = _mm_hadd_ps(mul0, mul0);
     __m128 hadd1 = _mm_hadd_ps(hadd0, hadd0);
     return hadd1;
-#else
+    #else
     __m128 mul0 = _mm_mul_ps(left, right);
     __m128 swp0 = _mm_shuffle_ps(mul0, mul0, _MM_SHUFFLE(2, 3, 0, 1));
     __m128 add0 = _mm_add_ps(mul0, swp0);
     mul0 = _mm_shuffle_ps(add0, add0, _MM_SHUFFLE(0, 1, 2, 3));
     add0 = _mm_add_ps(add0, mul0);
     return add0;
-#endif
+    #endif
 }
 } // namespace nslib
 #endif
@@ -139,25 +138,26 @@ bool fequals(T left, T right)
     return (left == right);
 }
 
-
 template<holds_basic_comparable_type T>
-requires holds_floating_pt<T>
+    requires holds_floating_pt<T>
 bool operator==(const T &lhs_, const T &rhs_)
 {
     for (sizet i{0}; i < lhs_.size(); ++i) {
-        if (!fequals(lhs_[i], rhs_[i]))
+        if (!fequals(lhs_[i], rhs_[i])) {
             return false;
+        }
     }
     return true;
 }
 
 template<holds_basic_comparable_type T>
-requires holds_integral<T>
+    requires holds_integral<T>
 bool operator==(const T &lhs_, const T &rhs_)
 {
     for (sizet i{0}; i < lhs_.size(); ++i) {
-        if (!(lhs_[i] == rhs_[i]))
+        if (!(lhs_[i] == rhs_[i])) {
             return false;
+        }
     }
     return true;
 }
@@ -172,8 +172,9 @@ template<holds_basic_comparable_type T>
 bool operator<(const T &lhs_, const T &rhs_)
 {
     for (sizet i{0}; i < lhs_.size(); ++i) {
-        if (lhs_[i] >= rhs_[i])
+        if (lhs_[i] >= rhs_[i]) {
             return false;
+        }
     }
     return true;
 }
@@ -182,8 +183,9 @@ template<holds_basic_comparable_type T>
 bool operator>(const T &lhs_, const T &rhs_)
 {
     for (sizet i{0}; i < lhs_.size(); ++i) {
-        if (lhs_[i] <= rhs_[i])
+        if (lhs_[i] <= rhs_[i]) {
             return false;
+        }
     }
     return true;
 }
@@ -203,32 +205,36 @@ bool operator>=(const T &lhs_, const T &rhs_)
 template<holds_basic_arithmetic_type T>
 T operator+(T lhs_, const T &rhs_)
 {
-    for (sizet i{0}; i < lhs_.size(); ++i)
+    for (sizet i{0}; i < lhs_.size(); ++i) {
         lhs_[i] += rhs_[i];
+    }
     return lhs_;
 }
 
 template<holds_basic_arithmetic_type T>
 T operator-(T lhs_, const T &rhs_)
 {
-    for (sizet i{0}; i < lhs_.size(); ++i)
+    for (sizet i{0}; i < lhs_.size(); ++i) {
         lhs_[i] -= rhs_[i];
+    }
     return lhs_;
 }
 
 template<holds_basic_arithmetic_type T>
 T operator*(T lhs_, const T &rhs_)
 {
-    for (sizet i{0}; i < lhs_.size(); ++i)
+    for (sizet i{0}; i < lhs_.size(); ++i) {
         lhs_[i] *= rhs_[i];
+    }
     return lhs_;
 }
 
 template<arithmetic_type T, holds_basic_arithmetic_type U>
 U operator*(U lhs_, T rhs_)
 {
-    for (auto &&element : lhs_)
+    for (auto &&element : lhs_) {
         element *= typename U::value_type(rhs_);
+    }
     return lhs_;
 }
 
@@ -241,8 +247,9 @@ U operator*(T lhs_, const U &rhs_)
 template<holds_basic_arithmetic_type T>
 T operator/(T lhs_, const T &rhs_)
 {
-    for (sizet i{0}; i < lhs_.size(); ++i)
+    for (sizet i{0}; i < lhs_.size(); ++i) {
         lhs_[i] /= rhs_[i];
+    }
     return lhs_;
 }
 
@@ -256,22 +263,24 @@ U operator/(const U lhs_, T rhs_)
 template<integral T, holds_basic_arithmetic_type U>
 U operator/(U lhs_, T rhs_)
 {
-    for (auto &&element : lhs_)
+    for (auto &&element : lhs_) {
         element /= rhs_;
+    }
     return lhs_;
 }
 
 template<floating_pt T, holds_basic_arithmetic_type U>
 U operator/(T lhs_, U rhs_)
 {
-    for (auto &&element : rhs_)
+    for (auto &&element : rhs_) {
         element = lhs_ / element;
+    }
     return rhs_;
 }
 
 #define COMMON_OPERATORS(type, element_count, ind_ret_type)                                                                                \
     template<class U>                                                                                                                      \
-    using container_type = vector2<U>;                                                                                                     \
+    using container_type = type<U>;                                                                                                        \
     using value_type = T;                                                                                                                  \
     using iterator = ind_ret_type *;                                                                                                       \
     using const_iterator = const ind_ret_type *;                                                                                           \
@@ -279,8 +288,9 @@ U operator/(T lhs_, U rhs_)
     template<class U>                                                                                                                      \
     type(const type<U> &conv)                                                                                                              \
     {                                                                                                                                      \
-        for (u8 i{0}; i < size_; ++i)                                                                                                      \
+        for (u8 i{0}; i < size_; ++i) {                                                                                                    \
             data[i] = (T)conv[i];                                                                                                          \
+        }                                                                                                                                  \
     }                                                                                                                                      \
     inline type<T> &operator+=(const type<T> &rhs_)                                                                                        \
     {                                                                                                                                      \
