@@ -78,23 +78,129 @@ struct rmesh_vert_bone_weights_ids
 
 using ind_t = u16;
 
-struct rmesh
+enum struct rmesh_topology : u8
 {
+    RMESH_TOPOLOGY_TRIANGLE_STRIP,
+};
+
+struct rmesh_create_info
+{
+    const char *name;
     const rmesh_vert_pos_col *pos_col;
     const rmesh_vert_norm_tan_uv *norm_tan_uv;
     // If weight ids are none null then the mesh is skinned
     const rmesh_vert_bone_weights_ids *weights_ids;
     sizet vert_count;
-    
+
     const ind_t *inds;
     sizet ind_count;
-    
+
     const rsubmesh_range *sm_info;
     sizet sm_count;
+
+    rmesh_topology topology;
+};
+
+enum struct rformat
+{
+    // RGBA
+    RGBA8_SRGB,
+    RGBA8_SRGB_COMPRESSED,
+    RGBA8_UNORM,
+    RGBA8_UNORM_COMPRESSED,
+    RGBA8_SNORM,
+    RGBA8_UINT,
+    RGBA8_SINT,
+    // RGB
+    RGB8_SRGB,
+    RGB8_SRGB_COMPRESSED,
+    RGB8_UNORM,
+    RGB8_UNORM_COMPRESSED,
+    RGB8_SNORM,
+    RGB8_UINT,
+    RGB8_SINT,
+    // RG
+    RG8_SRGB,
+    RG8_UNORM,
+    RG8_UNORM_COMPRESSED,
+    RG8_SNORM,
+    RG8_SNORM_COMPRESSED,
+    RG8_UINT,
+    RG8_SINT,
+    // R
+    R8_SRGB,
+    R8_UNORM,
+    R8_UNORM_COMPRESSED,
+    R8_SNORM,
+    R8_SNORM_COMPRESSED,
+    R8_UINT,
+    R8_SINT,
+    // RGBA 16 bpp
+    RGBA16_SFLOAT,
+    RGBA16_UNORM,
+    RGBA16_SNORM,
+    RGBA16_UINT,
+    RGBA16_SINT,
+    // RGB
+    RGB16_SFLOAT,
+    RGB16_UNORM,
+    RGB16_SNORM,
+    RGB16_UINT,
+    RGB16_SINT,
+    // RG
+    RG16_SFLOAT,
+    RG16_UNORM,
+    RG16_SNORM,
+    RG16_UINT,
+    RG16_SINT,
+    // R
+    R16_SFLOAT,
+    R16_UNORM,
+    R16_SNORM,
+    R16_UINT,
+    R16_SINT,
+    // RGBA 32 bpp
+    RGBA32_SFLOAT,
+    RGBA32_UINT,
+    RGBA32_SINT,
+    // RGB
+    RGB32_SFLOAT,
+    RGB32_UINT,
+    RGB32_SINT,
+    // RG
+    RG32_SFLOAT,
+    RG32_UINT,
+    RG32_SINT,
+    // R
+    R32_SFLOAT,
+    R32_UINT,
+    R32_SINT,
+};
+
+enum rtexture_create_flag : u32
+{
+    RTEXTURE_CREATE_FLAG_NONE,
+    RTEXTURE_CREATE_FLAG_CUBE_MAP
+};
+
+struct rtexture_create_info
+{
+    const char *name;
+    // Pixel data
+    const void *data;
+    // For validation basically
+    sizet data_size;
+    // Texture dimensions - z is layer count
+    uvec3 dims;
+    // Format
+    rformat format;
+    // See rtexture_create_flags
+    u32 flags;
 };
 
 // TODO: Rename these to something more sensible
-enum rvert_stream {
+enum rvert_stream
+{
     RVERT_STREAM_POS_COL,
     RVERT_STREAM_NORM_TAN_UV,
     RVERT_STREAM_SKINNED_POS_COL,
@@ -181,16 +287,19 @@ struct rmesh_info
     // This is the block that was used for the vert virtual block allocations (either static or skinned mesh pos/col
     // stream block)
     VmaVirtualBlock vert_block;
-    
+
     // This is determined by taking the byte offset / sizeof(stream element)
     u32 vert_offset;
 
     // Mem for pos buf that will need to be released in pos/buf
     VmaVirtualAllocation ind_mem{VK_NULL_HANDLE};
-    
+
+    // This is the block that was used for the ind virtual block allocations
+    VmaVirtualBlock ind_block;
+
     // This is determined by taking the byte offset / sizeof(stream element)
     u32 ind_offset;
-    
+
     // Indice range for each submesh
     static_array<rsubmesh_range, MAX_SUBMESH_COUNT> submesh_vert_ind_counts;
 };
@@ -199,6 +308,7 @@ struct imgui_ctxt;
 
 struct rtexture_info
 {
+    small_str name;
     vkr_image im;
     VkImageView im_view;
 };
@@ -242,7 +352,8 @@ struct frame_context
     VkSemaphore image_avail;
 };
 
-struct geometry_buffer_info {
+struct geometry_buffer_info
+{
     VmaVirtualBlock static_mesh_block{VK_NULL_HANDLE};
     VmaVirtualBlock skinned_mesh_block{VK_NULL_HANDLE};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
@@ -250,9 +361,8 @@ struct geometry_buffer_info {
     vkr_buffer ind_buffer;
 };
 
-struct rview {
-    
-};
+struct rview
+{};
 
 struct renderer
 {
@@ -321,7 +431,9 @@ struct renderer
 // rmaterial_handle register_material(rtechnique_handle technique, static_array<rtexture_handle, )
 // rtexture_handle register_texture(const texture *tex, renderer *rndr);
 
-rmesh_handle create_mesh(const rmesh &mdata, const char *name, renderer *rndr);
+rmesh_handle create_mesh(const rmesh_create_info &cminfo, renderer *rndr);
+
+rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rndr);
 
 // NOTE: All of these mesh operations kind of need to wait on all rendering operations to complete as they modify the
 // vertex and index buffers - not sure yet if this is better done within the functions or in the caller. Also these should be done at the

@@ -1370,6 +1370,7 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
 
     array<VkBufferCopy> new_regions;
     arr_init(&new_regions, vk->cfg.arenas.command_arena);
+    arr_resize(&new_regions, region_count);
 
     // Translate all regions from source buffers to regions from staging buffer
     sizet cur_offset{};
@@ -1377,13 +1378,11 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
         auto src_addr = (void*)((sizet)src_data + regions[i].srcOffset);
         auto dst_addr = (void*)((sizet)staging_buf.mem_info.pMappedData + cur_offset);
         memcpy(src_addr, src_addr, regions[i].size);
-        
-        VkBufferCopy new_region{};
-        new_region.srcOffset = cur_offset;
-        new_region.size = regions[i].size;
-        new_region.dstOffset = regions[i].dstOffset;
-        
-        cur_offset += new_region.size;
+
+        new_regions[i].size = regions[i].size;
+        new_regions[i].srcOffset = cur_offset;
+        new_regions[i].dstOffset = regions[i].dstOffset;
+        cur_offset += new_regions[i].size;
     }
 
     err = vkr_copy_buffer(dest_buffer, &staging_buf, new_regions.data, (u32)new_regions.size, cmd_buf, queue, vk);
@@ -1975,15 +1974,20 @@ intern int blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &cmd_buf;
-    int err = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+
+    VkFence submit_fence;
+    vkr_init_fence(&submit_fence, 0, vk);
+    
+    int err = vkQueueSubmit(queue, 1, &submit_info, submit_fence);
     if (err != VK_SUCCESS) {
         wlog("Failed to submit queue with vulkan error %d", err);
         return err_code::VKR_COPY_BUFFER_SUBMIT_FAIL;
     }
-    err = vkQueueWaitIdle(queue);
+    err = vkWaitForFences(vk->inst.device.hndl, 1, &submit_fence, VK_TRUE, UINT64_MAX);
+    vkr_terminate_fence(submit_fence, vk);
     if (err != VK_SUCCESS) {
-        wlog("Failed to wait idle with vulkan error %d", err);
-        return err_code::VKR_COPY_BUFFER_WAIT_IDLE_FAIL;
+        wlog("Failed to wait for fence %d with vulkan error %d", submit_fence, err);
+        return err_code::VKR_COPY_BUFFER_WAIT_FENCE_FAIL;
     }
     return err_code::VKR_NO_ERROR;
 }

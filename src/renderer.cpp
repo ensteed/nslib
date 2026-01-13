@@ -311,7 +311,6 @@ intern int setup_geometry_buffers(renderer *rndr)
     asrt(rndr);
     auto vk = &rndr->vk;
     auto dev = &vk->inst.device;
-    auto hndl = acquire_slot(&rndr->meshes);
 
     vkr_buffer_cfg alloc_cfg{};
     alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -358,7 +357,7 @@ intern int setup_geometry_buffers(renderer *rndr)
         alloc_cfg.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         alloc_cfg.buffer_size = (MAX_STATIC_MESH_VERT_COUNT + MAX_SKINNED_MESH_VERT_COUNT) * sizeof(ind_t);
         alloc_cfg.user_data = (void *)RIND_STREAM_NAME;
-        
+
         auto cur_buf = &rndr->geometry_buffers.ind_buffer;
         int result = vkr_init_buffer(cur_buf, alloc_cfg);
         failed = result != err_code::VKR_NO_ERROR;
@@ -385,20 +384,20 @@ intern bool release_mesh(rmesh_handle hndl, renderer *rndr)
 {
     auto sl_item = get_slot_item(&rndr->meshes, hndl);
     vmaVirtualFree(sl_item->vert_block, sl_item->vert_mem);
-    vmaVirtualFree(rndr->geometry_buffers.indices_block, sl_item->ind_mem);
+    vmaVirtualFree(sl_item->ind_block, sl_item->ind_mem);
     *sl_item = {};
     return release_slot(&rndr->meshes, hndl);
 }
 
-rmesh_handle create_mesh(const rmesh &mdata, const char *name, renderer *rndr)
+rmesh_handle create_mesh(const rmesh_create_info &cminfo, renderer *rndr)
 {
     asrt(rndr);
-    asrt(mdata.sm_info);
-    asrt(mdata.pos_col);
-    asrt(mdata.inds);
+    asrt(cminfo.sm_info);
+    asrt(cminfo.pos_col);
+    asrt(cminfo.inds);
 
-    VkCommandBuffer tmp_buf;
-    int result = vkr_alloc_cmd_bufs(&tmp_buf, {.pool = rndr->transient_pool}, &rndr->vk);
+    VkCommandBuffer tmp_cmd_buf;
+    int result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
         return {};
     }
@@ -408,7 +407,7 @@ rmesh_handle create_mesh(const rmesh &mdata, const char *name, renderer *rndr)
     auto mesh_item = get_slot_item(&rndr->meshes, mhndl);
 
     // Just in case we ensure null terminated
-    strncpy(mesh_item->name, name, SMALL_STR_LEN - 1);
+    strncpy(mesh_item->name, cminfo.name, SMALL_STR_LEN - 1);
     mesh_item->name[SMALL_STR_LEN - 1] = 0;
 
     // We use vma to do memory management for us using a vk buffer as a virtual block. For non skinned meshes (where
@@ -416,14 +415,17 @@ rmesh_handle create_mesh(const rmesh &mdata, const char *name, renderer *rndr)
     // insert stuff in the other
     VmaVirtualAllocationCreateInfo ci{};
     vkr_buffer *vert_streams = rndr->geometry_buffers.vert_buffers;
-    vkr_buffer *pos_col_stream =
-        !mdata.weights_ids ? &vert_streams[RVERT_STREAM_POS_COL] : &vert_streams[RVERT_STREAM_SKINNED_POS_COL];
-    VmaVirtualBlock pos_col_block = !mdata.weights_ids ? rndr->geometry_buffers.static_mesh_block : rndr->geometry_buffers.skinned_mesh_block;
+    vkr_buffer *pos_col_stream = !cminfo.weights_ids ? &vert_streams[RVERT_STREAM_POS_COL] : &vert_streams[RVERT_STREAM_SKINNED_POS_COL];
     vkr_buffer *norm_tan_uv_stream =
-        !mdata.weights_ids ? &vert_streams[RVERT_STREAM_NORM_TAN_UV] : &vert_streams[RVERT_STREAM_SKINNED_NORM_TAN_UV];
+        !cminfo.weights_ids ? &vert_streams[RVERT_STREAM_NORM_TAN_UV] : &vert_streams[RVERT_STREAM_SKINNED_NORM_TAN_UV];
     vkr_buffer *bones_weight_id_stream = &vert_streams[RVERT_STREAM_SKINNED_BONES_WEIGHT_ID];
     vkr_buffer *ind_stream = &rndr->geometry_buffers.ind_buffer;
 
+    // Set the mesh item virtual blocks
+    mesh_item->vert_block =
+        !cminfo.weights_ids ? rndr->geometry_buffers.static_mesh_block : rndr->geometry_buffers.skinned_mesh_block;
+    mesh_item->ind_block = rndr->geometry_buffers.indices_block;
+    
     ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
     ci.pUserData = mesh_item->name;
 
@@ -431,12 +433,12 @@ rmesh_handle create_mesh(const rmesh &mdata, const char *name, renderer *rndr)
     ci.alignment = sizeof(rmesh_vert_pos_col);
 
     // Cache byte size to use later
-    VkDeviceSize pos_col_byte_size = mdata.vert_count * ci.alignment;
+    VkDeviceSize pos_col_byte_size = cminfo.vert_count * ci.alignment;
     ci.size = pos_col_byte_size;
 
     // Fill the vert mem and byte offset
     VkDeviceSize pos_col_byte_offset;
-    vmaVirtualAllocate(pos_col_block, &ci, &mesh_item->vert_mem, &pos_col_byte_offset);
+    vmaVirtualAllocate(mesh_item->vert_block, &ci, &mesh_item->vert_mem, &pos_col_byte_offset);
 
     // Calculate the vertex offset from the byte offset - assert that our byte offset is exactly a multiple of alignment
     // or else everything will get messed up
@@ -447,45 +449,45 @@ rmesh_handle create_mesh(const rmesh &mdata, const char *name, renderer *rndr)
     ci.alignment = sizeof(ind_t);
 
     // Cache byte size to use later
-    VkDeviceSize ind_byte_size = mdata.ind_count * ci.alignment;
+    VkDeviceSize ind_byte_size = cminfo.ind_count * ci.alignment;
     ci.size = ind_byte_size;
 
-    // Fill the vert mem and byte offset for ind buf
+    // Fill the ind mem and byte offset for ind buf
     VkDeviceSize ind_byte_offset;
-    vmaVirtualAllocate(rndr->geometry_buffers.indices_block, &ci, &mesh_item->ind_mem, &ind_byte_offset);
+    vmaVirtualAllocate(mesh_item->ind_block, &ci, &mesh_item->ind_mem, &ind_byte_offset);
 
     // Calculate the ind offset from the byte offset - assert that our byte offset is exactly a multiple of alignment
     // or else everything will get messed up
     asrt(ind_byte_offset % ci.alignment == 0);
     mesh_item->ind_offset = ind_byte_offset / ci.alignment;
 
-    sizet vbuf_cnt = !mdata.weights_ids ? 3 : 4;
+    sizet vbuf_cnt = !cminfo.weights_ids ? 3 : 4;
 
     // Align up all our data so a for i loop can just straight copy this stuff
-    const void *src_data[] = {mdata.pos_col, mdata.norm_tan_uv, mdata.inds, mdata.weights_ids};
+    const void *src_data[] = {cminfo.pos_col, cminfo.norm_tan_uv, cminfo.inds, cminfo.weights_ids};
     vkr_buffer *dest_streams[] = {pos_col_stream, norm_tan_uv_stream, ind_stream, bones_weight_id_stream};
     VkDeviceSize byte_offsets[] = {pos_col_byte_offset,
                                    sizeof(rmesh_vert_norm_tan_uv) * mesh_item->vert_offset,
                                    ind_byte_offset,
                                    sizeof(rmesh_vert_bone_weights_ids) * mesh_item->vert_offset};
     VkDeviceSize byte_sizes[] = {pos_col_byte_size,
-                                 sizeof(rmesh_vert_norm_tan_uv) * mdata.vert_count,
-                                 sizeof(ind_t) * mdata.ind_count,
-                                 sizeof(rmesh_vert_bone_weights_ids) * mdata.vert_count};
+                                 sizeof(rmesh_vert_norm_tan_uv) * cminfo.vert_count,
+                                 sizeof(ind_t) * cminfo.ind_count,
+                                 sizeof(rmesh_vert_bone_weights_ids) * cminfo.vert_count};
 
     for (u32 i = 0; i < vbuf_cnt; ++i) {
         // Do a sub allocation from the larger geometry buffer and save the offset
         VkBufferCopy region{};
         region.size = byte_sizes[i];
         region.dstOffset = byte_offsets[i];
-        result = vkr_stage_and_upload_buffer_data(dest_streams[i], src_data[i], &region, 1, tmp_buf, tmp_q, &rndr->vk);
+        result = vkr_stage_and_upload_buffer_data(dest_streams[i], src_data[i], &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
             release_mesh(mhndl, rndr);
             return {};
         }
     }
 
-    vkr_free_cmd_bufs(&tmp_buf, 1, rndr->transient_pool, &rndr->vk);
+    vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
     return mhndl;
 }
 
@@ -517,58 +519,198 @@ intern int setup_global_samplers(renderer *rndr)
     return err_code::RENDER_NO_ERROR;
 }
 
-#if 0
-rtexture_handle register_texture(const texture *tex, renderer *rndr)
+intern VkFormat get_vk_format(rformat fmt)
 {
-    rtexture_handle ret{};
-    rtexture_info tex_info{};
+    switch (fmt) {
+    case (rformat::RGBA8_SRGB):
+        return VK_FORMAT_R8G8B8A8_SRGB;
+    case (rformat::RGBA8_SRGB_COMPRESSED):
+        return VK_FORMAT_BC7_SRGB_BLOCK;
+    case (rformat::RGBA8_UNORM):
+        return VK_FORMAT_R8G8B8A8_UNORM;
+    case (rformat::RGBA8_UNORM_COMPRESSED):
+        return VK_FORMAT_BC7_UNORM_BLOCK;
+    case (rformat::RGBA8_SNORM):
+        return VK_FORMAT_R8G8B8A8_SNORM;
+    case (rformat::RGBA8_UINT):
+        return VK_FORMAT_R8G8B8A8_UINT;
+    case (rformat::RGBA8_SINT):
+        return VK_FORMAT_R8G8B8A8_SINT;
+    case (rformat::RGB8_SRGB):
+        return VK_FORMAT_R8G8B8_SRGB;
+    case (rformat::RGB8_SRGB_COMPRESSED):
+        return VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+    case (rformat::RGB8_UNORM):
+        return VK_FORMAT_R8G8B8_UNORM;
+    case (rformat::RGB8_UNORM_COMPRESSED):
+        return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+    case (rformat::RGB8_SNORM):
+        return VK_FORMAT_R8G8B8_SNORM;
+    case (rformat::RGB8_UINT):
+        return VK_FORMAT_R8G8B8_UINT;
+    case (rformat::RGB8_SINT):
+        return VK_FORMAT_R8G8B8_SINT;
+    case (rformat::RG8_SRGB):
+        return VK_FORMAT_R8G8_SRGB;
+    case (rformat::RG8_UNORM):
+        return VK_FORMAT_R8G8_UNORM;
+    case (rformat::RG8_UNORM_COMPRESSED):
+        return VK_FORMAT_BC5_UNORM_BLOCK;
+    case (rformat::RG8_SNORM):
+        return VK_FORMAT_R8G8_SNORM;
+    case (rformat::RG8_SNORM_COMPRESSED):
+        return VK_FORMAT_BC5_SNORM_BLOCK;
+    case (rformat::RG8_UINT):
+        return VK_FORMAT_R8G8_UINT;
+    case (rformat::RG8_SINT):
+        return VK_FORMAT_R8G8_SINT;
+    case (rformat::R8_SRGB):
+        return VK_FORMAT_R8_SRGB;
+    case (rformat::R8_UNORM):
+        return VK_FORMAT_R8_UNORM;
+    case (rformat::R8_UNORM_COMPRESSED):
+        return VK_FORMAT_BC4_UNORM_BLOCK;
+    case (rformat::R8_SNORM):
+        return VK_FORMAT_R8_SNORM;
+    case (rformat::R8_SNORM_COMPRESSED):
+        return VK_FORMAT_BC4_SNORM_BLOCK;
+    case (rformat::R8_UINT):
+        return VK_FORMAT_R8_UINT;
+    case (rformat::R8_SINT):
+        return VK_FORMAT_R8_SINT;
+    case (rformat::RGBA16_SFLOAT):
+        return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case (rformat::RGBA16_UNORM):
+        return VK_FORMAT_R16G16B16A16_UNORM;
+    case (rformat::RGBA16_SNORM):
+        return VK_FORMAT_R16G16B16A16_SNORM;
+    case (rformat::RGBA16_UINT):
+        return VK_FORMAT_R16G16B16A16_UINT;
+    case (rformat::RGBA16_SINT):
+        return VK_FORMAT_R16G16B16A16_SINT;
+    case (rformat::RGB16_SFLOAT):
+        return VK_FORMAT_R16G16B16_SFLOAT;
+    case (rformat::RGB16_UNORM):
+        return VK_FORMAT_R16G16B16_UNORM;
+    case (rformat::RGB16_SNORM):
+        return VK_FORMAT_R16G16B16_SNORM;
+    case (rformat::RGB16_UINT):
+        return VK_FORMAT_R16G16B16_UINT;
+    case (rformat::RGB16_SINT):
+        return VK_FORMAT_R16G16B16_SINT;
+    case (rformat::RG16_SFLOAT):
+        return VK_FORMAT_R16G16_SFLOAT;
+    case (rformat::RG16_UNORM):
+        return VK_FORMAT_R16G16_UNORM;
+    case (rformat::RG16_SNORM):
+        return VK_FORMAT_R16G16_SNORM;
+    case (rformat::RG16_UINT):
+        return VK_FORMAT_R16G16_UINT;
+    case (rformat::RG16_SINT):
+        return VK_FORMAT_R16G16_SINT;
+    case (rformat::R16_SFLOAT):
+        return VK_FORMAT_R16_SFLOAT;
+    case (rformat::R16_UNORM):
+        return VK_FORMAT_R16_UNORM;
+    case (rformat::R16_SNORM):
+        return VK_FORMAT_R16_SNORM;
+    case (rformat::R16_UINT):
+        return VK_FORMAT_R16_UINT;
+    case (rformat::R16_SINT):
+        return VK_FORMAT_R16_SINT;
+    case (rformat::RGBA32_SFLOAT):
+        return VK_FORMAT_R32G32B32A32_SFLOAT;
+    case (rformat::RGBA32_UINT):
+        return VK_FORMAT_R32G32B32A32_UINT;
+    case (rformat::RGBA32_SINT):
+        return VK_FORMAT_R32G32B32A32_SINT;
+    case (rformat::RGB32_SFLOAT):
+        return VK_FORMAT_R32G32B32_SFLOAT;
+    case (rformat::RGB32_UINT):
+        return VK_FORMAT_R32G32B32_UINT;
+    case (rformat::RGB32_SINT):
+        return VK_FORMAT_R32G32B32_SINT;
+    case (rformat::RG32_SFLOAT):
+        return VK_FORMAT_R32G32_SFLOAT;
+    case (rformat::RG32_UINT):
+        return VK_FORMAT_R32G32_UINT;
+    case (rformat::RG32_SINT):
+        return VK_FORMAT_R32G32_SINT;
+    case (rformat::R32_SFLOAT):
+        return VK_FORMAT_R32_SFLOAT;
+    case (rformat::R32_UINT):
+        return VK_FORMAT_R32_UINT;
+    case (rformat::R32_SINT):
+        return VK_FORMAT_R32_SINT;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
 
-    auto dev = &rndr->vk.inst.device;
-    // Most default values are correct
+rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rndr)
+{
+    asrt(rndr);
+    asrt(ctinfo.data);
+    asrt(ctinfo.dims > uvec3{});
+    asrt(ctinfo.data_size > 0);
+    asrt(ctinfo.name);
+
+    VkCommandBuffer tmp_cmd_buf;
+    int result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) {
+        return {};
+    }
+    auto tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
+
+    rtexture_info ti{};
+    
+    // Just in case we ensure null terminated
+    strncpy(ti.name, ctinfo.name, SMALL_STR_LEN - 1);
+    ti.name[SMALL_STR_LEN - 1] = 0;
+    
     vkr_image_cfg cfg{};
-    cfg.format = VK_FORMAT_R8G8B8A8_SRGB;
+    cfg.format = get_vk_format(ctinfo.format);
+    asrt(cfg.format != VK_FORMAT_UNDEFINED && "Forgot to add vk support to rformat type");
     cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    cfg.dims = {tex->size, 1};
+    cfg.dims = ctinfo.dims;
     cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
 
     // Create image
-    int vk_ret = vkr_init_image(&tex_info.im, cfg);
+    int vk_ret = vkr_init_image(&ti.im, cfg);
     if (vk_ret != err_code::VKR_NO_ERROR) {
-        return ret;
+        vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
+        return {};
     }
-
-    VkCommandBuffer tmp_cmd_buf;
-    vk_ret = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
-    if (vk_ret != err_code::VKR_NO_ERROR) {
-        vkr_terminate_image(&tex_info.im, &rndr->vk);
-        return ret;
-    }
-    VkQueue q = dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
 
     // Upload texture data to created image using staging buffer
-    vk_ret = vkr_stage_and_upload_image_data(&tex_info.im, tex->pixels.data, get_texture_memsize(tex), tmp_cmd_buf, q, &rndr->vk);
+    // NOTE: This call currently blocks with waiting on a 
+    vk_ret = vkr_stage_and_upload_image_data(&ti.im, ctinfo.data, ctinfo.data_size, tmp_cmd_buf, tmp_q, &rndr->vk);
     vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
-
     if (vk_ret != err_code::VKR_NO_ERROR) {
-        vkr_terminate_image(&tex_info.im, &rndr->vk);
-        return ret;
+        vkr_terminate_image(&ti.im, &rndr->vk);
+        return {};
     }
 
+    // Create image view
     vkr_image_view_cfg iview_cfg{};
-    iview_cfg.image = &tex_info.im;
-
-    vk_ret = vkr_init_image_view(&tex_info.im_view, iview_cfg, &rndr->vk);
+    iview_cfg.image = &ti.im;
+    vk_ret = vkr_init_image_view(&ti.im_view, iview_cfg, &rndr->vk);
     if (vk_ret != err_code::VKR_NO_ERROR) {
-        vkr_terminate_image(&tex_info.im, &rndr->vk);
-        return ret;
+        vkr_terminate_image(&ti.im, &rndr->vk);
+        return {};
     }
 
-    ret = acquire_slot(&rndr->textures, tex_info);
-    asrt(is_valid(ret));
-    return ret;
+    rtexture_handle thndl = acquire_slot(&rndr->textures);
+    if (!is_valid(thndl)) {
+        vkr_terminate_image(&ti.im, &rndr->vk);
+        vkr_terminate_image_view(ti.im_view, &rndr->vk);
+        return thndl;
+    }
+    rtexture_info *tex_item = get_slot_item(&rndr->textures, thndl);
+    asrt(tex_item);
+    *tex_item = ti;
+    return thndl;
 }
-#endif
 
 intern int init_swapchain_images_and_framebuffer(renderer *rndr)
 {
@@ -659,9 +801,6 @@ intern int setup_global_pipeline_layout(renderer *rndr)
 
 void setup_vertex_layout_presets(renderer *rndr)
 {
-    // TODO: separate positions for this buffer
-    rndr->vertex_layouts.size = RVERT_LAYOUT_COUNT;
-
     /////////////////////////////
     // STATIC MESH VERT LAYOUT //
     /////////////////////////////
@@ -1034,8 +1173,8 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
     mem_init_fl_arena(&rndr->vk_free_list, 500 * MB_SIZE, fl_arena, "vk-fl");
     mem_init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, mem_global_stack_arena(), "vk-frame");
 
-    mem_init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "frame-linear");
-    mem_init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "frame-stack");
+    mem_init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "rndr-frame-linear");
+    mem_init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "rndr-frame-stack");
 
     // Render pass names
     hmap_init(&rndr->rpass_name_map, hash_type, fl_arena);
@@ -1114,7 +1253,7 @@ int begin_render_frame(renderer *rndr, int finished_frames)
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    
+
     // Update finished frames which is used to get the current frame
     rndr->finished_frames = finished_frames;
     int current_frame_ind = rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
@@ -1276,7 +1415,11 @@ void terminate_renderer(renderer *rndr)
     // IMGUI
     terminate_imgui(rndr);
 
-    // TODO: Terminate all meshes
+    // Terminate all meshes
+    for (int i = 0; i < rndr->meshes.slots.size; ++i) {
+        release_mesh(get_slot_current_handle(&rndr->meshes,i), rndr);
+    }
+    clear_slot_pool(&rndr->meshes);
 
     // Terminate all images and image views
     for (int i = 0; i < rndr->textures.slots.size; ++i) {

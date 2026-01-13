@@ -4,7 +4,6 @@
 #include "input_mapping.h"
 #include "sim_region.h"
 #include "basic_types.h"
-#include "json_archive.h"
 #include "imgui/imgui.h"
 using namespace nslib;
 
@@ -82,7 +81,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, app_data *app)
         auto app = (app_data *)data;
         app->movement.x -= (t.ev->key.action - 1) * (-2) + 1;
     };
-    
+
     set_input_trigger(&app->stack, "cam-turn", {cam_turn_func, app});
     set_input_trigger(&app->stack, "move-forward", {move_forward_action, app});
     set_input_trigger(&app->stack, "move-back", {move_back_action, app});
@@ -101,6 +100,106 @@ intern void setup_camera_controller(platform_ctxt *ctxt, app_data *app)
     app->movement_km.mbutton_mask = MBUTTON_MASK_NONE;
 }
 
+intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const mesh &rect_msh)
+{
+    // Create a grid of entities with odd ones being cubes and even being rectangles
+    int len = 10, width = 10, height = 10;
+    auto ent_offset = add_entities(len * width * height, region);
+
+    auto tf_tbl = get_comp_tbl<transform>(&region->cdb);
+    for (sizet zind = 0; zind < height; ++zind) {
+        for (sizet yind = 0; yind < len; ++yind) {
+            for (sizet xind = 0; xind < width; ++xind) {
+                sizet ent_ind = zind * (width * len) + yind * width + xind + ent_offset;
+                auto ent = &region->ents[ent_ind];
+                auto tfcomp = add_comp<transform>(ent->id, tf_tbl);
+                auto sc = add_comp<static_model>(ent);
+                if (xind % 2) {
+                    sc->mesh_id = cube_msh.id;
+                    ent->name = to_str("cube-%d", ent_ind);
+                }
+                else {
+                    sc->mesh_id = rect_msh.id;
+                    ent->name = to_str("rect-%d", ent_ind);
+                }
+                tfcomp->world_pos = vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f};
+                tfcomp->cached = math::model_tform(tfcomp->world_pos, tfcomp->orientation, tfcomp->scale);
+            }
+        }
+    }
+}
+
+// Great use for a stack arena - will work
+void register_meshes_with_renderer(robj_cache<mesh> *meshes, renderer *rndr, mem_arena *arena)
+{
+    for (auto rm = cache_begin(meshes); rm; rm = cache_next(meshes, rm)) {
+        ilog("Registering mesh id: %s  name: %s", to_cstr(rm->key), str_cstr(rm->val->name));
+        asrt(rm->val->verts.size > 0);
+        rmesh_create_info cinf{};
+
+        // Vert/Ind counts
+        cinf.vert_count = rm->val->verts.size;
+        cinf.ind_count = rm->val->inds.size;
+
+        // Submesh ranges
+        cinf.sm_count = rm->val->sm_info.size;
+
+        // bone weight ids will be null if size is 0 - size will either be 0 or same size as verts (we assert that now)
+        asrt(rm->val->skinned_verts_info.size == cinf.vert_count || rm->val->skinned_verts_info.size == 0);
+
+        // Allocate temporary buffers for everything
+        rsubmesh_range *tmp_smeshes = mem_alloc<rsubmesh_range>(arena, cinf.sm_count);
+        rmesh_vert_pos_col *tmp_pos_cols = mem_alloc<rmesh_vert_pos_col>(arena, cinf.vert_count);
+        rmesh_vert_norm_tan_uv *tmp_norm_tan_uvs = mem_alloc<rmesh_vert_norm_tan_uv>(arena, cinf.vert_count);
+        rmesh_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rmesh_vert_bone_weights_ids>(arena, rm->val->skinned_verts_info.size);
+        ind_t *tmp_inds = mem_alloc<ind_t>(arena, cinf.ind_count);
+
+        // Copy submeshes
+        for (u32 i = 0; i < cinf.sm_count; ++i) {
+            tmp_smeshes[i].count = rm->val->sm_info[i].count;
+            tmp_smeshes[i].offset = rm->val->sm_info[i].offset;
+        }
+
+        // Copy vert data
+        for (u32 i = 0; i < cinf.vert_count; ++i) {
+            tmp_pos_cols[i].pos = rm->val->verts[i].pos;
+            tmp_pos_cols[i].col = rm->val->verts[i].col;
+            tmp_norm_tan_uvs[i].norm = rm->val->verts[i].norm;
+            tmp_norm_tan_uvs[i].tangent = rm->val->verts[i].tan;
+            tmp_norm_tan_uvs[i].uv = rm->val->verts[i].uv;
+            if (tmp_bone_weight_ids) {
+                tmp_bone_weight_ids[i].bone_weights = rm->val->skinned_verts_info[i].bone_weights;
+                tmp_bone_weight_ids[i].bone_ids = rm->val->skinned_verts_info[i].bone_ids;
+            }
+        }
+
+        for (u32 i = 0; i < cinf.ind_count; ++i) {
+            tmp_inds[i] = rm->val->inds[i];
+        }
+
+        cinf.sm_info = tmp_smeshes;
+        cinf.name = str_cstr(rm->val->name);
+        cinf.inds = tmp_inds;
+        cinf.pos_col = tmp_pos_cols;
+        cinf.norm_tan_uv = tmp_norm_tan_uvs;
+        cinf.weights_ids = tmp_bone_weight_ids;
+
+        cinf.topology = (rmesh_topology)rm->val->topology;
+        
+        rm->val->rhndl = create_mesh(cinf, rndr);
+        if (!is_valid(rm->val->rhndl)) {
+            wlog("Could not create %s mesh render resource", to_cstr(rm->val->name));
+        }
+
+
+        mem_free(tmp_inds, arena);
+        mem_free(tmp_bone_weight_ids, arena);
+        mem_free(tmp_norm_tan_uvs, arena);
+        mem_free(tmp_pos_cols, arena);
+        mem_free(tmp_smeshes, arena);
+    }
+}
+
 int init(platform_ctxt *ctxt, void *user_data)
 {
     auto app = (app_data *)user_data;
@@ -111,6 +210,7 @@ int init(platform_ctxt *ctxt, void *user_data)
     auto msh_cache = get_cache<mesh>(&app->cg);
     auto cube_msh = add_robj(msh_cache, terminate_mesh);
     auto rect_msh = add_robj(msh_cache, terminate_mesh);
+
     make_rect(rect_msh.ptr, "rect", mem_global_arena());
     make_cube(cube_msh.ptr, "cube", mem_global_arena());
 
@@ -120,8 +220,9 @@ int init(platform_ctxt *ctxt, void *user_data)
         return ret;
     }
 
-    //register_mesh(cube_msh.ptr, &app->rndr);
-    //upload_to_gpu(rect_msh.ptr, &app->rndr);
+    register_meshes_with_renderer(msh_cache, &app->rndr, &ctxt->arenas.stack);
+    // register_mesh(cube_msh.ptr, &app->rndr);
+    // upload_to_gpu(rect_msh.ptr, &app->rndr);
 
     // Create our sim region aka scene
     init_sim_region(&app->rgn, mem_global_arena());
@@ -136,32 +237,7 @@ int init(platform_ctxt *ctxt, void *user_data)
 
     // Create and setup input for camera
     setup_camera_controller(ctxt, app);
-
-    // Create a grid of entities with odd ones being cubes and even being rectangles
-    int len = 10, width = 10, height = 10;
-    auto ent_offset = add_entities(len * width * height, &app->rgn);
-
-    auto tf_tbl = get_comp_tbl<transform>(&app->rgn.cdb);
-    for (sizet zind = 0; zind < height; ++zind) {
-        for (sizet yind = 0; yind < len; ++yind) {
-            for (sizet xind = 0; xind < width; ++xind) {
-                sizet ent_ind = zind * (width * len) + yind * width + xind + ent_offset;
-                auto ent = &app->rgn.ents[ent_ind];
-                auto tfcomp = add_comp<transform>(ent->id, tf_tbl);
-                auto sc = add_comp<static_model>(ent);
-                if (xind % 2) {
-                    sc->mesh_id = cube_msh->id;
-                    ent->name = to_str("cube-%d", ent_ind);
-                }
-                else {
-                    sc->mesh_id = rect_msh->id;
-                    ent->name = to_str("rect-%d", ent_ind);
-                }
-                tfcomp->world_pos = vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f};
-                tfcomp->cached = math::model_tform(tfcomp->world_pos, tfcomp->orientation, tfcomp->scale);
-            }
-        }
-    }
+    create_entity_grid(&app->rgn, *cube_msh, *rect_msh);
     return ret;
 }
 
@@ -212,11 +288,11 @@ int run_frame(platform_ctxt *ctxt, void *user_data)
     ptimer_restart(&pt);
     static double update_tm{};
     static double render_tm{};
-    
+
     app->accumulater += ctxt->time_pts.dt;
 
-    map_input_frame(&app->stack, &ctxt->feventq);        
-    
+    map_input_frame(&app->stack, &ctxt->feventq);
+
     while (app->accumulater >= 0.01666) {
         ++ticks;
         simulate(ctxt, app, 0.01666);

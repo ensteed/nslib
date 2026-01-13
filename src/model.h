@@ -7,13 +7,16 @@
 namespace nslib
 {
 
-inline constexpr sizet JOINTS_PER_VERTEX = 4;
-
 enum mat_sampler_slot
 {
     MAT_SAMPLER_SLOT_DIFFUSE,
     MAT_SAMPLER_SLOT_NORMAL,
     MAT_SAMPLER_SLOT_COUNT
+};
+
+enum struct mesh_topology : u8
+{
+    TRIANGLE_STRIP
 };
 
 struct texture
@@ -30,7 +33,7 @@ struct material
     ROBJ(MATERIAL);
     vec4 col;
     rid technique;
-    static_array<rid, MAT_SAMPLER_SLOT_COUNT> textures{.size=MAT_SAMPLER_SLOT_COUNT};
+    static_array<rid, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
     rmaterial_handle rndr_hndl;
 };
 
@@ -41,7 +44,8 @@ pup_func(material)
     pup_member(textures);
 }
 
-struct mvert {
+struct mvert
+{
     vec3 pos;
     vec3 norm;
     vec3 tan;
@@ -49,7 +53,8 @@ struct mvert {
     u32 col;
 };
 
-pup_func(mvert) {
+pup_func(mvert)
+{
     pup_member(pos);
     pup_member(norm);
     pup_member(tan);
@@ -57,17 +62,20 @@ pup_func(mvert) {
     pup_member(col);
 }
 
-struct mskinned_vert_info {
-    u16 bone_ids[JOINTS_PER_VERTEX];
-    float bone_weights[JOINTS_PER_VERTEX];
+struct mskinned_vert_info
+{
+    uvec4 bone_ids;
+    vec4 bone_weights;
 };
 
-pup_func(mskinned_vert_info) {
+pup_func(mskinned_vert_info)
+{
     pup_member(bone_ids);
     pup_member(bone_weights);
 }
 
-struct submesh_range {
+struct submesh_range
+{
     // Indice offset
     u32 offset;
     // Indice count
@@ -91,6 +99,8 @@ struct mesh
     array<mvert> verts;
     array<mskinned_vert_info> skinned_verts_info;
     array<submesh_range> sm_info;
+    mesh_topology topology;
+
     rmesh_handle rhndl;
 };
 
@@ -100,6 +110,7 @@ pup_func(mesh)
     pup_member(verts);
     pup_member(skinned_verts_info);
     pup_member(sm_info);
+    pup_enum_member(mesh_topology, u8, topology);
 }
 
 void init_texture(texture *tex, const string &name, mem_arena *arena);
