@@ -6,7 +6,7 @@
 namespace nslib
 {
 
-#define to_cstr(...) str_cstr(to_str(__VA_ARGS__))
+#define ls(...) str_cstr(to_str(__VA_ARGS__))
 struct string
 {
     using iterator = char *;
@@ -237,18 +237,18 @@ void pack_unpack(ArchiveT *ar, string &val, const pack_var_info &vinfo)
     pup_var(ar, size, {"size"});
     str_resize(&val, size);
     for (sizet i = 0; i < size; ++i) {
-        pup_var(ar, val[i], {to_cstr("[%d]", i)});
+        pup_var(ar, val[i], {ls("[%d]", i)});
     }
 }
 
-// We have to put our array func here rather than in array because of the to_cstr call
+// We have to put our array func here rather than in array because of the ls call
 template<class ArchiveT, class T>
 void pack_unpack(ArchiveT *ar, array<T> &val, const pack_var_info &vinfo)
 {
     pup_var(ar, val.size, {"size"});
     arr_resize(&val, val.size);
     for (int i = 0; i < val.size; ++i) {
-        pup_var(ar, val[i], {to_cstr("[%d]", i)});
+        pup_var(ar, val[i], {ls("[%d]", i)});
     }
 }
 

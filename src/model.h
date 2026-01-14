@@ -1,5 +1,5 @@
 #pragma once
-#include "robj_common.h"
+#include "asset_common.h"
 #include "math/vector4.h"
 #include "containers/array.h"
 #include "render_handles.h"
@@ -19,21 +19,29 @@ enum struct mesh_topology : u8
     TRIANGLE_STRIP
 };
 
+enum struct texture_usage : u8
+{
+    ALBEDO,
+    NORMAL,
+    GRAYSCALE,
+    HDR
+};
+
 struct texture
 {
-    ROBJ(TEXTURE);
-    byte_array pixels;
-    uvec2 size;
-    u8 channels;
+    ASSET(TEXTURE);
+    void* pixels;
+    uvec3 dims;
+    texture_usage usage;
 };
 
 // Material references textures and pipelines, which both must be uploaded to GPUa
 struct material
 {
-    ROBJ(MATERIAL);
+    ASSET(MATERIAL);
     vec4 col;
-    rid technique;
-    static_array<rid, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
+    aid technique;
+    static_array<aid, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
     rmaterial_handle rndr_hndl;
 };
 
@@ -94,7 +102,7 @@ pup_func(submesh_range)
 
 struct mesh
 {
-    ROBJ(MESH);
+    ASSET(MESH);
     array<u32> inds;
     array<mvert> verts;
     array<mskinned_vert_info> skinned_verts_info;
@@ -117,7 +125,7 @@ void init_texture(texture *tex, const string &name, mem_arena *arena);
 void release_texture_ram_data(texture *tex);
 void terminate_texture(texture *tex);
 sizet get_texture_memsize(const texture *tex);
-u32 get_texture_pixel_count(const texture *tex);
+u32 get_texture_layer_pixel_count(const texture *tex);
 bool load_texture(texture *tex, const char *path, cstr *err);
 
 void init_material(material *mat, const string &name, mem_arena *arena);

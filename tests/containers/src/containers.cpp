@@ -15,7 +15,7 @@ struct app_data
 struct custom_type_0
 {
     int val1;
-    rid id;
+    aid id;
 };
 
 u64 hash_type(const custom_type_0 &item, u64 s0, u64 s1)
@@ -31,7 +31,7 @@ bool operator==(const custom_type_0 &lhs, const custom_type_0 &rhs)
 string to_str(const custom_type_0 &item)
 {
     string ret;
-    str_printf(&ret, "val1:%d str:%s", item.val1, to_cstr(item.id));
+    str_printf(&ret, "val1:%d str:%s", item.val1, ls(item.id));
     return ret;
 }
 
@@ -481,13 +481,13 @@ void test_hashsets()
     ilog("Forward...");
     auto iter = hset_begin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_next(&hs1, iter);
     }
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_prev(&hs1, iter);
     }
     auto fnd = hset_find(&hs1, 'a');
@@ -524,13 +524,13 @@ void test_hashsets()
     ilog("Forward...");
     iter = hset_begin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_next(&hs1, iter);
     }
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_prev(&hs1, iter);
     }
     auto ins = hset_insert(&hs1, 'a');
@@ -560,14 +560,14 @@ void test_hashsets()
     ilog("Forward...");
     iter = hset_begin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_next(&hs1, iter);
     }
 
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_prev(&hs1, iter);
     }
 
@@ -611,32 +611,32 @@ void test_hashmaps()
     ilog("Forward...");
     auto iter = hmap_begin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr((u32)iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls((u32)iter->key), str_cstr(iter->val));
         iter = hmap_next(&hm1, iter);
     }
     ilog("Reverse...");
     iter = hmap_rbegin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
     auto fnd = hmap_find(&hm1, 'a');
-    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
+    ilog("Found value %s for key %c", ls(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'e');
-    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
+    ilog("Found value %s for key %c", ls(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'i');
-    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
+    ilog("Found value %s for key %c", ls(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'o');
-    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
+    ilog("Found value %s for key %c", ls(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'u');
-    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
+    ilog("Found value %s for key %c", ls(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'd');
-    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
+    ilog("Found value %s for key %c", ls(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'c');
-    ilog("Found value %s for key %c", to_cstr(fnd->val), fnd->key);
+    ilog("Found value %s for key %c", ls(fnd->val), fnd->key);
     fnd = hmap_find(&hm1, 'z');
     if (fnd) {
-        ilog("Found value %s for key %s", to_cstr(fnd->val));
+        ilog("Found value %s for key %s", ls(fnd->val));
     }
     else {
         ilog("Could not find key %c", 'z');
@@ -654,13 +654,13 @@ void test_hashmaps()
     ilog("Forward...");
     iter = hmap_begin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr((u32)iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls((u32)iter->key), str_cstr(iter->val));
         iter = hmap_next(&hm1, iter);
     }
     ilog("Reverse...");
     iter = hmap_rbegin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
     auto ins = hmap_insert(&hm1, 'a', string("a"));
@@ -690,14 +690,14 @@ void test_hashmaps()
     ilog("Forward...");
     iter = hmap_begin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr((u32)iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls((u32)iter->key), str_cstr(iter->val));
         iter = hmap_next(&hm1, iter);
     }
 
     ilog("Reverse...");
     iter = hmap_rbegin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
 
@@ -709,72 +709,72 @@ void test_hashmaps_string_keys()
 {
     ilog("Starting new hashmap string key test");
 
-    hmap<rid, string> hm1{};
+    hmap<aid, string> hm1{};
 
     hmap_init(&hm1, hash_type);
     ilog("Inserting 9 strange strings");
-    hmap_insert(&hm1, make_rid("scooby"), string("scooby-data"));
-    hmap_insert(&hm1, make_rid("sandwiches"), string("sandwiches-data"));
-    hmap_insert(&hm1, make_rid("alowishish"), string("alowishish-data"));
-    hmap_insert(&hm1, make_rid("do-the-dance"), string("do-the-dance-data"));
-    hmap_insert(&hm1, make_rid("booty_cake"), string("booty_cake-data"));
-    hmap_insert(&hm1, make_rid("gogogo300"), string("gogogo300-data"));
-    hmap_insert(&hm1, make_rid("67-under"), string("67-under-data"));
-    hmap_insert(&hm1, make_rid("kjhj"), string("kjhj-data"));
-    hmap_insert(&hm1, make_rid("lemar"), string("lemar-data"));
+    hmap_insert(&hm1, make_aid("scooby"), string("scooby-data"));
+    hmap_insert(&hm1, make_aid("sandwiches"), string("sandwiches-data"));
+    hmap_insert(&hm1, make_aid("alowishish"), string("alowishish-data"));
+    hmap_insert(&hm1, make_aid("do-the-dance"), string("do-the-dance-data"));
+    hmap_insert(&hm1, make_aid("booty_cake"), string("booty_cake-data"));
+    hmap_insert(&hm1, make_aid("gogogo300"), string("gogogo300-data"));
+    hmap_insert(&hm1, make_aid("67-under"), string("67-under-data"));
+    hmap_insert(&hm1, make_aid("kjhj"), string("kjhj-data"));
+    hmap_insert(&hm1, make_aid("lemar"), string("lemar-data"));
 
     ilog("Forward...");
     auto iter = hmap_begin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_next(&hm1, iter);
     }
 
     ilog("Reverse...");
     iter = hmap_rbegin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
 
     ilog("Removing 4 entries");
-    hmap_remove(&hm1, make_rid("do-the-dance"));
-    hmap_remove(&hm1, make_rid("booty_cake"));
-    hmap_remove(&hm1, make_rid("gogogo300"));
-    hmap_remove(&hm1, make_rid("67-under"));
+    hmap_remove(&hm1, make_aid("do-the-dance"));
+    hmap_remove(&hm1, make_aid("booty_cake"));
+    hmap_remove(&hm1, make_aid("gogogo300"));
+    hmap_remove(&hm1, make_aid("67-under"));
 
     ilog("Forward...");
     iter = hmap_begin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_next(&hm1, iter);
     }
 
     ilog("Reverse...");
     iter = hmap_rbegin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
 
     ilog("Inserting 5 more strange strings");
-    hmap_insert(&hm1, make_rid("another"), string("another-data"));
-    hmap_insert(&hm1, make_rid("type-of"), string("type-of-data"));
-    hmap_insert(&hm1, make_rid("thing-that"), string("thing-that-data"));
-    hmap_insert(&hm1, make_rid("wereallyshould"), string("wereallyshould-data"));
-    hmap_insert(&hm1, make_rid("beadding"), string("beadding-data"));
+    hmap_insert(&hm1, make_aid("another"), string("another-data"));
+    hmap_insert(&hm1, make_aid("type-of"), string("type-of-data"));
+    hmap_insert(&hm1, make_aid("thing-that"), string("thing-that-data"));
+    hmap_insert(&hm1, make_aid("wereallyshould"), string("wereallyshould-data"));
+    hmap_insert(&hm1, make_aid("beadding"), string("beadding-data"));
 
     ilog("Forward...");
     iter = hmap_begin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_next(&hm1, iter);
     }
 
     ilog("Reverse...");
     iter = hmap_rbegin(&hm1);
     while (iter) {
-        ilog("key: %s  value:%s", to_cstr(iter->key), str_cstr(iter->val));
+        ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
 
@@ -831,72 +831,72 @@ void test_hset_string_keys()
 {
     ilog("Starting new hashset string test");
 
-    hset<rid> hs1{};
+    hset<aid> hs1{};
 
     hset_init(&hs1);
     ilog("Inserting 9 strange strings");
-    hset_insert(&hs1, make_rid("scooby"));
-    hset_insert(&hs1, make_rid("sandwiches"));
-    hset_insert(&hs1, make_rid("alowishish"));
-    hset_insert(&hs1, make_rid("do-the-dance"));
-    hset_insert(&hs1, make_rid("booty_cake"));
-    hset_insert(&hs1, make_rid("gogogo300"));
-    hset_insert(&hs1, make_rid("67-under"));
-    hset_insert(&hs1, make_rid("kjhj"));
-    hset_insert(&hs1, make_rid("lemar"));
+    hset_insert(&hs1, make_aid("scooby"));
+    hset_insert(&hs1, make_aid("sandwiches"));
+    hset_insert(&hs1, make_aid("alowishish"));
+    hset_insert(&hs1, make_aid("do-the-dance"));
+    hset_insert(&hs1, make_aid("booty_cake"));
+    hset_insert(&hs1, make_aid("gogogo300"));
+    hset_insert(&hs1, make_aid("67-under"));
+    hset_insert(&hs1, make_aid("kjhj"));
+    hset_insert(&hs1, make_aid("lemar"));
 
     ilog("Forward...");
     auto iter = hset_begin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_next(&hs1, iter);
     }
 
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_prev(&hs1, iter);
     }
 
     ilog("Removing 4 strings");
-    hset_remove(&hs1, make_rid("do-the-dance"));
-    hset_remove(&hs1, make_rid("booty_cake"));
-    hset_remove(&hs1, make_rid("gogogo300"));
-    hset_remove(&hs1, make_rid("67-under"));
+    hset_remove(&hs1, make_aid("do-the-dance"));
+    hset_remove(&hs1, make_aid("booty_cake"));
+    hset_remove(&hs1, make_aid("gogogo300"));
+    hset_remove(&hs1, make_aid("67-under"));
 
     ilog("Forward...");
     iter = hset_begin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_next(&hs1, iter);
     }
 
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_prev(&hs1, iter);
     }
 
     ilog("Inserting 5 more strange strings");
-    hset_insert(&hs1, make_rid("another"));
-    hset_insert(&hs1, make_rid("type-of"));
-    hset_insert(&hs1, make_rid("thing-that"));
-    hset_insert(&hs1, make_rid("wereallyshould"));
-    hset_insert(&hs1, make_rid("beadding"));
+    hset_insert(&hs1, make_aid("another"));
+    hset_insert(&hs1, make_aid("type-of"));
+    hset_insert(&hs1, make_aid("thing-that"));
+    hset_insert(&hs1, make_aid("wereallyshould"));
+    hset_insert(&hs1, make_aid("beadding"));
 
     ilog("Forward...");
     iter = hset_begin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_next(&hs1, iter);
     }
 
     ilog("Reverse...");
     iter = hset_rbegin(&hs1);
     while (iter) {
-        ilog("item: %s", to_cstr(iter->val));
+        ilog("item: %s", ls(iter->val));
         iter = hset_prev(&hs1, iter);
     }
 

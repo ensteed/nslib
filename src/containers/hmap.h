@@ -80,8 +80,8 @@ void hmap_print_internal(const array<hmap_bucket<Key, Val>> &buckets)
              b->hashed_v,
              b->prev,
              b->next,
-             to_cstr(b->item.key),
-             to_cstr(b->item.val),
+             ls(b->item.key),
+             ls(b->item.val),
              b->item.prev,
              b->item.next);
     }
@@ -301,8 +301,8 @@ void pack_unpack(ArchiveT *ar, hmap<K, T> &val, const pack_var_info &vinfo)
         while (i < sz) {
             K item_key{};
             T item_val{};
-            pup_var(ar, item_key, {to_cstr("{%d}_key", i)});
-            pup_var(ar, item_val, {to_cstr("{%d}_val", i)});
+            pup_var(ar, item_key, {ls("{%d}_key", i)});
+            pup_var(ar, item_val, {ls("{%d}_val", i)});
             hmap_set(&val, item_key, item_val);
             ++i;
         }
@@ -310,8 +310,8 @@ void pack_unpack(ArchiveT *ar, hmap<K, T> &val, const pack_var_info &vinfo)
     else {
         auto iter = hmap_begin(&val);
         while (iter) {
-            pup_var(ar, iter->key, {to_cstr("{%d}_key", i)});
-            pup_var(ar, iter->val, {to_cstr("{%d}_val", i)});
+            pup_var(ar, iter->key, {ls("{%d}_key", i)});
+            pup_var(ar, iter->val, {ls("{%d}_val", i)});
             iter = hmap_next(&val, iter);
             ++i;
         }

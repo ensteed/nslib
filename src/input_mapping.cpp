@@ -102,7 +102,7 @@ bool add_keymap_entry(input_keymap *km, input_kmcode kmcode, u16 keymods, u8 mbu
          kmcode,
          keymods,
          mbutton_mask,
-         to_cstr(entry.name),
+         ls(entry.name),
          ret ? "true" : "false");
     return ret;
 }

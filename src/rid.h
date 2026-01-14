@@ -4,24 +4,24 @@
 
 namespace nslib
 {
-struct rid
+struct aid
 {
     string str;
     u64 id{0};
 };
 
-void set_rid(rid *id, const string &str);
-void set_rid(rid *id, const char *str);
+void set_aid(aid *id, const string &str);
+void set_aid(aid *id, const char *str);
 
-rid make_rid(const string &str);
-rid make_rid(const char *str);
+aid make_aid(const string &str);
+aid make_aid(const char *str);
 
-inline bool is_valid(const rid &id)
+inline bool is_valid(const aid &id)
 {
     return id.id != 0;
 }
 
-pup_func(rid)
+pup_func(aid)
 {
     pup_member_info(str, vinfo);
     if (ar->opmode == archive_opmode::UNPACK) {
@@ -29,21 +29,21 @@ pup_func(rid)
     }
 }
 
-const string &to_str(const rid &rid);
+const string &to_str(const aid &rid);
 
-inline u64 hash_type(const rid &id, u64, u64)
+inline u64 hash_type(const aid &id, u64, u64)
 {
     return id.id;
 }
 
-rid generate_id();
+aid generate_id();
 
-inline bool operator==(const rid &lhs, const rid &rhs)
+inline bool operator==(const aid &lhs, const aid &rhs)
 {
     return lhs.id == rhs.id;
 }
 
-inline bool operator!=(const rid &lhs, const rid &rhs)
+inline bool operator!=(const aid &lhs, const aid &rhs)
 {
     return !(lhs == rhs);
 }

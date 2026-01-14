@@ -69,6 +69,14 @@ struct vector3
 
         struct
         {
+            T w;
+            T h;
+            T layers;
+        };
+        
+
+        struct
+        {
             T rad;
             T theta;
             T phi;

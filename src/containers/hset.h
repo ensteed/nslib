@@ -73,7 +73,7 @@ void hset_print_internal(const array<hset_bucket<Val>> &buckets)
              b->hashed_v,
              b->prev,
              b->next,
-             to_cstr(b->item.val),
+             ls(b->item.val),
              b->item.prev,
              b->item.next);
     }
@@ -215,7 +215,7 @@ void pack_unpack(ArchiveT *ar, hset<T> &val, const pack_var_info &vinfo)
     if (ar->opmode == archive_opmode::UNPACK) {
         while (i < sz) {
             T item{};
-            pup_var(ar, item, {to_cstr("{%d}", i)});
+            pup_var(ar, item, {ls("{%d}", i)});
             hset_insert(&val, item);
             ++i;
         }
@@ -224,7 +224,7 @@ void pack_unpack(ArchiveT *ar, hset<T> &val, const pack_var_info &vinfo)
         auto iter = hset_begin(&val);
         while (iter) {
             // We know we are packing in to the archive so we can just remove the constness
-            pup_var(ar, const_cast<T &>(iter->val), {to_cstr("{%d}", i)});
+            pup_var(ar, const_cast<T &>(iter->val), {ls("{%d}", i)});
             iter = hset_next(&val, iter);
             ++i;
         }

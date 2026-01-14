@@ -1,4 +1,4 @@
-#include "robj_common.h"
+#include "asset_common.h"
 #include "platform.h"
 #include "renderer.h"
 #include "input_mapping.h"
@@ -11,7 +11,7 @@ struct app_data
 {
     renderer rndr{};
     sim_region rgn{};
-    robj_cache_group cg{};
+    asset_cache_group cg{};
     f64 accumulater{};
 
     input_keymap movement_km;
@@ -130,10 +130,10 @@ intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const m
 }
 
 // Great use for a stack arena - will work
-void register_meshes_with_renderer(robj_cache<mesh> *meshes, renderer *rndr, mem_arena *arena)
+void register_meshes_with_renderer(asset_cache<mesh> *meshes, renderer *rndr, mem_arena *arena)
 {
     for (auto rm = cache_begin(meshes); rm; rm = cache_next(meshes, rm)) {
-        ilog("Registering mesh id: %s  name: %s", to_cstr(rm->key), str_cstr(rm->val->name));
+        ilog("Registering mesh id: %s  name: %s", ls(rm->key), str_cstr(rm->val->name));
         asrt(rm->val->verts.size > 0);
         rmesh_create_info cinf{};
 
@@ -188,7 +188,7 @@ void register_meshes_with_renderer(robj_cache<mesh> *meshes, renderer *rndr, mem
 
         rm->val->rhndl = create_mesh(cinf, rndr);
         if (!is_valid(rm->val->rhndl)) {
-            wlog("Could not create %s mesh render resource", to_cstr(rm->val->name));
+            wlog("Could not create %s mesh render resource", ls(rm->val->name));
         }
 
         mem_free(tmp_inds, arena);
@@ -234,16 +234,20 @@ int init(platform_ctxt *ctxt, void *user_data)
     cstr err{nullptr};
     load_texture(maria_face.ptr, "import/maria.png", &err);
     if (err) {
-        wlog("Couldn't load texture: %s", to_cstr(daniel_face->name), err);
+        wlog("Couldn't load texture: %s", ls(daniel_face->name), err);
     }
 
     load_texture(maria_face.ptr, "import/daniel.png", &err);
     if (err) {
-        wlog("Couldn't load texture %s: %s", to_cstr(maria_face->name), err);
+        wlog("Couldn't load texture %s: %s", ls(maria_face->name), err);
     }
 
     for (auto iter = cache_begin(tex_cache); iter; iter = cache_next(tex_cache, iter)) {
-        ilog("Should create render texture %s", to_cstr(iter->val->name));
+        rtexture_create_info ctinfo{};
+        ctinfo.name = ls(iter->val->name);
+        ctinfo.dims = iter->val->dims;
+        //ctinfo.data = iter->val->pixels.data;
+        ilog("Should create render texture %s", ls(iter->val->name));
     }
 
     // Create our sim region aka scene

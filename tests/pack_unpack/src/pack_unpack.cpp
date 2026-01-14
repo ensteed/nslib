@@ -1,12 +1,10 @@
-#include "rid.h"
-#include "json_archive.h"
 #include "string_archive.h"
-#include "binary_archive.h"
+#include "json_archive.h"
 #include "platform.h"
 #include "containers/hmap.h"
 #include "containers/hset.h"
 #include "math/vector4.h"
-#include "robj_common.h"
+#include "asset_common.h"
 
 using namespace nslib;
 
@@ -22,15 +20,18 @@ struct fancy_struct
 
 enum robj_user_type
 {
-    ROBJ_TYPE_EXAMPLE_ROBJ = ROBJ_TYPE_USER
+    ASSET_TYPE_EXAMPLE_ASSET = ASSET_TYPE_USER
 };
 
-struct example_robj
+struct example_asset
 {
-    ROBJ(EXAMPLE_ROBJ)
+    ASSET(EXAMPLE_ASSET)
 };
 
-pup_func(example_robj){PUP_ROBJ}
+pup_func(example_asset)
+{
+    PUP_ASSET;
+}
 
 pup_func(fancy_struct)
 {
@@ -41,7 +42,7 @@ pup_func(fancy_struct)
 
 struct data_to_pup
 {
-    example_robj robj;
+    example_asset asset;
     fancy_struct fs;
     vec4 v4;
     vec4 v4_arr[5];
@@ -58,7 +59,7 @@ struct data_to_pup
     hmap<s16, int> hm_i16;
     hmap<u8, int> hm_u8;
     hmap<s8, int> hm_i8;
-    hmap<rid, int> hm_no_simp;
+    hmap<aid, int> hm_no_simp;
 
     hset<string> hs;
     hset<u64> hs_u64;
@@ -69,12 +70,12 @@ struct data_to_pup
     hset<s16> hs_i16;
     hset<u8> hs_u8;
     hset<s8> hs_i8;
-    hset<rid> hs_no_simp;
+    hset<aid> hs_no_simp;
 };
 
 pup_func(data_to_pup)
 {
-    pup_member(robj);
+    pup_member(asset);
     pup_member(fs);
     pup_member(v4);
     pup_member(v4_arr);
@@ -107,7 +108,7 @@ pup_func(data_to_pup)
 void seed_data(data_to_pup *data)
 {
     ilog("Seeding data");
-    data->robj.id = make_rid("sample_id");
+    data->asset.id = make_aid("sample_id");
     data->fs = {"str1_text", "str2_text", {"choice1", "choice2", "choice3", "choice4", "choice5"}};
     data->v2_sa = {{2, 3, 4.4f, 9.1f, 2.3f}, 2};
     data->v4 = {4, 3, 2, 1};
@@ -154,9 +155,9 @@ void seed_data(data_to_pup *data)
     hmap_insert(&data->hm_i8, (s8)3, 2);
     hmap_insert(&data->hm_i8, (s8)4, 3);
 
-    hmap_insert(&data->hm_no_simp, make_rid("key1"), 1);
-    hmap_insert(&data->hm_no_simp, make_rid("key2"), 2);
-    hmap_insert(&data->hm_no_simp, make_rid("key3"), 3);
+    hmap_insert(&data->hm_no_simp, make_aid("key1"), 1);
+    hmap_insert(&data->hm_no_simp, make_aid("key2"), 2);
+    hmap_insert(&data->hm_no_simp, make_aid("key3"), 3);
 
     hset_insert(&data->hs, string("key1"));
     hset_insert(&data->hs, string("key2"));
@@ -194,15 +195,15 @@ void seed_data(data_to_pup *data)
     hset_insert(&data->hs_i8, (s8)3);
     hset_insert(&data->hs_i8, (s8)4);
 
-    hset_insert(&data->hs_no_simp, make_rid("key1"));
-    hset_insert(&data->hs_no_simp, make_rid("key2"));
-    hset_insert(&data->hs_no_simp, make_rid("key3"));
+    hset_insert(&data->hs_no_simp, make_aid("key1"));
+    hset_insert(&data->hs_no_simp, make_aid("key2"));
+    hset_insert(&data->hs_no_simp, make_aid("key3"));
 }
 
 void clear_data(data_to_pup *data)
 {
     ilog("Clearing data");
-    data->robj = {};
+    data->asset = {};
     data->fs = {};
     data->v4 = {};
     for (int i = 0; i < 5; ++i) {
@@ -223,7 +224,7 @@ void clear_data(data_to_pup *data)
     hmap_clear(&data->hm_u8);
     hmap_clear(&data->hm_i8);
     hmap_clear(&data->hm_no_simp);
-    
+
     hset_clear(&data->hs);
     hset_clear(&data->hs_u64);
     hset_clear(&data->hs_i64);
@@ -263,14 +264,14 @@ int app_init(platform_ctxt *ctxt, void *user_data)
     hset_init(&data.hs_no_simp, mem_global_arena(), hash_type);
 
     seed_data(&data);
-    //ilog("data_to_pup json in: \n%s", to_cstr(data));
+    // ilog("data_to_pup json in: \n%s", ls(data));
 
     // static_binary_buffer_archive<10000> ba{};
     // ilog("Packing to static binary buffer archive");
     // pup_var(&ba, data.hs, {"data_to_pup"});
-    
+
     // platform_file_err_desc err;
-    
+
     // ilog("Saving binary data to data.bin");
     // write_file("data.bin", ba.data, 1, ba.cur_offset, 0, &err);
     // if (err.code != err_code::FILE_NO_ERROR) {
@@ -292,29 +293,29 @@ int app_init(platform_ctxt *ctxt, void *user_data)
     // ilog("Unpacking binary buffer archive to data_to_pup");
     // pup_var(&ba, data, {"data_to_pup"});
 
-    // ilog("data_to_pup after unpacking: \n%s", to_cstr(data));
+    // ilog("data_to_pup after unpacking: \n%s", ls(data));
 
-    ilog("Packing data_to_pup to json archive: %s", to_cstr(data));
-    
-    json_archive ja{}; 
+    ilog("Packing data_to_pup to json archive: %s", ls(data));
+
+    json_archive ja{};
     init_jsa(&ja);
     pup_var(&ja, data, {"data_to_pup"});
-    
+
     string js_str = jsa_to_json_string(ja, true);
     terminate_jsa(&ja);
-    
+
     ilog("Resulting JSON pretty string:\n%s", str_cstr(js_str));
     write_file("data.json", str_cstr(js_str), 1, str_len(js_str));
 
     clear_data(&data);
-    ilog("Data cleared: \n%s", to_cstr(data));
+    ilog("Data cleared: \n%s", ls(data));
 
     json_archive ja_in{};
     init_jsa(&ja_in, str_cstr(js_str));
     pup_var(&ja_in, data, {"data_to_pup"});
     terminate_jsa(&ja_in);
 
-    ilog("data_to_pup json in: \n%s", to_cstr(data));
+    ilog("data_to_pup json in: \n%s", ls(data));
 
     hmap_terminate(&data.hm);
     hmap_terminate(&data.hm_u64);
@@ -337,7 +338,7 @@ int app_init(platform_ctxt *ctxt, void *user_data)
     hset_terminate(&data.hs_u8);
     hset_terminate(&data.hs_i8);
     hset_terminate(&data.hs_no_simp);
-    
+
     return err_code::PLATFORM_NO_ERROR;
 }
 

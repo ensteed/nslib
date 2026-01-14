@@ -1,7 +1,6 @@
 #pragma once
 
 #include "archive_common.h"
-
 #include "rid.h"
 #include "containers/cjson.h"
 #include "containers/string.h"
@@ -36,10 +35,10 @@ void terminate_jsa(json_archive *jsa);
 
 string jsa_to_json_string(const json_archive &jsa, bool pretty_format);
 
-inline void pack_unpack_begin(json_archive *ar, rid &id, const pack_var_info &vinfo)
+inline void pack_unpack_begin(json_archive *ar, aid &id, const pack_var_info &vinfo)
 {}
 
-inline void pack_unpack_end(json_archive *ar, rid &id, const pack_var_info &vinfo)
+inline void pack_unpack_end(json_archive *ar, aid &id, const pack_var_info &vinfo)
 {}
 
 // Special packing/unpacking for bool - the end and begin arithmetic functions are fine though
@@ -499,14 +498,14 @@ void pack_unpack(json_archive *ar, hmap<string, T> &val, const pack_var_info &vi
 // Hashmaps can use the default begin/end functions as they will just be json objects with each member var name as a key
 // and member var value as a value. We have special cases for string convertable
 template<class T>
-void pack_unpack(json_archive *ar, hmap<rid, T> &val, const pack_var_info &vinfo)
+void pack_unpack(json_archive *ar, hmap<aid, T> &val, const pack_var_info &vinfo)
 {
     if (ar->opmode == archive_opmode::UNPACK) {
         jsa_stack_frame *cur_frame = arr_back(&ar->stack);
         asrt(cur_frame);
         auto obj = cur_frame->current->child;
         while (obj) {
-            auto key = make_rid(obj->string);
+            auto key = make_aid(obj->string);
             auto item = hmap_find_or_insert(&val, key);
             pup_var(ar, item->val, {obj->string});
             obj = obj->next;

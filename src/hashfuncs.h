@@ -43,7 +43,9 @@ u64 murmurhash3(const void *key, sizet len, u32 seed);
 //
 // xxHash3
 //-----------------------------------------------------------------------------
-u64 xxhash3(const void *data, sizet len, u64 seed);
+u64 xxh64(const void *data, sizet len, u64 seed);
+
+u64 xxh3(const char *input);
 
 void crc32(const void *key, int len, u32 seed, void *out);
 
@@ -53,8 +55,9 @@ u64 hash_ptr_sip(const void *data, sizet len, u64 seed0, u64 seed1);
 // hashmap_murmur returns a hash value for `data` using Murmur3_86_128.
 u64 hash_ptr_murmur(const void *data, sizet len, u64 seed0, u64 seed1);
 
-// hashmap_xxhash3 returns a hash value for `data` using xxhash algorithm
-u64 hash_ptr_xxhash3(const void *data, sizet len, u64 seed0, u64 seed1);
+u64 hash_ptr_xxh64(const void *data, sizet len, u64 seed0, u64 seed1);
+
+u64 hash_ptr_xxh3(const void *data, sizet len, u64 seed0, u64 seed1);
 
 // Hash strings
 

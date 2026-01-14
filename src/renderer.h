@@ -12,9 +12,9 @@ namespace nslib
 {
 #define INVALID_IND ((sizet) - 1)
 
-inline const rid FWD_RPASS = make_rid("forward");
-inline const rid PLINE_FWD_RPASS_S0_OPAQUE_COL = make_rid("forward-s0-opaque-col");
-inline const rid PLINE_FWD_RPASS_S0_OPAQUE_DIFFUSE = make_rid("forward-s0-opaque-diffuse");
+inline const aid FWD_RPASS = make_aid("forward");
+inline const aid PLINE_FWD_RPASS_S0_OPAQUE_COL = make_aid("forward-s0-opaque-col");
+inline const aid PLINE_FWD_RPASS_S0_OPAQUE_DIFFUSE = make_aid("forward-s0-opaque-diffuse");
 
 struct vkr_context;
 struct camera;
@@ -378,7 +378,7 @@ struct renderer
     mem_arena frame_linear;
 
     // Render pass indices referenced by ids which are just pass names - map a pass name to a static array indice
-    hmap<rid, sizet> rpass_name_map;
+    hmap<aid, sizet> rpass_name_map;
     static_array<rpass_info, RPASS_TYPE_COUNT> rpasses{};
 
     // Created pipelines cached on pipeline state
