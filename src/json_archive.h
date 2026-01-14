@@ -514,7 +514,7 @@ void pack_unpack(json_archive *ar, hmap<aid, T> &val, const pack_var_info &vinfo
     else {
         auto iter = hmap_begin(&val);
         while (iter) {
-            pup_var(ar, iter->val, {str_cstr(iter->key.str)});
+            pup_var(ar, iter->val, {str_cstr(to_str(iter->key))});
             iter = hmap_next(&val, iter);
         }
     }

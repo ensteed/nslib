@@ -74,7 +74,7 @@ intern void init_imgui(renderer *rndr, void *win_hndl)
 {
     auto dev = &rndr->vk.inst.device;
     // 263 KB seems to be about the min required - we'll give it a MB
-    mem_init_fl_arena(&rndr->imgui.fl, MB_SIZE, rndr->upstream_fl_arena, "imgui");
+    mem_init_fl_arena(&rndr->imgui.fl, MB_SIZE, &rndr->persist_fl, "imgui");
 
     // Use the main forward pass for imgui.. this might only change if we use deferred shading.. but i think the imgui
     // created pipeling only requires a color attachment
@@ -1169,16 +1169,21 @@ intern void terminate_frame_contexts(renderer *rndr)
 int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
 {
     asrt(fl_arena->alloc_type == mem_alloc_type::FREE_LIST);
-    rndr->upstream_fl_arena = fl_arena;
-    mem_init_fl_arena(&rndr->vk_free_list, 500 * MB_SIZE, fl_arena, "vk-fl");
-    mem_init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, mem_global_stack_arena(), "vk-frame");
-
+    mem_init_fl_arena(&rndr->persist_fl, 200*MB_SIZE, fl_arena, "rndr-fl");
+    mem_init_fl_arena(&rndr->vk_free_list, 50*MB_SIZE, &rndr->persist_fl, "rndr-vk-fl");
+    mem_init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, &rndr->persist_fl, "rndr-vk-frame");
     mem_init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "rndr-frame-linear");
     mem_init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "rndr-frame-stack");
 
+    // Slot pools
+    init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->meshes, MAX_MESH_COUNT, &rndr->persist_fl);
+    dlog("HERE");
     // Render pass names
-    hmap_init(&rndr->rpass_name_map, hash_type, fl_arena);
-    hmap_init(&rndr->pline_cache, hash_type, fl_arena);
+    hmap_init(&rndr->rpass_name_map, hash_type, &rndr->persist_fl);
+    hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
 
     vkr_cfg vkii{.app_name = "rdev",
                  .vi{1, 0, 0},
@@ -1419,14 +1424,24 @@ void terminate_renderer(renderer *rndr)
     for (int i = 0; i < rndr->meshes.slots.size; ++i) {
         release_mesh(get_slot_current_handle(&rndr->meshes,i), rndr);
     }
-    clear_slot_pool(&rndr->meshes);
+    terminate_slot_pool(&rndr->meshes);
 
     // Terminate all images and image views
     for (int i = 0; i < rndr->textures.slots.size; ++i) {
         vkr_terminate_image(&rndr->textures.slots[i].item.im, &rndr->vk);
         vkr_terminate_image_view(rndr->textures.slots[i].item.im_view, &rndr->vk);
     }
-    clear_slot_pool(&rndr->textures);
+    terminate_slot_pool(&rndr->textures);
+
+    for (int i = 0; i < rndr->materials.slots.size; ++i) {
+        // Do something
+    }
+    terminate_slot_pool(&rndr->materials);
+
+    for (int i = 0; i < rndr->techniques.slots.size; ++i) {
+        // Do something
+    }
+    terminate_slot_pool(&rndr->techniques);
 
     // Terminate all texture samplers
     for (int i = 0; i < rndr->samplers.size; ++i) {
@@ -1469,6 +1484,7 @@ void terminate_renderer(renderer *rndr)
     mem_terminate_arena(&rndr->vk_frame_linear);
     mem_terminate_arena(&rndr->frame_linear);
     mem_terminate_arena(&rndr->frame_stack);
+    mem_terminate_arena(&rndr->persist_fl);
 }
 
 } // namespace nslib

@@ -366,14 +366,12 @@ struct rview
 
 struct renderer
 {
-    // Passed in
-    mem_arena *upstream_fl_arena;
-
     // Owned vulkan context and mem arenas used only for vulkan stuff
     vkr_context vk{};
     mem_arena vk_free_list;
     mem_arena vk_frame_linear;
 
+    mem_arena persist_fl;
     mem_arena frame_stack;
     mem_arena frame_linear;
 
@@ -386,10 +384,10 @@ struct renderer
     // Renderer resources
     // TODO: Implement this for smarter pipeline creation
     hmap<u64, VkPipeline> pline_cache;
-    slot_pool<rtechnique_info, MAX_TECHNIQUE_COUNT> techniques{};
-    slot_pool<rmaterial_info, MAX_MATERIAL_COUNT> materials{};
-    slot_pool<rtexture_info, MAX_TEXTURE_COUNT> textures{};
-    slot_pool<rmesh_info, MAX_MESH_COUNT> meshes{};
+    slot_pool<rtechnique_info> techniques{};
+    slot_pool<rmaterial_info> materials{};
+    slot_pool<rtexture_info> textures{};
+    slot_pool<rmesh_info> meshes{};
 
     // Frames in flight
     static_array<frame_context, MAX_FRAMES_IN_FLIGHT> fifs{};

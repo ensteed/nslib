@@ -12,6 +12,21 @@
 namespace nslib
 {
 
+void *default_upstream_alloc_func(sizet size, void *)
+{
+    return platform_alloc(size);
+}
+
+void default_upstream_free_func(void *ptr, void *)
+{
+    platform_free(ptr);
+}
+
+void *default_upstream_realloc_func(void *ptr, sizet size, void *)
+{
+    return platform_realloc(ptr, size);
+}
+
 intern mem_arena *g_fl_arena{};
 intern mem_arena *g_stack_arena{};
 intern mem_arena *g_frame_linear_arena{};
@@ -158,12 +173,9 @@ intern void *mem_free_list_alloc(mem_arena *arena, sizet size, sizet alignment_p
     // Only split if the remainder can satisfy a minimal allocation (node + header with padding) - use default min
     // alignment as that is the smallest alignment that can be used with this allocator (and the user size must at least
     // be sizeof mem_node to be added to free list)
-    sizet min_padding = calc_padding_with_header(
-        (sizet)affected_node + required_size,
-        DEFAULT_MIN_ALIGNMENT,
-        sizeof(alloc_header));
+    sizet min_padding = calc_padding_with_header((sizet)affected_node + required_size, DEFAULT_MIN_ALIGNMENT, sizeof(alloc_header));
     sizet min_required = sizeof(mem_node) + min_padding;
-    
+
     if (rest >= min_required) {
         // We have to split the block into the data block and a free block of size 'rest'
         mem_node *new_free_node = (mem_node *)((sizet)affected_node + required_size);
@@ -415,7 +427,7 @@ void *mem_alloc(sizet bytes, mem_arena *arena, sizet alignment)
         }
     }
     else {
-        ret = platform_alloc(bytes);
+        ret = arena->pf_funcs.alloc(bytes, arena->pf_funcs.user);
     }
     return ret;
 }
@@ -454,7 +466,7 @@ void *mem_realloc(void *ptr, sizet new_size, mem_arena *arena, sizet alignment, 
         return new_block;
     }
     else {
-        return platform_realloc(ptr, new_size);
+        return arena->pf_funcs.realloc(ptr, new_size, arena->pf_funcs.user);
     }
 }
 
@@ -509,7 +521,7 @@ void mem_free(void *ptr, mem_arena *arena)
         }
     }
     else if (ptr) {
-        platform_free(ptr);
+        arena->pf_funcs.free(ptr, arena->pf_funcs.user);
     }
 }
 
@@ -547,8 +559,12 @@ void mem_reset_arena(mem_arena *arena)
     }
 }
 
-void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_arena *upstream, const char *name)
+void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
+    arena->pf_funcs.alloc = pf_funcs.alloc ? pf_funcs.alloc : default_upstream_alloc_func;
+    arena->pf_funcs.free = pf_funcs.free ? pf_funcs.free : default_upstream_free_func;
+    arena->pf_funcs.realloc = pf_funcs.realloc ? pf_funcs.realloc : default_upstream_realloc_func;
+    
     arena->total_size = total_size;
     arena->alloc_type = mtype;
     arena->upstream_allocator = upstream;

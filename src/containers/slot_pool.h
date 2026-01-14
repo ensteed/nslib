@@ -45,37 +45,43 @@ struct slot_free_entry
     slot_handle<T> handle;
 };
 
-template<typename T, sizet N>
+template<typename T>
 struct slot_pool
 {
     // Slots store user data, generation tracking, and usage info alongside an explicit free list.
-    static_array<slot_pool_item<T>, N> slots{};
-    static_array<slot_free_entry<T>, N> free_list{};
+    array<slot_pool_item<T>> slots{};
+    array<slot_free_entry<T>> free_list{};
 };
 
-template<typename T, sizet N>
-void init_slot_pool(slot_pool<T, N> *pool)
+template<typename T>
+void init_slot_pool(slot_pool<T> *pool, u32 elements, mem_arena *arena)
 {
-    pool->slots.size = 0;
-    pool->free_list.size = 0;
+    arr_init(&pool->slots, arena, elements);
+    arr_init(&pool->free_list, arena, elements);
 }
 
-template<typename T, sizet N>
-void clear_slot_pool(slot_pool<T, N> *pool)
+template<typename T>
+void terminate_slot_pool(slot_pool<T> *pool)
 {
-    arr_clear_to(&pool->slots, {});
+    arr_terminate(&pool->slots);
+    arr_terminate(&pool->free_list);
+}
+
+template<typename T>
+void clear_slot_pool(slot_pool<T> *pool)
+{
     arr_clear(&pool->slots);
     arr_clear(&pool->free_list);
 }
 
-template<typename T, sizet N>
-bool is_slot_available(const slot_pool<T, N> *pool)
+template<typename T>
+bool is_slot_available(const slot_pool<T> *pool)
 {
     return (pool->free_list.size > 0) || (pool->slots.size < pool->slots.capacity);
 }
 
-template<typename T, sizet N>
-slot_handle<T> get_slot_current_handle(slot_pool<T, N> *pool, u32 index)
+template<typename T>
+slot_handle<T> get_slot_current_handle(slot_pool<T> *pool, u32 index)
 {
     if (index >= pool->slots.size) {
         return {};
@@ -83,8 +89,8 @@ slot_handle<T> get_slot_current_handle(slot_pool<T, N> *pool, u32 index)
     return {.index = index, .generation = pool->slots[index].gen_id};
 }
 
-template<typename T, sizet N>
-slot_handle<T> acquire_slot(slot_pool<T, N> *pool, const T &item = {})
+template<typename T>
+slot_handle<T> acquire_slot(slot_pool<T> *pool, const T &item = {})
 {
     slot_handle<T> ret{};
     if (!is_slot_available(pool)) {
@@ -113,8 +119,8 @@ slot_handle<T> acquire_slot(slot_pool<T, N> *pool, const T &item = {})
     return ret;
 }
 
-template<typename T, sizet N>
-T *get_slot_item(slot_pool<T, N> *pool, slot_handle<T> handle)
+template<typename T>
+T *get_slot_item(slot_pool<T> *pool, slot_handle<T> handle)
 {
     if (!is_valid(handle)) {
         return nullptr;
@@ -127,8 +133,8 @@ T *get_slot_item(slot_pool<T, N> *pool, slot_handle<T> handle)
     return nullptr;
 }
 
-template<typename T, sizet N>
-const T *get_slot_item(const slot_pool<T, N> *pool, slot_handle<T> handle)
+template<typename T>
+const T *get_slot_item(const slot_pool<T> *pool, slot_handle<T> handle)
 {
     if (!is_valid(handle)) {
         return nullptr;
@@ -141,8 +147,8 @@ const T *get_slot_item(const slot_pool<T, N> *pool, slot_handle<T> handle)
     return nullptr;
 }
 
-template<typename T, sizet N>
-bool release_slot(slot_pool<T, N> *pool, slot_handle<T> handle)
+template<typename T>
+bool release_slot(slot_pool<T> *pool, slot_handle<T> handle)
 {
     if (!is_valid(handle)) {
         return false;

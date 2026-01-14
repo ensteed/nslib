@@ -158,7 +158,7 @@ void pack_unpack(string_archive *ar, hmap<string, T> &val, const pack_var_info &
 {
     auto iter = hmap_begin(&val);
     while (iter) {
-        pup_var(ar, iter->val, {str_cstr(iter->key)});
+        pup_var(ar, iter->val, {ls(iter->key)});
         iter = hmap_next(&val, iter);
     }
 }
@@ -169,7 +169,7 @@ void pack_unpack(string_archive *ar, hmap<aid, T> &val, const pack_var_info &vin
 {
     auto iter = hmap_begin(&val);
     while (iter) {
-        pup_var(ar, iter->val, {str_cstr(iter->key.str)});
+        pup_var(ar, iter->val, {ls(iter->key)});
         iter = hmap_next(&val, iter);
     }
 }

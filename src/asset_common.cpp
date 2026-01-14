@@ -12,32 +12,21 @@ namespace nslib
 
 intern const sizet ASSET_TYPE_SIZE[ASSET_TYPE_USER] = {sizeof(mesh)};
 
-void set_aid(aid *id, const string &str)
-{
-    id->str = str;
-    id->id = hash_type(id->str, 0, 0);
-}
-
-void set_aid(aid *id, const char *str)
-{
-    id->str = str;
-    id->id = hash_type(id->str, 0, 0);
-}
-
 aid make_aid(const string &str)
 {
-    return {.str{str}, .id = hash_type(str, 0, 0)};
+    return {.id = hash_type(str, 0, 0)};
 }
 
 aid make_aid(const char *str)
 {
-    return {.str{str}, .id = hash_type(str, 0, 0)};
+    return {.id = hash_type(str, 0, 0)};
 }
 
-const string &to_str(const aid &rid)
+string to_str(const aid &rid)
 {
-    return rid.str;
+    return to_str(rid.id);
 }
+
 
 aid generate_id()
 {
@@ -46,8 +35,9 @@ aid generate_id()
     u32 r1 = rand();
     u32 r2 = rand();
     u16 r3 = rand();
-    str_printf(&ret.str, "%08x-%08x-%04x", r1, r2, r3);
-    ret.id = hash_type(ret.str, 0, 0);
+    string st;
+    str_printf(&st, "%08x-%08x-%04x", r1, r2, r3);
+    ret.id = hash_type(st, 0, 0);
     return ret;
 }
 

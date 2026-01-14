@@ -6,12 +6,8 @@ namespace nslib
 {
 struct aid
 {
-    string str;
     u64 id{0};
 };
-
-void set_aid(aid *id, const string &str);
-void set_aid(aid *id, const char *str);
 
 aid make_aid(const string &str);
 aid make_aid(const char *str);
@@ -23,13 +19,10 @@ inline bool is_valid(const aid &id)
 
 pup_func(aid)
 {
-    pup_member_info(str, vinfo);
-    if (ar->opmode == archive_opmode::UNPACK) {
-        val.id = hash_type(val.str, 0, 0);
-    }
+    pup_member(id);
 }
 
-const string &to_str(const aid &rid);
+string to_str(const aid &rid);
 
 inline u64 hash_type(const aid &id, u64, u64)
 {

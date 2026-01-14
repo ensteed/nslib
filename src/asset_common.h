@@ -82,7 +82,7 @@ void init_cache(asset_cache<T> *cache, sizet memory_budget, u32 item_budget, mem
 {
     mem_init_fl_arena(&cache->rarena, memory_budget, upstream, T::type_str);
     mem_init_pool_arena<T>(&cache->rpool, item_budget, &cache->rarena, T::type_str);
-    mem_init_pool_arena<ref_counter>(&cache->rhandles, item_budget, upstream, T::type_str);
+    mem_init_pool_arena<ref_counter>(&cache->rhandles, item_budget, &cache->rarena, T::type_str);
     hmap_init(&cache->rmap, hash_type, &cache->rarena, HMAP_DEFAULT_BUCKET_COUNT);
 }
 

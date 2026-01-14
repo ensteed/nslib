@@ -67,6 +67,18 @@ struct mem_linear
     sizet offset;
 };
 
+using alloc_func = void *(sizet, void *);
+using free_func = void(void *, void *);
+using realloc_func = void *(void *, sizet, void *);
+
+struct pf_alloc_funcs
+{
+    alloc_func *alloc{};
+    free_func *free{};
+    realloc_func *realloc{};
+    void *user;
+};
+
 struct mem_arena
 {
     /// Input parameter for alloc functions
@@ -80,6 +92,9 @@ struct mem_arena
     /// don't change this to something different as it will likely crash (cant free from an allocator different than allocated from)
     mem_arena *upstream_allocator{nullptr};
 
+    // If upstream isn't set, and any of these functinos are not null, they will be used to do the allocation
+    pf_alloc_funcs pf_funcs{};
+    
     // Name to use in debug/etc applications
     const char *name{"default"};
 
@@ -148,7 +163,7 @@ void mem_delete(T *item, mem_arena *arena)
 
 // Reset the store without actually freeing the memory so it can be reused
 void mem_reset_arena(mem_arena *arena);
-void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type atype, mem_arena *upstream, const char *name);
+void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type atype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {});
 
 void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name);
 
