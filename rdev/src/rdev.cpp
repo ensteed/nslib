@@ -185,12 +185,11 @@ void register_meshes_with_renderer(robj_cache<mesh> *meshes, renderer *rndr, mem
         cinf.weights_ids = tmp_bone_weight_ids;
 
         cinf.topology = (rmesh_topology)rm->val->topology;
-        
+
         rm->val->rhndl = create_mesh(cinf, rndr);
         if (!is_valid(rm->val->rhndl)) {
             wlog("Could not create %s mesh render resource", to_cstr(rm->val->name));
         }
-
 
         mem_free(tmp_inds, arena);
         mem_free(tmp_bone_weight_ids, arena);
@@ -223,6 +222,29 @@ int init(platform_ctxt *ctxt, void *user_data)
     register_meshes_with_renderer(msh_cache, &app->rndr, &ctxt->arenas.stack);
     // register_mesh(cube_msh.ptr, &app->rndr);
     // upload_to_gpu(rect_msh.ptr, &app->rndr);
+
+    auto tex_cache = get_cache<texture>(&app->cg);
+
+    auto daniel_face = add_robj(tex_cache, terminate_texture);
+    init_texture(daniel_face.ptr, "daniel-face", mem_global_arena());
+
+    auto maria_face = add_robj(tex_cache, terminate_texture);
+    init_texture(maria_face.ptr, "maria-face", mem_global_arena());
+
+    cstr err{nullptr};
+    load_texture(maria_face.ptr, "import/maria.png", &err);
+    if (err) {
+        wlog("Couldn't load texture: %s", to_cstr(daniel_face->name), err);
+    }
+
+    load_texture(maria_face.ptr, "import/daniel.png", &err);
+    if (err) {
+        wlog("Couldn't load texture %s: %s", to_cstr(maria_face->name), err);
+    }
+
+    for (auto iter = cache_begin(tex_cache); iter; iter = cache_next(tex_cache, iter)) {
+        ilog("Should create render texture %s", to_cstr(iter->val->name));
+    }
 
     // Create our sim region aka scene
     init_sim_region(&app->rgn, mem_global_arena());

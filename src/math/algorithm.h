@@ -100,8 +100,9 @@ auto convert_elements(const T &veca)
 {
     using other_type = typename T::template container_type<U>;
     other_type ret;
-    for (u8 i{0}; i < T::size_; ++i)
+    for (u8 i{0}; i < T::size_; ++i) {
         ret[i] = (U)veca[i];
+    }
     return ret;
 }
 
