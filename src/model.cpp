@@ -123,7 +123,7 @@ intern const u32 CUBE_INDS_TRI_LIST[] = {
 
 void init_texture(texture *tex, const string &name, mem_arena *arena)
 {
-    init_robj(tex, name, arena);
+    init_asset(tex, name, arena);
     tex->name = name;
 }
 
@@ -134,7 +134,7 @@ void release_texture_ram_data(texture *tex)
 
 void terminate_texture(texture *tex)
 {
-    terminate_robj(tex);
+    terminate_asset(tex);
     release_texture_ram_data(tex);
 }
 
@@ -193,12 +193,12 @@ bool load_texture(texture *tex, const char *path, cstr *err)
 
 void init_material(material *mat, const string &name, mem_arena *arena)
 {
-    init_robj(mat, name, arena);
+    init_asset(mat, name, arena);
 }
 
 void terminate_material(material *mat)
 {
-    terminate_robj(mat);
+    terminate_asset(mat);
 }
 
 void make_rect(mesh *msh, const string &name, mem_arena *arena)
@@ -223,7 +223,7 @@ void make_cube(mesh *msh, const string &name, mem_arena *arena)
 
 void init_mesh(mesh *msh, const string &name, mem_arena *arena)
 {
-    init_robj(msh, name, arena);
+    init_asset(msh, name, arena);
     asrt(msh->sm_info.size == 0);
     asrt(msh->inds.size == 0);
     asrt(msh->verts.size == 0);
@@ -244,7 +244,7 @@ void release_mesh_ram_data(mesh *msh)
 
 void terminate_mesh(mesh *msh)
 {
-    terminate_robj(msh);
+    terminate_asset(msh);
     release_mesh_ram_data(msh);
 }
 

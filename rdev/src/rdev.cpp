@@ -11,7 +11,7 @@ struct app_data
 {
     renderer rndr{};
     sim_region rgn{};
-    asset_cache_group cg{};
+    asset_cache cg{};
     f64 accumulater{};
 
     input_keymap movement_km;
@@ -130,9 +130,9 @@ intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const m
 }
 
 // Great use for a stack arena - will work
-void register_meshes_with_renderer(asset_cache<mesh> *meshes, renderer *rndr, mem_arena *arena)
+void register_meshes_with_renderer(asset_pool<mesh> *meshes, renderer *rndr, mem_arena *arena)
 {
-    for (auto rm = cache_begin(meshes); rm; rm = cache_next(meshes, rm)) {
+    for (auto rm = pool_begin(meshes); rm; rm = pool_next(meshes, rm)) {
         ilog("Registering mesh id: %s  name: %s", ls(rm->key), str_cstr(rm->val->name));
         asrt(rm->val->verts.size > 0);
         rmesh_create_info cinf{};
@@ -203,12 +203,12 @@ int init(platform_ctxt *ctxt, void *user_data)
 {
     auto app = (app_data *)user_data;
 
-    init_cache_group_default_types(&app->cg, mem_global_arena());
+    init_cache_default_types(&app->cg, mem_global_arena());
 
     // Create meshes
-    auto msh_cache = get_cache<mesh>(&app->cg);
-    auto cube_msh = add_robj(msh_cache, terminate_mesh);
-    auto rect_msh = add_robj(msh_cache, terminate_mesh);
+    auto msh_pool = get_pool<mesh>(&app->cg);
+    auto cube_msh = add_asset(msh_pool, terminate_mesh);
+    auto rect_msh = add_asset(msh_pool, terminate_mesh);
 
     make_rect(rect_msh.ptr, "rect", mem_global_arena());
     make_cube(cube_msh.ptr, "cube", mem_global_arena());
@@ -219,16 +219,16 @@ int init(platform_ctxt *ctxt, void *user_data)
         return ret;
     }
 
-    register_meshes_with_renderer(msh_cache, &app->rndr, &ctxt->arenas.stack);
+    register_meshes_with_renderer(msh_pool, &app->rndr, &ctxt->arenas.stack);
     // register_mesh(cube_msh.ptr, &app->rndr);
     // upload_to_gpu(rect_msh.ptr, &app->rndr);
 
-    auto tex_cache = get_cache<texture>(&app->cg);
+    auto tex_pool = get_pool<texture>(&app->cg);
 
-    auto daniel_face = add_robj(tex_cache, terminate_texture);
+    auto daniel_face = add_asset(tex_pool, terminate_texture);
     init_texture(daniel_face.ptr, "daniel-face", mem_global_arena());
 
-    auto maria_face = add_robj(tex_cache, terminate_texture);
+    auto maria_face = add_asset(tex_pool, terminate_texture);
     init_texture(maria_face.ptr, "maria-face", mem_global_arena());
 
     cstr err{nullptr};
@@ -242,7 +242,7 @@ int init(platform_ctxt *ctxt, void *user_data)
         wlog("Couldn't load texture %s: %s", ls(maria_face->name), err);
     }
 
-    for (auto iter = cache_begin(tex_cache); iter; iter = cache_next(tex_cache, iter)) {
+    for (auto iter = pool_begin(tex_pool); iter; iter = pool_next(tex_pool, iter)) {
         rtexture_create_info ctinfo{};
         ctinfo.name = ls(iter->val->name);
         ctinfo.dims = iter->val->dims;
@@ -283,8 +283,8 @@ void simulate(platform_ctxt *ctxt, app_data *app, f64 dt)
     static double render_tm = 0.0;
 
     auto tform_tbl = get_comp_tbl<transform>(&app->rgn.cdb);
-    auto mat_cache = get_cache<material>(&app->cg);
-    auto msh_cache = get_cache<mesh>(&app->cg);
+    auto mat_cache = get_pool<material>(&app->cg);
+    auto msh_cache = get_pool<mesh>(&app->cg);
     for (sizet i = 0; i < tform_tbl->entries.size; ++i) {
         auto curtf = &tform_tbl->entries[i];
         if (curtf->ent_id != app->cam_id) {
@@ -367,7 +367,7 @@ int terminate(platform_ctxt *ctxt, void *user_data)
     terminate_keymap(&app->movement_km);
     terminate_keymap_stack(&app->stack);
     terminate_sim_region(&app->rgn);
-    terminate_cache_group_default_types(&app->cg);
+    terminate_cache_default_types(&app->cg);
     return err_code::PLATFORM_NO_ERROR;
 }
 

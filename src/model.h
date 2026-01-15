@@ -40,8 +40,8 @@ struct material
 {
     ASSET(MATERIAL);
     vec4 col;
-    aid technique;
-    static_array<aid, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
+    asset_id technique;
+    static_array<asset_id, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
     rmaterial_handle rndr_hndl;
 };
 

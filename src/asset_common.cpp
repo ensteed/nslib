@@ -12,26 +12,26 @@ namespace nslib
 
 intern const sizet ASSET_TYPE_SIZE[ASSET_TYPE_USER] = {sizeof(mesh)};
 
-aid make_aid(const string &str)
+asset_id make_asset_id(const string &str)
 {
     return {.id = hash_type(str, 0, 0)};
 }
 
-aid make_aid(const char *str)
+asset_id make_asset_id(const char *str)
 {
     return {.id = hash_type(str, 0, 0)};
 }
 
-string to_str(const aid &rid)
+string to_str(const asset_id &rid)
 {
     return to_str(rid.id);
 }
 
 
-aid generate_id()
+asset_id generate_id()
 {
     // Generate in this format 774f0899-9666471a-b1f9
-    aid ret{};
+    asset_id ret{};
     u32 r1 = rand();
     u32 r2 = rand();
     u16 r3 = rand();
@@ -41,38 +41,38 @@ aid generate_id()
     return ret;
 }
 
-void init_cache_group(asset_cache_group *cg, mem_arena *arena)
+void init_cache(asset_cache *cg, mem_arena *arena)
 {
-    arr_init(&cg->caches, arena);
+    arr_init(&cg->pools, arena);
 }
 
-void init_cache_group_default_types(asset_cache_group *cg, mem_arena *arena)
+void init_cache_default_types(asset_cache *cg, mem_arena *arena)
 {
-    init_cache_group(cg, arena);
+    init_cache(cg, arena);
 
     // NOTE: Manually update this on adding differe resource types
-    add_cache<mesh>(ASSET_TYPE_MEMORY_BUDGET[mesh::type_id], ASSET_TYPE_ITEM_BUDGET[mesh::type_id], cg);
-    add_cache<texture>(ASSET_TYPE_MEMORY_BUDGET[texture::type_id], ASSET_TYPE_ITEM_BUDGET[texture::type_id], cg);
-    add_cache<material>(ASSET_TYPE_MEMORY_BUDGET[material::type_id], ASSET_TYPE_ITEM_BUDGET[material::type_id], cg);
+    add_pool<mesh>(ASSET_TYPE_MEMORY_BUDGET[mesh::type_id], ASSET_TYPE_ITEM_BUDGET[mesh::type_id], cg);
+    add_pool<texture>(ASSET_TYPE_MEMORY_BUDGET[texture::type_id], ASSET_TYPE_ITEM_BUDGET[texture::type_id], cg);
+    add_pool<material>(ASSET_TYPE_MEMORY_BUDGET[material::type_id], ASSET_TYPE_ITEM_BUDGET[material::type_id], cg);
 }
 
-void terminate_cache_group_default_types(asset_cache_group *cg)
+void terminate_cache_default_types(asset_cache *cg)
 {
 
     // NOTE: Manually update this on adding differe resource types
-    remove_cache<mesh>(cg);
-    remove_cache<texture>(cg);
-    remove_cache<material>(cg);
-    terminate_cache_group(cg);
+    remove_pool<mesh>(cg);
+    remove_pool<texture>(cg);
+    remove_pool<material>(cg);
+    terminate_cache(cg);
 }
 
-void terminate_cache_group(asset_cache_group *cg)
+void terminate_cache(asset_cache *cg)
 {
-    for (int i = 0; i < cg->caches.size; ++i) {
-        mem_free(cg->caches[i], cg->caches.arena);
-        cg->caches[i] = {};
+    for (int i = 0; i < cg->pools.size; ++i) {
+        mem_free(cg->pools[i], cg->pools.arena);
+        cg->pools[i] = {};
     }
-    arr_terminate(&cg->caches);
+    arr_terminate(&cg->pools);
 }
 
 } // namespace nslib

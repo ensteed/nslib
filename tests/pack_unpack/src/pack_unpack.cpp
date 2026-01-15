@@ -59,7 +59,7 @@ struct data_to_pup
     hmap<s16, int> hm_i16;
     hmap<u8, int> hm_u8;
     hmap<s8, int> hm_i8;
-    hmap<aid, int> hm_no_simp;
+    hmap<asset_id, int> hm_no_simp;
 
     hset<string> hs;
     hset<u64> hs_u64;
@@ -70,7 +70,7 @@ struct data_to_pup
     hset<s16> hs_i16;
     hset<u8> hs_u8;
     hset<s8> hs_i8;
-    hset<aid> hs_no_simp;
+    hset<asset_id> hs_no_simp;
 };
 
 pup_func(data_to_pup)
@@ -108,7 +108,7 @@ pup_func(data_to_pup)
 void seed_data(data_to_pup *data)
 {
     ilog("Seeding data");
-    data->asset.id = make_aid("sample_id");
+    data->asset.id = make_asset_id("sample_id");
     data->fs = {"str1_text", "str2_text", {"choice1", "choice2", "choice3", "choice4", "choice5"}};
     data->v2_sa = {{2, 3, 4.4f, 9.1f, 2.3f}, 2};
     data->v4 = {4, 3, 2, 1};
@@ -155,9 +155,9 @@ void seed_data(data_to_pup *data)
     hmap_insert(&data->hm_i8, (s8)3, 2);
     hmap_insert(&data->hm_i8, (s8)4, 3);
 
-    hmap_insert(&data->hm_no_simp, make_aid("key1"), 1);
-    hmap_insert(&data->hm_no_simp, make_aid("key2"), 2);
-    hmap_insert(&data->hm_no_simp, make_aid("key3"), 3);
+    hmap_insert(&data->hm_no_simp, make_asset_id("key1"), 1);
+    hmap_insert(&data->hm_no_simp, make_asset_id("key2"), 2);
+    hmap_insert(&data->hm_no_simp, make_asset_id("key3"), 3);
 
     hset_insert(&data->hs, string("key1"));
     hset_insert(&data->hs, string("key2"));
@@ -195,9 +195,9 @@ void seed_data(data_to_pup *data)
     hset_insert(&data->hs_i8, (s8)3);
     hset_insert(&data->hs_i8, (s8)4);
 
-    hset_insert(&data->hs_no_simp, make_aid("key1"));
-    hset_insert(&data->hs_no_simp, make_aid("key2"));
-    hset_insert(&data->hs_no_simp, make_aid("key3"));
+    hset_insert(&data->hs_no_simp, make_asset_id("key1"));
+    hset_insert(&data->hs_no_simp, make_asset_id("key2"));
+    hset_insert(&data->hs_no_simp, make_asset_id("key3"));
 }
 
 void clear_data(data_to_pup *data)

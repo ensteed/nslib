@@ -40,14 +40,14 @@ struct transform
 
 struct material_submesh_mapping
 {
-    aid mat_id;
+    asset_id mat_id;
     u32 sm_mat_slot;
 };
 
 struct static_model
 {
     COMP(STATIC_MODEL)
-    aid mesh_id;
+    asset_id mesh_id;
     // This is fixed to max submesh arraty so that each ind in this array matches an ind in the submesh array
     // We might have some of the submeshes with no materials for example, for those the rid will be 0
     array<material_submesh_mapping> mat_mapping{};

@@ -4,39 +4,39 @@
 
 namespace nslib
 {
-struct aid
+struct asset_id
 {
     u64 id{0};
 };
 
-aid make_aid(const string &str);
-aid make_aid(const char *str);
+asset_id make_asset_id(const string &str);
+asset_id make_asset_id(const char *str);
 
-inline bool is_valid(const aid &id)
+inline bool is_valid(const asset_id &id)
 {
     return id.id != 0;
 }
 
-pup_func(aid)
+pup_func(asset_id)
 {
     pup_member(id);
 }
 
-string to_str(const aid &rid);
+string to_str(const asset_id &rid);
 
-inline u64 hash_type(const aid &id, u64, u64)
+inline u64 hash_type(const asset_id &id, u64, u64)
 {
     return id.id;
 }
 
-aid generate_id();
+asset_id generate_id();
 
-inline bool operator==(const aid &lhs, const aid &rhs)
+inline bool operator==(const asset_id &lhs, const asset_id &rhs)
 {
     return lhs.id == rhs.id;
 }
 
-inline bool operator!=(const aid &lhs, const aid &rhs)
+inline bool operator!=(const asset_id &lhs, const asset_id &rhs)
 {
     return !(lhs == rhs);
 }
