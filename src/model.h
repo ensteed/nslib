@@ -121,21 +121,21 @@ pup_func(mesh)
     pup_enum_member(mesh_topology, u8, topology);
 }
 
-void init_texture(texture *tex);
+void init_asset(texture *tex);
 void release_texture_ram_data(texture *tex);
-void terminate_texture(texture *tex);
+void terminate_asset(texture *tex);
 sizet get_texture_memsize(const texture *tex);
 u32 get_texture_layer_pixel_count(const texture *tex);
 bool load_texture(texture *tex, const char *path, cstr *err);
 
-void init_material(material *mat);
-void terminate_material(material *mat);
+void init_asset(material *mat);
+void terminate_asset(material *mat);
 
 void make_rect(mesh *msh);
 void make_cube(mesh *msh);
 
-void init_mesh(mesh *msh);
+void init_asset(mesh *msh);
 void release_mesh_ram_data(mesh *msh);
-void terminate_mesh(mesh *msh);
+void terminate_asset(mesh *msh);
 
 } // namespace nslib

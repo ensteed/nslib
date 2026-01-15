@@ -199,6 +199,61 @@ void register_meshes_with_renderer(asset_pool<mesh> *meshes, renderer *rndr, mem
     }
 }
 
+void create_meshes(mesh_pool *msh_pool, mesh **rect, mesh **cube)
+{
+    auto cube_msh = create_asset(msh_pool, "rect");
+    auto rect_msh = create_asset(msh_pool, "cube");
+    make_rect(rect_msh.item);
+    make_cube(cube_msh.item);
+    *rect = rect_msh.item;
+    *cube = cube_msh.item;
+}
+
+void create_textures(texture_pool *tex_pool)
+{
+    auto daniel_face = create_asset(tex_pool, "daniel-face");
+    auto maria_face = create_asset(tex_pool, "maria-face");
+    cstr err{nullptr};
+    load_texture(maria_face.item, "import/maria.png", &err);
+    if (err) {
+        wlog("Couldn't load texture: %s", ls(daniel_face.item->name), err);
+    }
+    load_texture(daniel_face.item, "import/daniel.png", &err);
+    if (err) {
+        wlog("Couldn't load texture %s: %s", ls(maria_face.item->name), err);
+    }
+}
+
+rformat get_rformat_for_usage(texture_usage usage)
+{
+    switch (usage) {
+    case (texture_usage::ALBEDO):
+        return rformat::RGBA8_SRGB;
+    case (texture_usage::NORMAL):
+        return rformat::RG8_UNORM;
+    case (texture_usage::GRAYSCALE):
+        return rformat::R8_UNORM;
+    case (texture_usage::HDR):
+        return rformat::RGBA16_SFLOAT;
+    default:
+        asrt_break("Failed to handle texture usage case");
+    }
+}
+
+void register_textures_with_renderer(texture_pool *tex_pool, renderer *rndr, mem_arena *arena)
+{
+    for (auto iter = pool_begin(tex_pool); is_valid(iter); iter = pool_next(tex_pool, iter)) {
+        rtexture_create_info ctinfo{};
+        ctinfo.name = ls(iter.item->name);
+        ctinfo.dims = iter.item->dims;
+        ctinfo.data = iter.item->pixels;
+        ctinfo.data_size = get_texture_memsize(iter.item);
+        ctinfo.format = get_rformat_for_usage(iter.item->usage);
+        create_texture(ctinfo, rndr);
+        ilog("Should create render texture %s", ls(iter.item->name));
+    }
+}
+
 int init(platform_ctxt *ctxt, void *user_data)
 {
     auto app = (app_data *)user_data;
@@ -207,11 +262,10 @@ int init(platform_ctxt *ctxt, void *user_data)
 
     // Create meshes
     auto msh_pool = get_pool<mesh>(&app->cg);
-    auto cube_msh = create_asset(msh_pool, "rect");
-    auto rect_msh = create_asset(msh_pool, "cube");
-
-    make_rect(rect_msh.item);
-    make_cube(cube_msh.item);
+    auto tex_pool = get_pool<texture>(&app->cg);
+    mesh *rect, *cube;
+    create_meshes(msh_pool, &rect, &cube);
+    create_textures(tex_pool);
 
     // Initialize our renderer - fail early if init fails
     int ret = init_renderer(&app->rndr, ctxt->win_hndl, &ctxt->arenas.free_list);
@@ -220,35 +274,7 @@ int init(platform_ctxt *ctxt, void *user_data)
     }
 
     register_meshes_with_renderer(msh_pool, &app->rndr, &ctxt->arenas.stack);
-    // register_mesh(cube_msh.ptr, &app->rndr);
-    // upload_to_gpu(rect_msh.ptr, &app->rndr);
-
-    auto tex_pool = get_pool<texture>(&app->cg);
-
-    auto daniel_face = create_asset(tex_pool, "daniel-face");
-    init_texture(daniel_face.item);
-
-    auto maria_face = create_asset(tex_pool, "maria-face");
-    init_texture(maria_face.item);
-
-    cstr err{nullptr};
-    load_texture(maria_face.item, "import/maria.png", &err);
-    if (err) {
-        wlog("Couldn't load texture: %s", ls(daniel_face.item->name), err);
-    }
-
-    load_texture(maria_face.item, "import/daniel.png", &err);
-    if (err) {
-        wlog("Couldn't load texture %s: %s", ls(maria_face.item->name), err);
-    }
-
-    for (auto iter = pool_begin(tex_pool); is_valid(iter); iter = pool_next(tex_pool, iter)) {
-        rtexture_create_info ctinfo{};
-        ctinfo.name = ls(iter.item->name);
-        ctinfo.dims = iter.item->dims;
-        //ctinfo.data = iter->val->pixels.data;
-        ilog("Should create render texture %s", ls(iter.item->name));
-    }
+    register_textures_with_renderer(tex_pool, &app->rndr, &ctxt->arenas.stack);
 
     // Create our sim region aka scene
     init_sim_region(&app->rgn, get_global_arena());
@@ -263,7 +289,7 @@ int init(platform_ctxt *ctxt, void *user_data)
 
     // Create and setup input for camera
     setup_camera_controller(ctxt, app);
-    create_entity_grid(&app->rgn, *cube_msh.item, *rect_msh.item);
+    create_entity_grid(&app->rgn, *cube, *rect);
     return ret;
 }
 

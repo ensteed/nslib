@@ -121,7 +121,7 @@ intern const u32 CUBE_INDS_TRI_LIST[] = {
     6, 3, 7, // 11
 };
 
-void init_texture(texture *tex)
+void init_asset(texture *tex)
 {
 }
 
@@ -130,7 +130,7 @@ void release_texture_ram_data(texture *tex)
     mem_free(tex->pixels, tex->arena);
 }
 
-void terminate_texture(texture *tex)
+void terminate_asset(texture *tex)
 {
     release_texture_ram_data(tex);
 }
@@ -171,12 +171,15 @@ bool load_texture(texture *tex, const char *path, cstr *err)
 {
     s32 channels{};
     auto stb_pixels = stbi_load(path, (s32 *)&tex->dims.w, (s32 *)&tex->dims.h, (s32 *)&channels, STBI_rgb_alpha);
+    tex->dims.layers = 1;
     if (stb_pixels) {
         if (channels != STBI_rgb_alpha) {
             ilog("Converted %s from %d to %d channels", path, channels, STBI_rgb_alpha);
             channels = STBI_rgb_alpha;
         }
+        tex->usage = texture_usage::ALBEDO;
         auto sz = get_texture_memsize(tex);
+        ilog("Allocating %lu bytes for texture (%lu bytes left in arena)", sz, tex->arena->total_size - tex->arena->used);
         tex->pixels = mem_alloc(sz, tex->arena);
         memcpy(tex->pixels, stb_pixels, sz);
         stbi_image_free(stb_pixels);
@@ -188,17 +191,16 @@ bool load_texture(texture *tex, const char *path, cstr *err)
     return false;
 }
 
-void init_material(material *mat)
+void init_asset(material *mat)
 {
 }
 
-void terminate_material(material *mat)
+void terminate_asset(material *mat)
 {
 }
 
 void make_rect(mesh *msh)
 {
-    init_mesh(msh);
     arr_copy(&msh->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(mvert));
     arr_copy(&msh->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(u32));
     arr_resize(&msh->sm_info, 1);
@@ -208,7 +210,6 @@ void make_rect(mesh *msh)
 
 void make_cube(mesh *msh)
 {
-    init_mesh(msh);
     arr_copy(&msh->verts, CUBE_VERTS, sizeof(CUBE_VERTS) / sizeof(mvert));
     arr_copy(&msh->inds, CUBE_INDS_TRI_LIST, sizeof(CUBE_INDS_TRI_LIST) / sizeof(u32));
     arr_resize(&msh->sm_info, 1);
@@ -216,7 +217,7 @@ void make_cube(mesh *msh)
     strncpy(msh->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
-void init_mesh(mesh *msh)
+void init_asset(mesh *msh)
 {
     asrt(msh->sm_info.size == 0);
     asrt(msh->inds.size == 0);
@@ -236,7 +237,7 @@ void release_mesh_ram_data(mesh *msh)
     arr_terminate(&msh->sm_info);
 }
 
-void terminate_mesh(mesh *msh)
+void terminate_asset(mesh *msh)
 {
     release_mesh_ram_data(msh);
 }
