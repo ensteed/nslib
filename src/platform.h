@@ -410,6 +410,7 @@ bool window_resized_this_frame(void *win_hndl);
 const char *get_path_basename(const char *path);
 
 sizet get_file_size(const char *fname, platform_file_err_desc *err);
+const char *get_username();
 
 sizet read_file(const char *fname,
                 const char *mode,

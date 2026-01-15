@@ -132,63 +132,63 @@ intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const m
 // Great use for a stack arena - will work
 void register_meshes_with_renderer(asset_pool<mesh> *meshes, renderer *rndr, mem_arena *arena)
 {
-    for (auto rm = pool_begin(meshes); rm; rm = pool_next(meshes, rm)) {
-        ilog("Registering mesh id: %s  name: %s", ls(rm->key), str_cstr(rm->val->name));
-        asrt(rm->val->verts.size > 0);
+    for (auto rm = pool_begin(meshes); is_valid(rm); rm = pool_next(meshes, rm)) {
+        ilog("Registering mesh id: %s  name: %s", ls(rm.item->name), str_cstr(rm.item->name));
+        asrt(rm.item->verts.size > 0);
         rmesh_create_info cinf{};
 
         // Vert/Ind counts
-        cinf.vert_count = rm->val->verts.size;
-        cinf.ind_count = rm->val->inds.size;
+        cinf.vert_count = rm.item->verts.size;
+        cinf.ind_count = rm.item->inds.size;
 
         // Submesh ranges
-        cinf.sm_count = rm->val->sm_info.size;
+        cinf.sm_count = rm.item->sm_info.size;
 
         // bone weight ids will be null if size is 0 - size will either be 0 or same size as verts (we assert that now)
-        asrt(rm->val->skinned_verts_info.size == cinf.vert_count || rm->val->skinned_verts_info.size == 0);
+        asrt(rm.item->skinned_verts_info.size == cinf.vert_count || rm.item->skinned_verts_info.size == 0);
 
         // Allocate temporary buffers for everything
         rsubmesh_range *tmp_smeshes = mem_alloc<rsubmesh_range>(arena, cinf.sm_count);
         rmesh_vert_pos_col *tmp_pos_cols = mem_alloc<rmesh_vert_pos_col>(arena, cinf.vert_count);
         rmesh_vert_norm_tan_uv *tmp_norm_tan_uvs = mem_alloc<rmesh_vert_norm_tan_uv>(arena, cinf.vert_count);
-        rmesh_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rmesh_vert_bone_weights_ids>(arena, rm->val->skinned_verts_info.size);
+        rmesh_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rmesh_vert_bone_weights_ids>(arena, rm.item->skinned_verts_info.size);
         ind_t *tmp_inds = mem_alloc<ind_t>(arena, cinf.ind_count);
 
         // Copy submeshes
         for (u32 i = 0; i < cinf.sm_count; ++i) {
-            tmp_smeshes[i].count = rm->val->sm_info[i].count;
-            tmp_smeshes[i].offset = rm->val->sm_info[i].offset;
+            tmp_smeshes[i].count = rm.item->sm_info[i].count;
+            tmp_smeshes[i].offset = rm.item->sm_info[i].offset;
         }
 
         // Copy vert data
         for (u32 i = 0; i < cinf.vert_count; ++i) {
-            tmp_pos_cols[i].pos = rm->val->verts[i].pos;
-            tmp_pos_cols[i].col = rm->val->verts[i].col;
-            tmp_norm_tan_uvs[i].norm = rm->val->verts[i].norm;
-            tmp_norm_tan_uvs[i].tangent = rm->val->verts[i].tan;
-            tmp_norm_tan_uvs[i].uv = rm->val->verts[i].uv;
+            tmp_pos_cols[i].pos = rm.item->verts[i].pos;
+            tmp_pos_cols[i].col = rm.item->verts[i].col;
+            tmp_norm_tan_uvs[i].norm = rm.item->verts[i].norm;
+            tmp_norm_tan_uvs[i].tangent = rm.item->verts[i].tan;
+            tmp_norm_tan_uvs[i].uv = rm.item->verts[i].uv;
             if (tmp_bone_weight_ids) {
-                tmp_bone_weight_ids[i].bone_weights = rm->val->skinned_verts_info[i].bone_weights;
-                tmp_bone_weight_ids[i].bone_ids = rm->val->skinned_verts_info[i].bone_ids;
+                tmp_bone_weight_ids[i].bone_weights = rm.item->skinned_verts_info[i].bone_weights;
+                tmp_bone_weight_ids[i].bone_ids = rm.item->skinned_verts_info[i].bone_ids;
             }
         }
 
         for (u32 i = 0; i < cinf.ind_count; ++i) {
-            tmp_inds[i] = rm->val->inds[i];
+            tmp_inds[i] = rm.item->inds[i];
         }
 
         cinf.sm_info = tmp_smeshes;
-        cinf.name = str_cstr(rm->val->name);
+        cinf.name = str_cstr(rm.item->name);
         cinf.inds = tmp_inds;
         cinf.pos_col = tmp_pos_cols;
         cinf.norm_tan_uv = tmp_norm_tan_uvs;
         cinf.weights_ids = tmp_bone_weight_ids;
 
-        cinf.topology = (rmesh_topology)rm->val->topology;
+        cinf.topology = (rmesh_topology)rm.item->topology;
 
-        rm->val->rhndl = create_mesh(cinf, rndr);
-        if (!is_valid(rm->val->rhndl)) {
-            wlog("Could not create %s mesh render resource", ls(rm->val->name));
+        rm.item->rhndl = create_mesh(cinf, rndr);
+        if (!is_valid(rm.item->rhndl)) {
+            wlog("Could not create %s mesh render resource", ls(rm.item->name));
         }
 
         mem_free(tmp_inds, arena);
@@ -203,15 +203,15 @@ int init(platform_ctxt *ctxt, void *user_data)
 {
     auto app = (app_data *)user_data;
 
-    init_cache_default_types(&app->cg, mem_global_arena());
+    init_cache_default_types(&app->cg, "asset-cache", get_global_arena());
 
     // Create meshes
     auto msh_pool = get_pool<mesh>(&app->cg);
-    auto cube_msh = add_asset(msh_pool, terminate_mesh);
-    auto rect_msh = add_asset(msh_pool, terminate_mesh);
+    auto cube_msh = create_asset(msh_pool, "rect");
+    auto rect_msh = create_asset(msh_pool, "cube");
 
-    make_rect(rect_msh.ptr, "rect", mem_global_arena());
-    make_cube(cube_msh.ptr, "cube", mem_global_arena());
+    make_rect(rect_msh.item);
+    make_cube(cube_msh.item);
 
     // Initialize our renderer - fail early if init fails
     int ret = init_renderer(&app->rndr, ctxt->win_hndl, &ctxt->arenas.free_list);
@@ -225,33 +225,33 @@ int init(platform_ctxt *ctxt, void *user_data)
 
     auto tex_pool = get_pool<texture>(&app->cg);
 
-    auto daniel_face = add_asset(tex_pool, terminate_texture);
-    init_texture(daniel_face.ptr, "daniel-face", mem_global_arena());
+    auto daniel_face = create_asset(tex_pool, "daniel-face");
+    init_texture(daniel_face.item);
 
-    auto maria_face = add_asset(tex_pool, terminate_texture);
-    init_texture(maria_face.ptr, "maria-face", mem_global_arena());
+    auto maria_face = create_asset(tex_pool, "maria-face");
+    init_texture(maria_face.item);
 
     cstr err{nullptr};
-    load_texture(maria_face.ptr, "import/maria.png", &err);
+    load_texture(maria_face.item, "import/maria.png", &err);
     if (err) {
-        wlog("Couldn't load texture: %s", ls(daniel_face->name), err);
+        wlog("Couldn't load texture: %s", ls(daniel_face.item->name), err);
     }
 
-    load_texture(maria_face.ptr, "import/daniel.png", &err);
+    load_texture(maria_face.item, "import/daniel.png", &err);
     if (err) {
-        wlog("Couldn't load texture %s: %s", ls(maria_face->name), err);
+        wlog("Couldn't load texture %s: %s", ls(maria_face.item->name), err);
     }
 
-    for (auto iter = pool_begin(tex_pool); iter; iter = pool_next(tex_pool, iter)) {
+    for (auto iter = pool_begin(tex_pool); is_valid(iter); iter = pool_next(tex_pool, iter)) {
         rtexture_create_info ctinfo{};
-        ctinfo.name = ls(iter->val->name);
-        ctinfo.dims = iter->val->dims;
+        ctinfo.name = ls(iter.item->name);
+        ctinfo.dims = iter.item->dims;
         //ctinfo.data = iter->val->pixels.data;
-        ilog("Should create render texture %s", ls(iter->val->name));
+        ilog("Should create render texture %s", ls(iter.item->name));
     }
 
     // Create our sim region aka scene
-    init_sim_region(&app->rgn, mem_global_arena());
+    init_sim_region(&app->rgn, get_global_arena());
 
     // Create input map
     init_keymap_stack(&app->stack, &ctxt->arenas.free_list);
@@ -263,7 +263,7 @@ int init(platform_ctxt *ctxt, void *user_data)
 
     // Create and setup input for camera
     setup_camera_controller(ctxt, app);
-    create_entity_grid(&app->rgn, *cube_msh, *rect_msh);
+    create_entity_grid(&app->rgn, *cube_msh.item, *rect_msh.item);
     return ret;
 }
 

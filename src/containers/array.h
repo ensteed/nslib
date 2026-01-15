@@ -39,7 +39,7 @@ struct array
     sizet size{};
     sizet capacity{};
 
-    array(mem_arena *arena = mem_global_arena(), sizet initial_capacity = 0)
+    array(mem_arena *arena = get_global_arena(), sizet initial_capacity = 0)
     {
         arr_init(this, arena, initial_capacity);
     }
@@ -92,7 +92,7 @@ void swap(array<T> *lhs, array<T> *rhs)
 }
 
 template<typename T>
-void arr_init(array<T> *arr, mem_arena *arena = mem_global_arena(), sizet initial_capacity = 0)
+void arr_init(array<T> *arr, mem_arena *arena = get_global_arena(), sizet initial_capacity = 0)
 {
     arr->arena = arena;
     arr_set_capacity(arr, initial_capacity);

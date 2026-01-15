@@ -1,5 +1,6 @@
 #pragma once
 
+#include "asset_id.h"
 #include "math/matrix4.h"
 #include "containers/slot_pool.h"
 #include "containers/hmap.h"

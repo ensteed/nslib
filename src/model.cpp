@@ -121,20 +121,17 @@ intern const u32 CUBE_INDS_TRI_LIST[] = {
     6, 3, 7, // 11
 };
 
-void init_texture(texture *tex, const string &name, mem_arena *arena)
+void init_texture(texture *tex)
 {
-    init_asset(tex, name, arena);
-    tex->name = name;
 }
 
 void release_texture_ram_data(texture *tex)
 {
-    
+    mem_free(tex->pixels, tex->arena);
 }
 
 void terminate_texture(texture *tex)
 {
-    terminate_asset(tex);
     release_texture_ram_data(tex);
 }
 
@@ -191,19 +188,17 @@ bool load_texture(texture *tex, const char *path, cstr *err)
     return false;
 }
 
-void init_material(material *mat, const string &name, mem_arena *arena)
+void init_material(material *mat)
 {
-    init_asset(mat, name, arena);
 }
 
 void terminate_material(material *mat)
 {
-    terminate_asset(mat);
 }
 
-void make_rect(mesh *msh, const string &name, mem_arena *arena)
+void make_rect(mesh *msh)
 {
-    init_mesh(msh, name, arena);
+    init_mesh(msh);
     arr_copy(&msh->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(mvert));
     arr_copy(&msh->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(u32));
     arr_resize(&msh->sm_info, 1);
@@ -211,9 +206,9 @@ void make_rect(mesh *msh, const string &name, mem_arena *arena)
     strncpy(msh->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
-void make_cube(mesh *msh, const string &name, mem_arena *arena)
+void make_cube(mesh *msh)
 {
-    init_mesh(msh, name, arena);
+    init_mesh(msh);
     arr_copy(&msh->verts, CUBE_VERTS, sizeof(CUBE_VERTS) / sizeof(mvert));
     arr_copy(&msh->inds, CUBE_INDS_TRI_LIST, sizeof(CUBE_INDS_TRI_LIST) / sizeof(u32));
     arr_resize(&msh->sm_info, 1);
@@ -221,17 +216,16 @@ void make_cube(mesh *msh, const string &name, mem_arena *arena)
     strncpy(msh->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
-void init_mesh(mesh *msh, const string &name, mem_arena *arena)
+void init_mesh(mesh *msh)
 {
-    init_asset(msh, name, arena);
     asrt(msh->sm_info.size == 0);
     asrt(msh->inds.size == 0);
     asrt(msh->verts.size == 0);
     asrt(msh->skinned_verts_info.size == 0);
-    arr_init(&msh->verts, arena);
-    arr_init(&msh->skinned_verts_info, arena);
-    arr_init(&msh->inds, arena);
-    arr_init(&msh->sm_info, arena);
+    arr_init(&msh->verts, msh->arena);
+    arr_init(&msh->skinned_verts_info, msh->arena);
+    arr_init(&msh->inds, msh->arena);
+    arr_init(&msh->sm_info, msh->arena);
 }
 
 void release_mesh_ram_data(mesh *msh)
@@ -244,7 +238,6 @@ void release_mesh_ram_data(mesh *msh)
 
 void terminate_mesh(mesh *msh)
 {
-    terminate_asset(msh);
     release_mesh_ram_data(msh);
 }
 

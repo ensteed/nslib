@@ -1,9 +1,9 @@
 #pragma once
-
-#include "containers/string.h"
-
+#include "archive_common.h"
 namespace nslib
 {
+
+struct string;
 struct asset_id
 {
     u64 id{0};
@@ -29,16 +29,12 @@ inline u64 hash_type(const asset_id &id, u64, u64)
     return id.id;
 }
 
-asset_id generate_id();
+asset_id generate_asset_id();
 
-inline bool operator==(const asset_id &lhs, const asset_id &rhs)
+op_eq_func(asset_id)
 {
     return lhs.id == rhs.id;
 }
 
-inline bool operator!=(const asset_id &lhs, const asset_id &rhs)
-{
-    return !(lhs == rhs);
-}
-
+op_neq_func(asset_id);
 } // namespace nslib

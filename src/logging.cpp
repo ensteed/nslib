@@ -35,7 +35,7 @@ intern void write_formatted(FILE *fp, FormatFunc format)
             fwrite(local_buf, 1, (sizet)(len), fp);
         }
         else {
-            auto buf = (char *)mem_calloc(1, len + 1, mem_global_frame_lin_arena());
+            auto buf = (char *)mem_calloc(1, len + 1, get_global_frame_lin_arena());
             auto new_len = format(buf, len);
             asrt(new_len == len);
             fwrite(buf, 1, (sizet)(len), fp);

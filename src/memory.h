@@ -160,34 +160,34 @@ void mem_delete(T *item, mem_arena *arena)
 }
 
 // Reset the store without actually freeing the memory so it can be reused
-void mem_reset_arena(mem_arena *arena);
-void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type atype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {});
+void reset_arena(mem_arena *arena);
+void init_arena(mem_arena *arena, sizet total_size, mem_alloc_type atype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {});
 
-void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
+void init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
 
 template<class T>
-void mem_init_pool_arena(mem_arena *arena, sizet chunk_count, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {})
+void init_pool_arena(mem_arena *arena, sizet chunk_count, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {})
 {
-    mem_init_pool_arena(arena, sizeof(T), chunk_count, upstream, name, pf_funcs);
+    init_pool_arena(arena, sizeof(T), chunk_count, upstream, name, pf_funcs);
 }
 
 
-void mem_init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
-void mem_init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
-void mem_init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
+void init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
+void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
+void init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
 
-void mem_terminate_arena(mem_arena *arena);
-const char *mem_arena_type_str(mem_alloc_type atype);
+void terminate_arena(mem_arena *arena);
+const char *arena_type_str(mem_alloc_type atype);
 
-mem_arena *mem_global_arena();
+mem_arena *get_global_arena();
 
 // This must be a free list arena
-void mem_set_global_arena(mem_arena *arena);
+void set_global_arena(mem_arena *arena);
 
-mem_arena *mem_global_stack_arena();
-void mem_set_global_stack_arena(mem_arena *arena);
+mem_arena *get_global_stack_arena();
+void set_global_stack_arena(mem_arena *arena);
 
-mem_arena *mem_global_frame_lin_arena();
-void mem_set_global_frame_lin_arena(mem_arena *arena);
+mem_arena *get_global_frame_lin_arena();
+void set_global_frame_lin_arena(mem_arena *arena);
 
 } // namespace nslib

@@ -512,7 +512,7 @@ void mem_free(void *ptr, mem_arena *arena)
     }
 }
 
-void mem_reset_arena(mem_arena *arena)
+void reset_arena(mem_arena *arena)
 {
     arena->used = 0;
     arena->peak = 0;
@@ -546,7 +546,7 @@ void mem_reset_arena(mem_arena *arena)
     }
 }
 
-void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
     arena->pf_funcs.alloc = pf_funcs.alloc ? pf_funcs.alloc : default_upstream_alloc_func;
     arena->pf_funcs.free = pf_funcs.free ? pf_funcs.free : default_upstream_free_func;
@@ -556,7 +556,7 @@ void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, me
     arena->alloc_type = mtype;
     arena->upstream_allocator = upstream;
     arena->name = name;
-    ilog("Initializing %s (%s) arena with %lu available", name, mem_arena_type_str(arena->alloc_type), arena->total_size);
+    ilog("Initializing %s (%s) arena with %lu available", name, arena_type_str(arena->alloc_type), arena->total_size);
 
     // Make sure user filled out a size before passsing in
     asrt(arena->total_size != 0);
@@ -572,40 +572,40 @@ void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, me
         arena->start = mem_alloc(arena->total_size, arena->upstream_allocator);
     }
 
-    mem_reset_arena(arena);
+    reset_arena(arena);
 }
 
-void mem_init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name, pf_funcs);
 }
 
-void mem_init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name, pf_funcs);
 }
 
-void mem_init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name, pf_funcs);
 }
 
-void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
     auto min_sz = sizeof(mem_node);
     arena->mpool.chunk_size = chunk_size >= min_sz ? chunk_size : min_sz;
-    mem_init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, pf_funcs);
+    init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, pf_funcs);
 }
 
-void mem_terminate_arena(mem_arena *arena)
+void terminate_arena(mem_arena *arena)
 {
     ilog("Terminating %s (%s) arena with %lu used of %lu allocated and %lu peak",
          arena->name,
-         mem_arena_type_str(arena->alloc_type),
+         arena_type_str(arena->alloc_type),
          arena->used,
          arena->total_size,
          arena->peak);
-    mem_reset_arena(arena);
+    reset_arena(arena);
     if (arena->upstream_allocator) {
         mem_free(arena->start, arena->upstream_allocator);
     }
@@ -615,7 +615,7 @@ void mem_terminate_arena(mem_arena *arena)
     arena->start = nullptr;
 }
 
-const char *mem_arena_type_str(mem_alloc_type atype)
+const char *arena_type_str(mem_alloc_type atype)
 {
     switch (atype) {
     case (mem_alloc_type::FREE_LIST):
@@ -631,12 +631,12 @@ const char *mem_arena_type_str(mem_alloc_type atype)
     }
 }
 
-mem_arena *mem_global_arena()
+mem_arena *get_global_arena()
 {
     return g_fl_arena;
 }
 
-void mem_set_global_arena(mem_arena *arena)
+void set_global_arena(mem_arena *arena)
 {
     if (arena) {
         asrt(arena->alloc_type == mem_alloc_type::FREE_LIST);
@@ -644,12 +644,12 @@ void mem_set_global_arena(mem_arena *arena)
     g_fl_arena = arena;
 }
 
-mem_arena *mem_global_stack_arena()
+mem_arena *get_global_stack_arena()
 {
     return g_stack_arena;
 }
 
-void mem_set_global_stack_arena(mem_arena *arena)
+void set_global_stack_arena(mem_arena *arena)
 {
     if (arena) {
         asrt(arena->alloc_type == mem_alloc_type::STACK);
@@ -657,12 +657,12 @@ void mem_set_global_stack_arena(mem_arena *arena)
     g_stack_arena = arena;
 }
 
-mem_arena *mem_global_frame_lin_arena()
+mem_arena *get_global_frame_lin_arena()
 {
     return g_frame_linear_arena;
 }
 
-void mem_set_global_frame_lin_arena(mem_arena *arena)
+void set_global_frame_lin_arena(mem_arena *arena)
 {
     if (arena) {
         asrt(arena->alloc_type == mem_alloc_type::LINEAR);

@@ -1,12 +1,12 @@
 #pragma once
 
 #include "archive_common.h"
-#include "rid.h"
 #include "containers/cjson.h"
 #include "containers/string.h"
 #include "containers/hset.h"
 #include "containers/hmap.h"
 #include "logging.h"
+#include "asset_id.h"
 
 #define js(p) str_cstr(to_json(p))
 

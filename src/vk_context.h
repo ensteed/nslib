@@ -1,7 +1,6 @@
 #pragma once
 #include "vk_mem_alloc.h"
 #include "containers/array.h"
-#include "rid.h"
 #include "util.h"
 #include "math/vector4.h"
 #include "basic_types.h"

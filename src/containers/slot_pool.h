@@ -122,10 +122,9 @@ slot_handle<T> acquire_slot(slot_pool<T> *pool, const T &item = {})
 template<typename T>
 T *get_slot_item(slot_pool<T> *pool, slot_handle<T> handle)
 {
-    if (!is_valid(handle)) {
+    if (!is_valid(handle) || handle.index >= pool->slots.size) {
         return nullptr;
     }
-    asrt(handle.index < pool->slots.size);
     auto *entry = &pool->slots[handle.index];
     if (handle.generation == entry->gen_id) {
         return &entry->item;
@@ -136,10 +135,9 @@ T *get_slot_item(slot_pool<T> *pool, slot_handle<T> handle)
 template<typename T>
 const T *get_slot_item(const slot_pool<T> *pool, slot_handle<T> handle)
 {
-    if (!is_valid(handle)) {
+    if (!is_valid(handle) || handle.index >= pool->slots.size) {
         return nullptr;
     }
-    asrt(handle.index < pool->slots.size);
     auto *entry = &pool->slots[handle.index];
     if (handle.generation == entry->gen_id) {
         return &entry->item;
@@ -150,11 +148,9 @@ const T *get_slot_item(const slot_pool<T> *pool, slot_handle<T> handle)
 template<typename T>
 bool release_slot(slot_pool<T> *pool, slot_handle<T> handle)
 {
-    if (!is_valid(handle)) {
+    if (!is_valid(handle) || handle.index >= pool->slots.size) {
         return false;
     }
-    asrt(handle.index < pool->slots.size);
-
     // Add the handle to our free list
     slot_free_entry<T> free_entry{.handle{handle}};
     arr_push_back(&pool->free_list, free_entry);

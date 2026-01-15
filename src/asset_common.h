@@ -1,8 +1,8 @@
 #pragma once
 
 #include "archive_common.h"
-#include "rid.h"
-#include "handle.h"
+#include "asset_id.h"
+#include "containers/slot_pool.h"
 #include "containers/hmap.h"
 
 namespace nslib
@@ -18,15 +18,17 @@ enum asset_type : u32
 
 enum asset_flags : u32
 {
-    ASSET_FLAG_DIRTY = (1 << 0)
+    ASSET_FLAG_DIRTY = (1 << 0),
+    ASSET_FLAG_LOADED = (1 << 1),
 };
 
-const sizet ASSET_TYPE_MEMORY_BUDGET[ASSET_TYPE_USER] = {1 * MB_SIZE, 1 * MB_SIZE, 1 * MB_SIZE};
-const sizet ASSET_TYPE_ITEM_BUDGET[ASSET_TYPE_USER] = {256, 256, 100};
+const sizet ASSET_POOL_MEMORY_BUDGETS[ASSET_TYPE_USER] = {1 * MB_SIZE, 1 * MB_SIZE, 1 * MB_SIZE};
+const u32 ASSET_POOL_ITEM_BUDGETS[ASSET_TYPE_USER] = {256, 256, 100};
 
-#define ASSET(type)                                                                                                                        \
+#define ASSET(type, ext)                                                                                                                   \
     static constexpr const char *type_str = #type;                                                                                         \
     static constexpr const u32 type_id = ASSET_TYPE_##type;                                                                                \
+    static constexpr const char *file_ext = "." #ext;                                                                                      \
     asset_id id;                                                                                                                           \
     string name;                                                                                                                           \
     u64 flags;                                                                                                                             \
@@ -37,20 +39,44 @@ const sizet ASSET_TYPE_ITEM_BUDGET[ASSET_TYPE_USER] = {256, 256, 100};
     pup_member(flags)
 
 template<class T>
+using asset_handle = slot_handle<T>;
+
+template<class T>
+struct asset_item
+{
+    asset_handle<T> hndl;
+    T *item;
+};
+
+template<class T>
+bool is_valid(const asset_item<T> &item)
+{
+    return is_valid(item.hndl) && item.item;
+}
+
+template<class T>
+struct asset_ref
+{
+    union
+    {
+        asset_handle<T> hndl;
+        asset_id id;
+    };
+};
+
+template<class T>
 struct asset_pool
 {
     using asset_t = T;
-    using iterator = hmap<asset_id, handle<T>>::iterator;
-    using const_iterator = hmap<asset_id, handle<T>>::const_iterator;
+    using iterator = asset_item<T>;
+    using const_iterator = asset_item<const T>;
 
     // This is the total cache arena memory
     mem_arena rarena{};
 
-    // Resource id to pointer to resource obj
-    hmap<asset_id, handle<T>> rmap{};
-    // This is
-    mem_arena rpool{};
-    mem_arena rhandles{};
+    // Asset id to slot handle
+    hmap<asset_id, asset_handle<T>> rmap{};
+    slot_pool<T> assets{};
 };
 
 using mesh_pool = asset_pool<struct mesh>;
@@ -59,64 +85,80 @@ using texture_pool = asset_pool<struct texture>;
 
 struct asset_cache
 {
+    small_str name{};
+    // This contains the memory for all pools and should be large enough - will asrt if not
+    mem_arena arena;
     array<void *> pools{};
 };
 
-// Initialize cache group with arena - all caches added to group will use this area
-void init_cache(asset_cache *cache, mem_arena *arena);
+// Initialize cache which will allocate a chunk of memory overall_mem_budget big for its arena using upstream passed in
+// All pools added to cache will use the cache's arena as upstream, so overall mem budget must be large enough to fit
+// all assets in all pools
+void init_cache(asset_cache *cache, sizet overall_mem_budget, mem_arena *upstream, const char *name);
 
-// Initialize cache group with arena - all caches added to group will use this area
-void init_cache_default_types(asset_cache *cache, mem_arena *arena);
+// Initialize asset pools for all asset types the engine knows about. If overall mem budget is 0, will use the budgets
+// for each asset type. Both u32 and sizet budget pointers must be the same size as the number of default asset types
+void init_cache_default_types(asset_cache *cache,
+                              const char *name,
+                              mem_arena *upstream,
+                              const u32 *item_budgets = ASSET_POOL_ITEM_BUDGETS,
+                              const sizet *mem_budgets = ASSET_POOL_MEMORY_BUDGETS,
+                              sizet overall_mem_budget = 0);
 
 void terminate_cache(asset_cache *cache);
 
-// Terminate all of the default robj types from the above enum and typedefs
+// Terminate all of the default asset types from the above enum and typedefs
 void terminate_cache_default_types(asset_cache *cache);
 
 // Initialize cache of type T with memory and item budget. If either go over we assert.
-// The item budget determines approximately how much of the memory budget we use on the asset robj itself,
-// the robj handles, and the id to handle map. The remainder is set aside for robj dynamic allocations (such
-// as texture allocating pixels or mesh allocating verts).
+// The item budget determines approximately how much of the memory budget we use on the asset meta itself,
+// the asset handles, and the id to handle map. The remainder is set aside for asset dynamic allocations (such
+// as texture allocating pixels or mesh allocating verts). When adding pool to a cache, this is automatically called
+// passing in the cache's arena as upstream so the cache arena must be large enough to handle all pools
 template<class T>
 void init_asset_pool(asset_pool<T> *pool, sizet memory_budget, u32 item_budget, mem_arena *upstream)
 {
-    mem_init_fl_arena(&pool->rarena, memory_budget, upstream, T::type_str);
-    mem_init_pool_arena<T>(&pool->rpool, item_budget, &pool->rarena, T::type_str);
-    mem_init_pool_arena<ref_counter>(&pool->rhandles, item_budget, &pool->rarena, T::type_str);
+    asrt(pool);
+    init_fl_arena(&pool->rarena, memory_budget, upstream, T::type_str);
+    init_slot_pool(&pool->assets, item_budget, &pool->rarena);
     hmap_init(&pool->rmap, hash_type, &pool->rarena, HMAP_DEFAULT_BUCKET_COUNT);
 }
 
 template<class T>
 void terminate_asset_pool(asset_pool<T> *pool)
 {
+    asrt(pool);
     hmap_terminate(&pool->rmap);
     // This will invalidate any handles we have for this cache
-    asrt(pool->rpool.used == 0 && "Terminating cache with handles in use");
-    asrt(pool->rhandles.used == 0 && "Terminating cache with handles in use");
-    mem_terminate_arena(&pool->rpool);
-    mem_terminate_arena(&pool->rhandles);
+    terminate_slot_pool(&pool->assets);
     asrt(pool->rarena.used == 0 && "Terminating cache with resource memory in use (leak)");
-    mem_terminate_arena(&pool->rarena);
+    terminate_arena(&pool->rarena);
 }
 
 // Add and initialize a cache to the passed in cache group
 template<class T>
-asset_pool<T> *add_pool(sizet memory_budget, u32 item_budget, asset_cache *cache)
+asset_pool<T> *create_pool(asset_cache *cache, sizet memory_budget, u32 item_budget)
 {
+    asrt(cache);
+    // Most likely won't have to resize unless this is a non engine type pool
     if ((T::type_id + 1) > cache->pools.size) {
         arr_resize(&cache->pools, T::type_id + 1);
     }
-    if (!cache->pools[T::type_id]) {
-        auto pool = mem_calloc<asset_pool<T>>(1, cache->pools.arena);
-        init_asset_pool(pool, memory_budget, item_budget, cache->pools.arena);
-        cache->pools[T::type_id] = pool;
-    }
+    // It's a bug if we add a pool that is already there.. don't want to allow that
+    asrt(!cache->pools[T::type_id]);
+
+    // Clear the pool mem when allocating
+    auto pool = mem_calloc<asset_pool<T>>(1, &cache->arena);
+    init_asset_pool(pool, memory_budget, item_budget, &cache->arena);
+    cache->pools[T::type_id] = pool;
+
     return (asset_pool<T> *)cache->pools[T::type_id];
 }
 
 template<class T>
 asset_pool<T> *get_pool(const asset_cache *cache)
 {
+    asrt(cache);
     if (T::type_id < cache->pools.size) {
         return (asset_pool<T> *)cache->pools[T::type_id];
     }
@@ -126,167 +168,245 @@ asset_pool<T> *get_pool(const asset_cache *cache)
 template<class T>
 asset_pool<T>::iterator pool_begin(asset_pool<T> *pool)
 {
-    return hmap_begin(&pool->rmap);
+    asrt(pool);
+    typename asset_pool<T>::iterator ret{};
+    u32 ind = 0;
+    if (pool->assets.slots.size > 0) {
+        ret.hndl = get_slot_current_handle(&pool->assets, ind);
+        ret.item = &pool->assets.slots[ind].item;
+    }
+    return ret;
 }
 
 template<class T>
 asset_pool<T>::const_iterator pool_begin(const asset_pool<T> *pool)
 {
-    return hmap_begin(&pool->rmap);
+    asrt(pool);
+    typename asset_pool<T>::const_iterator ret{};
+    u32 ind = 0;
+    if (ind < pool->assets.slots.size) {
+        ret.hndl = get_slot_current_handle(&pool->assets, ind);
+        ret.item = &pool->assets.slots[ind].item;
+    }
+    return ret;
 }
 
 template<class T>
 asset_pool<T>::iterator pool_rbegin(asset_pool<T> *pool)
 {
-    return hmap_rbegin(&pool->rmap);
+    asrt(pool);
+    typename asset_pool<T>::iterator ret{};
+    u32 ind = (u32)pool->assets.slots.size - 1;
+    if (ind < pool->assets.slots.size) {
+        ret.hndl = get_slot_current_handle(&pool->assets, ind);
+        ret.item = &pool->assets.slots[ind].item;
+    }
+    return ret;
 }
 
 template<class T>
 asset_pool<T>::const_iterator pool_rbegin(const asset_pool<T> *pool)
 {
-    return hmap_rbegin(&pool->rmap);
+    asrt(pool);
+    typename asset_pool<T>::const_iterator ret{};
+    u32 ind = (u32)pool->assets.slots.size - 1;
+    if (ind < pool->assets.slots.size) {
+        ret.hndl = get_slot_current_handle(&pool->assets, ind);
+        ret.item = &pool->assets.slots[ind].item;
+    }
+    return ret;
 }
 
 template<class T>
 asset_pool<T>::iterator pool_next(asset_pool<T> *pool, typename asset_pool<T>::iterator iter)
 {
-    return hmap_next(&pool->rmap, iter);
+    asrt(pool);
+    typename asset_pool<T>::iterator ret{};
+    u32 ind = (u32)iter.hndl.index + 1;
+    if (ind < pool->assets.slots.size) {
+        ret.hndl = get_slot_current_handle(&pool->assets, ind);
+        ret.item = &pool->assets.slots[ind].item;
+    }
+    return ret;
 }
 
 template<class T>
 asset_pool<T>::const_iterator pool_next(const asset_pool<T> *pool, typename asset_pool<T>::const_iterator iter)
 {
-    return hmap_next(&pool->rmap, iter);
+    asrt(pool);
+    typename asset_pool<T>::const_iterator ret{};
+    u32 ind = (u32)iter.hndl.index + 1;
+    if (ind < pool->assets.slots.size) {
+        ret.hndl = get_slot_current_handle(&pool->assets, ind);
+        ret.item = &pool->assets.slots[ind].item;
+    }
+    return ret;
 }
 
 template<class T>
 asset_pool<T>::iterator pool_prev(asset_pool<T> *pool, typename asset_pool<T>::iterator iter)
 {
-    return hmap_prev(&pool->rmap, iter);
+    asrt(pool);
+    typename asset_pool<T>::iterator ret{};
+    u32 ind = (u32)iter.hndl.index - 1;
+    if (ind < pool->assets.slots.size) {
+        ret.hndl = get_slot_current_handle(&pool->assets, ind);
+        ret.item = &pool->assets.slots[ind].item;
+    }
+    return ret;
 }
 
 template<class T>
 asset_pool<T>::const_iterator pool_prev(const asset_pool<T> *pool, typename asset_pool<T>::const_iterator iter)
 {
-    return hmap_prev(&pool->rmap, iter);
+    asrt(pool);
+    typename asset_pool<T>::const_iterator ret{};
+    u32 ind = (u32)iter.hndl.index - 1;
+    if (ind < pool->assets.slots.size) {
+        ret.hndl = get_slot_current_handle(&pool->assets, ind);
+        ret.item = &pool->assets.slots[ind].item;
+    }
+    return ret;
 }
 
 // Remove and terminates cache from the cache group - true on success or if the cache is not there false
 template<class T>
-bool remove_pool(asset_pool<T> *pool, asset_cache *cache)
+bool destroy_pool(asset_pool<T> *pool, asset_cache *cache)
 {
-    if (pool) {
-        asrt(pool == cache->pools[T::type_id]);
-        terminate_asset_pool(pool);
-        mem_free(pool, cache->pools.arena);
-        cache->pools[T::type_id] = {};
-        return true;
-    }
-    return false;
+    asrt(pool);
+    asrt(pool == cache->pools[T::type_id]);
+    terminate_asset_pool(pool);
+    mem_free(pool, cache->pools.arena);
+    cache->pools[T::type_id] = {};
+    return true;
 }
 
 // Remove and terminate a cache of type rtype from the cache group - true on success or if the cache is not there false
 template<class T>
-bool remove_pool(asset_cache *cache)
+bool destroy_pool(asset_cache *cache)
 {
+    asrt(cache);
     auto pool = get_pool<T>(cache);
-    return remove_pool(pool, cache);
+    return destroy_pool(pool, cache);
 }
 
 template<class T>
-handle<T> add_asset(asset_pool<T> *pool, handle_obj_terminate_func<T> *on_obj_terminated, const asset_id &id = generate_id())
+asset_item<T> create_asset(asset_pool<T> *pool, const char *name)
 {
-    asrt(sizeof(T) == pool->rpool.mpool.chunk_size);
-    T *ret = mem_calloc<T>(1, &pool->rpool);
-    ret->id = id;
-    auto hndl = make_handle(ret, on_obj_terminated, pool, &pool->rpool, &pool->rhandles);
-    auto item = hmap_insert(&pool->rmap, id, hndl);
-    if (item) {
-        return item->val;
+    asrt(pool);
+    auto hndl = acquire_slot(&pool->assets);
+    if (!is_valid(hndl)) {
+        return {};
     }
-    return {};
+    auto sl = get_slot_item(&pool->assets, hndl);
+    asrt(sl);
+
+    sl->arena = &pool->rarena;
+    str_init(&sl->name, sl->arena);
+
+    if (name) {
+        str_copy(&sl->name, name);
+    }
+    sl->id = generate_asset_id();
+    auto item = hmap_insert(&pool->rmap, sl->id, hndl);
+    if (!item) {
+        release_slot(&pool->assets, hndl);
+        wlog("Generated id %lu had collision", sl->id.id);
+        return {};
+    }
+    return {.hndl = hndl, .item = sl};
 }
 
 template<class T>
-handle<T> add_asset(asset_pool<T> *pool, handle_obj_terminate_func<T> *on_obj_terminated, const T &copy, const asset_id &new_id = generate_id())
+asset_item<T> create_asset(asset_pool<T> *pool, const T &copy, const char *new_asset_name)
 {
-    auto cpy = add_asset<T>(pool, on_obj_terminated, new_id);
+    asrt(pool);
+    auto cpy = create_asset(pool, nullptr);
     if (cpy) {
+        asset_id gen_id = cpy.item->id;
         *cpy = copy;
-        cpy->id = new_id;
+        cpy.item->id = gen_id;
+        if (new_asset_name) {
+            str_copy(&cpy.item->name, new_asset_name);
+        }
     }
     return cpy;
 }
 
 template<class T>
-handle<T> add_asset(asset_cache *cache, handle_obj_terminate_func<T> *on_obj_terminated, const T &copy, const asset_id &new_id = generate_id())
+asset_item<T> create_asset(asset_cache *cache, const char *new_asset_name)
 {
+    asrt(cache);
     auto pool = get_pool<T>(cache);
-    return pool ? add_asset(pool, on_obj_terminated, copy, new_id) : handle<T>{};
+    return pool ? create_asset(pool, new_asset_name) : asset_item<T>{};
 }
 
 template<class T>
-handle<T> add_asset(asset_cache *cache, handle_obj_terminate_func<T> *on_obj_terminated, const asset_id &id = generate_id())
+asset_item<T> create_asset(asset_cache *cache, const T &copy, const char *new_asset_name)
 {
+    asrt(cache);
     auto pool = get_pool<T>(cache);
-    return pool ? add_asset(pool, on_obj_terminated, id) : handle<T>{};
+    return pool ? create_asset(pool, copy, new_asset_name) : asset_item<T>{};
 }
 
 template<class T>
-handle<T> get_asset(const asset_pool<T> *pool, const asset_id &id)
+T *get_asset(const asset_pool<T> *pool, asset_handle<T> hndl)
 {
+    asrt(pool);
+    return get_slot_item(&pool->assets, hndl);
+}
+
+template<class T>
+T *get_asset(const asset_cache *cache, asset_handle<T> hndl)
+{
+    asrt(cache);
+    auto pool = get_pool<T>(cache);
+    return get_asset(pool, hndl);
+}
+
+template<class T>
+asset_item<T> find_asset(const asset_pool<T> *pool, asset_id id)
+{
+    asrt(pool);
+    asset_item<T> ret{};
     auto item = hmap_find(&pool->rmap, id);
     if (item) {
-        return item->val;
+        ret.hndl = item.val;
+        ret.item = get_asset(pool, ret.hndl);
     }
-    return {};
+    return ret;
 }
 
 template<class T>
-handle<T> get_asset(const asset_cache *cache, const asset_id &id)
+asset_item<T> find_asset(const asset_cache *cache, asset_id id)
 {
+    asrt(cache);
     auto pool = get_pool<T>(cache);
-    return get_asset(pool, id);
+    return pool ? find_asset(pool, id) : asset_item<T>{};
 }
 
 template<class T>
-void init_asset(T *robj, const string &name, mem_arena *arena)
+bool destroy_asset(asset_pool<T> *pool, asset_handle<T> hndl)
 {
-    robj->arena = arena;
-    str_init(&robj->name, arena);
-    robj->name = name;
+    asrt(pool);
+    auto sl = get_asset(hndl);
+    if (!sl) {
+        return false;
+    }
+
+    str_terminate(&sl->name);
+
+    // Remove from id map
+    asrt(hmap_remove(sl->id, &pool->rmam));
+    asrt(release_slot(&pool->assets, hndl));
 }
 
 template<class T>
-void terminate_asset(T *robj)
+bool destroy_asset(asset_cache *cache, asset_handle<T> hndl)
 {
-    str_terminate(&robj->name);
-}
-
-template<class T>
-bool remove_asset(asset_pool<T> *pool, const asset_id &id)
-{
-    return hmap_remove(id, &pool->rmam);
-}
-
-template<class T>
-bool remove_asset(asset_pool<T> *pool, const T &item)
-{
-    return remove_asset(pool, item.id);
-}
-
-template<class T>
-bool remove_asset(asset_cache *cache, const asset_id &id)
-{
+    asrt(cache);
     auto pool = get_pool<T>(cache);
-    return pool ? remove_asset(pool, id) : false;
-}
-
-template<class T>
-bool remove_asset(asset_cache *cache, const T &item)
-{
-    auto pool = get_pool<T>(cache);
-    return pool ? remove_asset(pool, item) : false;
+    return pool ? destroy_asset(pool, hndl) : false;
 }
 
 } // namespace nslib

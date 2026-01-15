@@ -75,7 +75,7 @@ inline sizet str_capacity(const string *str)
 
 void swap(string *lhs, string *rhs);
 
-void str_init(string *str, mem_arena *arena = mem_global_arena());
+void str_init(string *str, mem_arena *arena = get_global_arena());
 
 void str_terminate(string *str);
 

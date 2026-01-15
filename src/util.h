@@ -33,6 +33,8 @@ struct pair
 };
 
 u64 generate_rand_seed();
+u64 generate_unique_id();
+u16 get_username_hash();
 
 pup_func_tt(key_val_pair)
 {

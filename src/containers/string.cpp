@@ -61,7 +61,7 @@ string::string(const string &copy)
 string::string(const char *copy, mem_arena *arena)
 {
     if (!arena) {
-        arena = mem_global_arena();
+        arena = get_global_arena();
     }
     str_init(this, arena);
     str_copy(this, copy);

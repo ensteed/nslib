@@ -48,10 +48,10 @@ int app_init(platform_ctxt *ctxt, void *user_data)
 {
     auto app = (app_data *)user_data;
     ilog("App init");
-    init_keymap_stack(&app->stack, mem_global_arena());
-    init_keymap(&app->km1, "km1", mem_global_arena());
-    init_keymap(&app->km2, "km2", mem_global_arena());
-    init_keymap(&app->km3, "km3", mem_global_arena());
+    init_keymap_stack(&app->stack, get_global_arena());
+    init_keymap(&app->km1, "km1", get_global_arena());
+    init_keymap(&app->km2, "km2", get_global_arena());
+    init_keymap(&app->km3, "km3", get_global_arena());
 
     add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_K, KEYMOD_LCTRL, MBUTTON_MASK_NONE, "km1_ctrl_k", "km1");
     add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_M, KEYMOD_LSHIFT, MBUTTON_MASK_NONE, "km1_shift_m", "km1");

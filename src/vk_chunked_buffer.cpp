@@ -56,7 +56,7 @@ int vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buf
     chunk_buf->used_chunk_count = 0;
     chunk_buf->next_chunk_index = 0;
 
-    mem_arena *arena = cfg->chunk_tracking_arena ? cfg->chunk_tracking_arena : mem_global_arena();
+    mem_arena *arena = cfg->chunk_tracking_arena ? cfg->chunk_tracking_arena : get_global_arena();
     arr_init(&chunk_buf->free_chunks, arena, chunk_buf->chunk_count);
     return err_code::VKR_NO_ERROR;
 }

@@ -1,7 +1,7 @@
 #pragma once
 
+#include "asset_common.h"
 #include "archive_common.h"
-#include "rid.h"
 #include "containers/string.h"
 #include "containers/hmap.h"
 #include "containers/hset.h"

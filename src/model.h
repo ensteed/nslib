@@ -29,8 +29,8 @@ enum struct texture_usage : u8
 
 struct texture
 {
-    ASSET(TEXTURE);
-    void* pixels;
+    ASSET(TEXTURE, nsimg);
+    void *pixels;
     uvec3 dims;
     texture_usage usage;
 };
@@ -38,7 +38,7 @@ struct texture
 // Material references textures and pipelines, which both must be uploaded to GPUa
 struct material
 {
-    ASSET(MATERIAL);
+    ASSET(MATERIAL, nsmat);
     vec4 col;
     asset_id technique;
     static_array<asset_id, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
@@ -102,7 +102,7 @@ pup_func(submesh_range)
 
 struct mesh
 {
-    ASSET(MESH);
+    ASSET(MESH, nsmsh);
     array<u32> inds;
     array<mvert> verts;
     array<mskinned_vert_info> skinned_verts_info;
@@ -121,20 +121,20 @@ pup_func(mesh)
     pup_enum_member(mesh_topology, u8, topology);
 }
 
-void init_texture(texture *tex, const string &name, mem_arena *arena);
+void init_texture(texture *tex);
 void release_texture_ram_data(texture *tex);
 void terminate_texture(texture *tex);
 sizet get_texture_memsize(const texture *tex);
 u32 get_texture_layer_pixel_count(const texture *tex);
 bool load_texture(texture *tex, const char *path, cstr *err);
 
-void init_material(material *mat, const string &name, mem_arena *arena);
+void init_material(material *mat);
 void terminate_material(material *mat);
 
-void make_rect(mesh *msh, const string &name, mem_arena *arena);
-void make_cube(mesh *msh, const string &name, mem_arena *arena);
+void make_rect(mesh *msh);
+void make_cube(mesh *msh);
 
-void init_mesh(mesh *msh, const string &name, mem_arena *arena);
+void init_mesh(mesh *msh);
 void release_mesh_ram_data(mesh *msh);
 void terminate_mesh(mesh *msh);
 

@@ -1769,12 +1769,12 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     asrt(cfg);
     vk->cfg = *cfg;
     if (!cfg->arenas.command_arena) {
-        vk->cfg.arenas.command_arena = mem_global_frame_lin_arena();
+        vk->cfg.arenas.command_arena = get_global_frame_lin_arena();
         ilog("Using global frame linear arena %p", vk->cfg.arenas.command_arena);
     }
 
     if (!cfg->arenas.persistent_arena) {
-        vk->cfg.arenas.persistent_arena = mem_global_arena();
+        vk->cfg.arenas.persistent_arena = get_global_arena();
         ilog("Using global persistent arena %p", vk->cfg.arenas.persistent_arena);
     }
 

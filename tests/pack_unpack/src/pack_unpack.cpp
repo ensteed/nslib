@@ -25,7 +25,7 @@ enum robj_user_type
 
 struct example_asset
 {
-    ASSET(EXAMPLE_ASSET)
+    ASSET(EXAMPLE_ASSET, exa)
 };
 
 pup_func(example_asset)
@@ -261,7 +261,7 @@ int app_init(platform_ctxt *ctxt, void *user_data)
     hset_init(&data.hs_i16);
     hset_init(&data.hs_u8);
     hset_init(&data.hs_i8);
-    hset_init(&data.hs_no_simp, mem_global_arena(), hash_type);
+    hset_init(&data.hs_no_simp, get_global_arena(), hash_type);
 
     seed_data(&data);
     // ilog("data_to_pup json in: \n%s", ls(data));

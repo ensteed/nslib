@@ -1,6 +1,6 @@
 #include "platform.h"
 #include "logging.h"
-#include "rid.h"
+#include "asset_id.h"
 #include "hashfuncs.h"
 #include "containers/string.h"
 #include "containers/hmap.h"
@@ -98,7 +98,7 @@ void test_hmap_basic_api()
     ilog("Starting hashmap api test");
 
     hmap<u32, s32> hm{};
-    hmap_init(&hm, hash_type, mem_global_arena(), 8);
+    hmap_init(&hm, hash_type, get_global_arena(), 8);
 
     asrt(hmap_empty(&hm));
     asrt(hmap_begin(&hm) == nullptr);
@@ -195,8 +195,8 @@ void test_hmap_copy_and_set()
 
     hmap<u32, s32> hm_src{};
     hmap<u32, s32> hm_dest{};
-    hmap_init(&hm_src, hash_type, mem_global_arena(), 8);
-    hmap_init(&hm_dest, hash_type, mem_global_arena(), 8);
+    hmap_init(&hm_src, hash_type, get_global_arena(), 8);
+    hmap_init(&hm_dest, hash_type, get_global_arena(), 8);
 
     hmap_insert(&hm_src, (u32)1, 10);
     hmap_insert(&hm_src, (u32)2, 20);
@@ -229,8 +229,8 @@ void test_hmap_pack_unpack()
 
     hmap<u32, s32> hm{};
     hmap<u32, s32> hm_out{};
-    hmap_init(&hm, hash_type, mem_global_arena(), 8);
-    hmap_init(&hm_out, hash_type, mem_global_arena(), 8);
+    hmap_init(&hm, hash_type, get_global_arena(), 8);
+    hmap_init(&hm_out, hash_type, get_global_arena(), 8);
 
     hmap_insert(&hm, (u32)10, 100);
     hmap_insert(&hm, (u32)20, 200);
@@ -787,7 +787,7 @@ void test_hset_basic_api()
     ilog("Starting hashset api test");
 
     hset<u32> hs{};
-    hset_init(&hs, mem_global_arena(), hash_type, 8);
+    hset_init(&hs, get_global_arena(), hash_type, 8);
 
     asrt(hset_empty(&hs));
     asrt(hset_begin(&hs) == nullptr);

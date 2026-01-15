@@ -27,6 +27,14 @@
 namespace nslib
 {
 
+const char *get_username()
+{
+    const char* user = getenv("USER");
+    if (!user) user = getenv("USERNAME");
+    if (!user) user = "unknown_dev";
+    return user;
+}
+
 intern mem_arena *g_sdl_arena{};
 
 intern platform_ctxt *platform_window_ptr(void *win)
@@ -139,22 +147,22 @@ bool frame_has_event_type(platform_event_type type, const platform_frame_event_q
 intern void init_mem_arenas(const platform_memory_init_info *info, platform_memory *mem)
 {
     // Null to indicate these get platform_alloc'd
-    mem_init_fl_arena(&mem->free_list, info->free_list_size, nullptr, "global");
-    mem_init_stack_arena(&mem->stack, info->stack_size, nullptr, "global");
-    mem_init_lin_arena(&mem->frame_linear, info->frame_linear_size, nullptr, "global");
+    init_fl_arena(&mem->free_list, info->free_list_size, nullptr, "global");
+    init_stack_arena(&mem->stack, info->stack_size, nullptr, "global");
+    init_lin_arena(&mem->frame_linear, info->frame_linear_size, nullptr, "global");
     // 213 KB is about the min needed for SDL - we'll give it 500 to be safe
-    mem_init_fl_arena(&mem->sdl_fl, 500 * KB_SIZE, &mem->free_list, "sdl");
+    init_fl_arena(&mem->sdl_fl, 500 * KB_SIZE, &mem->free_list, "sdl");
 
     // Then these become our global mem arenas
-    mem_set_global_arena(&mem->free_list);
-    mem_set_global_stack_arena(&mem->stack);
-    mem_set_global_frame_lin_arena(&mem->frame_linear);
+    set_global_arena(&mem->free_list);
+    set_global_stack_arena(&mem->stack);
+    set_global_frame_lin_arena(&mem->frame_linear);
     g_sdl_arena = &mem->sdl_fl;
 
     // Set up our json alloc and free funcs
     json_hooks hooks;
-    auto mem_glob_alloc = [](sizet sz) -> void * { return mem_alloc(sz, mem_global_arena()); };
-    auto mem_glob_free = [](void *ptr) -> void { mem_free(ptr, mem_global_arena()); };
+    auto mem_glob_alloc = [](sizet sz) -> void * { return mem_alloc(sz, get_global_arena()); };
+    auto mem_glob_free = [](void *ptr) -> void { mem_free(ptr, get_global_arena()); };
 
     hooks.malloc_fn = mem_glob_alloc;
     hooks.free_fn = mem_glob_free;
@@ -163,14 +171,14 @@ intern void init_mem_arenas(const platform_memory_init_info *info, platform_memo
 
 intern void terminate_mem_arenas(platform_memory *mem)
 {
-    mem_terminate_arena(&mem->sdl_fl);
-    mem_terminate_arena(&mem->stack);
-    mem_terminate_arena(&mem->frame_linear);
-    mem_terminate_arena(&mem->free_list);
+    terminate_arena(&mem->sdl_fl);
+    terminate_arena(&mem->stack);
+    terminate_arena(&mem->frame_linear);
+    terminate_arena(&mem->free_list);
     g_sdl_arena = nullptr;
-    mem_set_global_arena(nullptr);
-    mem_set_global_stack_arena(nullptr);
-    mem_set_global_frame_lin_arena(nullptr);
+    set_global_arena(nullptr);
+    set_global_stack_arena(nullptr);
+    set_global_frame_lin_arena(nullptr);
 }
 
 intern void log_display_info()
@@ -661,7 +669,7 @@ void start_platform_frame(platform_ctxt *ctxt)
     if (ctxt->win_hndl) {
         process_platform_events(ctxt);
     }
-    mem_reset_arena(&ctxt->arenas.frame_linear);
+    reset_arena(&ctxt->arenas.frame_linear);
 }
 
 void end_platform_frame(platform_ctxt *ctxt)
