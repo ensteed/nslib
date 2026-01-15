@@ -607,6 +607,7 @@ int vkr_init_device(vkr_device *dev,
     }
 
     // Set framebuffers
+    arr_init(&dev->swapchain.fbs, vk->cfg.arenas.persistent_arena);
     arr_resize(&dev->swapchain.fbs, dev->swapchain.image_views.size);
     return err_code::VKR_NO_ERROR;
 }
@@ -1741,6 +1742,7 @@ void vkr_terminate_swapchain_framebuffers(vkr_device *device, const vkr_context 
         vkr_terminate_framebuffer(&device->swapchain.fbs[i], vk);
         device->swapchain.fbs[i] = {};
     }
+    arr_terminate(&device->swapchain.fbs);
 }
 
 // Initialize surface in the vk_context from the window - the instance must have been created already

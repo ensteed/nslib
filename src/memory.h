@@ -69,13 +69,11 @@ struct mem_linear
 
 using alloc_func = void *(sizet, void *);
 using free_func = void(void *, void *);
-using realloc_func = void *(void *, sizet, void *);
 
 struct pf_alloc_funcs
 {
     alloc_func *alloc{};
     free_func *free{};
-    realloc_func *realloc{};
     void *user;
 };
 
@@ -165,19 +163,18 @@ void mem_delete(T *item, mem_arena *arena)
 void mem_reset_arena(mem_arena *arena);
 void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type atype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {});
 
-void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name);
+void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
 
 template<class T>
-void mem_init_pool_arena(mem_arena *arena, sizet chunk_count, mem_arena *upstream, const char *name)
+void mem_init_pool_arena(mem_arena *arena, sizet chunk_count, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {})
 {
-    mem_init_pool_arena(arena, sizeof(T), chunk_count, upstream, name);
+    mem_init_pool_arena(arena, sizeof(T), chunk_count, upstream, name, pf_funcs);
 }
 
-void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name);
 
-void mem_init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name);
-void mem_init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name);
-void mem_init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name);
+void mem_init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
+void mem_init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
+void mem_init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
 
 void mem_terminate_arena(mem_arena *arena);
 const char *mem_arena_type_str(mem_alloc_type atype);

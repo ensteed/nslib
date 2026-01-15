@@ -22,11 +22,6 @@ void default_upstream_free_func(void *ptr, void *)
     platform_free(ptr);
 }
 
-void *default_upstream_realloc_func(void *ptr, sizet size, void *)
-{
-    return platform_realloc(ptr, size);
-}
-
 intern mem_arena *g_fl_arena{};
 intern mem_arena *g_stack_arena{};
 intern mem_arena *g_frame_linear_arena{};
@@ -400,6 +395,7 @@ intern void mem_linear_free(mem_arena *, void *)
 
 void *mem_alloc(sizet bytes, mem_arena *arena, sizet alignment)
 {
+    asrt(arena);
     if (bytes == 0) {
         return nullptr;
     }
@@ -426,9 +422,6 @@ void *mem_alloc(sizet bytes, mem_arena *arena, sizet alignment)
             break;
         }
     }
-    else {
-        ret = arena->pf_funcs.alloc(bytes, arena->pf_funcs.user);
-    }
     return ret;
 }
 
@@ -445,29 +438,25 @@ void *mem_calloc(sizet nmemb, sizet memb, mem_arena *arena, sizet alignment)
 
 void *mem_realloc(void *ptr, sizet new_size, mem_arena *arena, sizet alignment, bool free_ptr_after_copy)
 {
-    if (arena) {
-        // Create a new block and copy the mem to it from the old block (we use the lesser of the block sizes)
-        auto new_block = mem_alloc(new_size, arena, alignment);
-        if (ptr && new_block) {
-            sizet old_block_size = mem_block_user_size(ptr, arena);
-            sizet block_size{new_size};
-            asrt(old_block_size > 0);
+    asrt(arena);
+    // Create a new block and copy the mem to it from the old block (we use the lesser of the block sizes)
+    auto new_block = mem_alloc(new_size, arena, alignment);
+    if (ptr && new_block) {
+        sizet old_block_size = mem_block_user_size(ptr, arena);
+        sizet block_size{new_size};
+        asrt(old_block_size > 0);
 
-            // We only want to copy the lesser size of the blocks bytes
-            if (new_size > old_block_size) {
-                block_size = old_block_size;
-            }
+        // We only want to copy the lesser size of the blocks bytes
+        if (new_size > old_block_size) {
+            block_size = old_block_size;
+        }
 
-            memcpy(new_block, ptr, block_size);
-        }
-        if (free_ptr_after_copy) {
-            mem_free(ptr, arena);
-        }
-        return new_block;
+        memcpy(new_block, ptr, block_size);
     }
-    else {
-        return arena->pf_funcs.realloc(ptr, new_size, arena->pf_funcs.user);
+    if (free_ptr_after_copy) {
+        mem_free(ptr, arena);
     }
+    return new_block;
 }
 
 sizet mem_block_size(void *ptr, mem_arena *arena)
@@ -504,7 +493,8 @@ sizet mem_block_user_size(void *ptr, mem_arena *arena)
 
 void mem_free(void *ptr, mem_arena *arena)
 {
-    if (ptr && arena) {
+    asrt(arena);
+    if (ptr) {
         switch (arena->alloc_type) {
         case (mem_alloc_type::FREE_LIST):
             mem_free_list_free(arena, ptr);
@@ -519,9 +509,6 @@ void mem_free(void *ptr, mem_arena *arena)
             mem_linear_free(arena, ptr);
             break;
         }
-    }
-    else if (ptr) {
-        arena->pf_funcs.free(ptr, arena->pf_funcs.user);
     }
 }
 
@@ -563,8 +550,8 @@ void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, me
 {
     arena->pf_funcs.alloc = pf_funcs.alloc ? pf_funcs.alloc : default_upstream_alloc_func;
     arena->pf_funcs.free = pf_funcs.free ? pf_funcs.free : default_upstream_free_func;
-    arena->pf_funcs.realloc = pf_funcs.realloc ? pf_funcs.realloc : default_upstream_realloc_func;
-    
+    arena->pf_funcs.user = pf_funcs.user;
+
     arena->total_size = total_size;
     arena->alloc_type = mtype;
     arena->upstream_allocator = upstream;
@@ -579,7 +566,7 @@ void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, me
          (((arena->total_size % arena->mpool.chunk_size) == 0) && (arena->mpool.chunk_size >= DEFAULT_MIN_ALIGNMENT)));
 
     if (!arena->upstream_allocator) {
-        arena->start = platform_alloc(arena->total_size);
+        arena->start = arena->pf_funcs.alloc(arena->total_size, arena->pf_funcs.user);
     }
     else {
         arena->start = mem_alloc(arena->total_size, arena->upstream_allocator);
@@ -588,26 +575,26 @@ void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, me
     mem_reset_arena(arena);
 }
 
-void mem_init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name)
+void mem_init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name);
+    mem_init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name, pf_funcs);
 }
 
-void mem_init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name)
+void mem_init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name);
+    mem_init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name, pf_funcs);
 }
 
-void mem_init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name)
+void mem_init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name);
+    mem_init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name, pf_funcs);
 }
 
-void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name)
+void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
     auto min_sz = sizeof(mem_node);
     arena->mpool.chunk_size = chunk_size >= min_sz ? chunk_size : min_sz;
-    mem_init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name);
+    mem_init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, pf_funcs);
 }
 
 void mem_terminate_arena(mem_arena *arena)
@@ -623,7 +610,7 @@ void mem_terminate_arena(mem_arena *arena)
         mem_free(arena->start, arena->upstream_allocator);
     }
     else {
-        platform_free(arena->start);
+        arena->pf_funcs.free(arena->start, arena->pf_funcs.user);
     }
     arena->start = nullptr;
 }

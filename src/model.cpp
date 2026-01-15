@@ -161,6 +161,7 @@ u8 get_pixel_byte_size(texture_usage usage)
         return 8;
     default:
         asrt_break("Unhandled texture usage type");
+        return 0;
     }
 }
 
