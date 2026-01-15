@@ -63,107 +63,90 @@ template<typename T>
 asset_pool<T>::iterator pool_begin(asset_pool<T> *pool)
 {
     asrt(pool);
-    typename asset_pool<T>::iterator ret{};
-    u32 ind = 0;
-    if (pool->assets.slots.size > 0) {
-        ret.hndl = get_slot_current_handle(&pool->assets, ind);
-        ret.item = &pool->assets.slots[ind].item;
-    }
-    return ret;
+    return pool_next(pool, {.hndl{.index = (u32)-1}});
 }
 
 template<typename T>
 asset_pool<T>::const_iterator pool_begin(const asset_pool<T> *pool)
 {
     asrt(pool);
-    typename asset_pool<T>::const_iterator ret{};
-    u32 ind = 0;
-    if (ind < pool->assets.slots.size) {
-        ret.hndl = get_slot_current_handle(&pool->assets, ind);
-        ret.item = &pool->assets.slots[ind].item;
-    }
-    return ret;
+    return pool_next(pool, {.hndl{.index = (u32)-1}});
 }
 
 template<typename T>
 asset_pool<T>::iterator pool_rbegin(asset_pool<T> *pool)
 {
     asrt(pool);
-    typename asset_pool<T>::iterator ret{};
-    u32 ind = (u32)pool->assets.slots.size - 1;
-    if (ind < pool->assets.slots.size) {
-        ret.hndl = get_slot_current_handle(&pool->assets, ind);
-        ret.item = &pool->assets.slots[ind].item;
-    }
-    return ret;
+    return pool_prev(pool, {.hndl{.index = (u32)pool->assets.slots.size}});
 }
 
 template<typename T>
 asset_pool<T>::const_iterator pool_rbegin(const asset_pool<T> *pool)
 {
     asrt(pool);
-    typename asset_pool<T>::const_iterator ret{};
-    u32 ind = (u32)pool->assets.slots.size - 1;
-    if (ind < pool->assets.slots.size) {
-        ret.hndl = get_slot_current_handle(&pool->assets, ind);
-        ret.item = &pool->assets.slots[ind].item;
-    }
-    return ret;
+    return pool_prev(pool, {.hndl{.index = (u32)pool->assets.slots.size}});
 }
 
 template<typename T>
 asset_pool<T>::iterator pool_next(asset_pool<T> *pool, typename asset_pool<T>::iterator iter)
 {
     asrt(pool);
-    typename asset_pool<T>::iterator ret{};
-    u32 ind = (u32)iter.hndl.index + 1;
-    if (ind < pool->assets.slots.size) {
-        ret.hndl = get_slot_current_handle(&pool->assets, ind);
-        ret.item = &pool->assets.slots[ind].item;
+    u32 ind = iter.hndl.index + 1;
+    while (ind < pool->assets.slots.size) {
+        auto hndl = get_slot_current_handle(&pool->assets, ind);
+        if (is_valid(hndl)) {
+            return {.hndl = hndl, .item = &pool->assets.slots[ind].item};
+        }
+        ++ind;
     }
-    return ret;
+    return {};
 }
 
 template<typename T>
 asset_pool<T>::const_iterator pool_next(const asset_pool<T> *pool, typename asset_pool<T>::const_iterator iter)
 {
     asrt(pool);
-    typename asset_pool<T>::const_iterator ret{};
-    u32 ind = (u32)iter.hndl.index + 1;
-    if (ind < pool->assets.slots.size) {
-        ret.hndl = get_slot_current_handle(&pool->assets, ind);
-        ret.item = &pool->assets.slots[ind].item;
+    u32 ind = iter.hndl.index + 1;
+    while (ind < pool->assets.slots.size) {
+        auto hndl = get_slot_current_handle(&pool->assets, ind);
+        if (is_valid(hndl)) {
+            return {.hndl = hndl, .item = &pool->assets.slots[ind].item};
+        }
+        ++ind;
     }
-    return ret;
+    return {};
 }
 
 template<typename T>
 asset_pool<T>::iterator pool_prev(asset_pool<T> *pool, typename asset_pool<T>::iterator iter)
 {
     asrt(pool);
-    typename asset_pool<T>::iterator ret{};
-    u32 ind = (u32)iter.hndl.index - 1;
-    if (ind < pool->assets.slots.size) {
-        ret.hndl = get_slot_current_handle(&pool->assets, ind);
-        ret.item = &pool->assets.slots[ind].item;
+    u32 ind = iter.hndl.index - 1;
+    while (ind >= 0) {
+        auto hndl = get_slot_current_handle(&pool->assets, ind);
+        if (is_valid(hndl)) {
+            return {.hndl = hndl, .item = &pool->assets.slots[ind].item};
+        }
+        --ind;
     }
-    return ret;
+    return {};
 }
 
 template<typename T>
 asset_pool<T>::const_iterator pool_prev(const asset_pool<T> *pool, typename asset_pool<T>::const_iterator iter)
 {
     asrt(pool);
-    typename asset_pool<T>::const_iterator ret{};
-    u32 ind = (u32)iter.hndl.index - 1;
-    if (ind < pool->assets.slots.size) {
-        ret.hndl = get_slot_current_handle(&pool->assets, ind);
-        ret.item = &pool->assets.slots[ind].item;
+    u32 ind = iter.hndl.index - 1;
+    while (ind >= 0) {
+        auto hndl = get_slot_current_handle(&pool->assets, ind);
+        if (is_valid(hndl)) {
+            return {.hndl = hndl, .item = &pool->assets.slots[ind].item};
+        }
+        --ind;
     }
-    return ret;
+    return {};
 }
 
-// Remove and terminates cache from the cache group - true on success or if the cache is not there false
 template<typename T>
 bool destroy_pool(asset_pool<T> *pool, asset_cache *cache)
 {
@@ -175,7 +158,6 @@ bool destroy_pool(asset_pool<T> *pool, asset_cache *cache)
     return true;
 }
 
-// Remove and terminate a cache of type rtype from the cache group - true on success or if the cache is not there false
 template<typename T>
 bool destroy_pool(asset_cache *cache)
 {
@@ -217,9 +199,9 @@ asset_item<T> create_asset(asset_pool<T> *pool, const T &copy, const char *new_a
 {
     asrt(pool);
     auto cpy = create_asset(pool, nullptr);
-    if (cpy) {
+    if (is_valid(cpy)) {
         asset_id gen_id = cpy.item->id;
-        *cpy = copy;
+        *cpy.item = copy;
         cpy.item->id = gen_id;
         if (new_asset_name) {
             str_copy(&cpy.item->name, new_asset_name);
@@ -263,7 +245,7 @@ T *get_asset(asset_cache *cache, asset_handle<T> hndl)
 {
     asrt(cache);
     auto pool = get_pool<T>(cache);
-    return get_asset(pool, hndl);
+    return pool ? get_asset(pool, hndl) : nullptr;
 }
 
 template<typename T>
@@ -271,15 +253,27 @@ const T *get_asset(const asset_cache *cache, asset_handle<T> hndl)
 {
     asrt(cache);
     auto pool = get_pool<T>(cache);
-    return get_asset(pool, hndl);
+    return pool ? get_asset(pool, hndl) : nullptr;
 }
 
-
 template<typename T>
-asset_item<T> find_asset(const asset_pool<T> *pool, asset_id id)
+asset_item<T> find_asset(asset_pool<T> *pool, asset_id id)
 {
     asrt(pool);
     asset_item<T> ret{};
+    auto item = hmap_find(&pool->rmap, id);
+    if (item) {
+        ret.hndl = item->val;
+        ret.item = get_asset(pool, ret.hndl);
+    }
+    return ret;
+}
+
+template<typename T>
+asset_item<const T> find_asset(const asset_pool<T> *pool, asset_id id)
+{
+    asrt(pool);
+    asset_item<const T> ret{};
     auto item = hmap_find(&pool->rmap, id);
     if (item) {
         ret.hndl = item.val;
@@ -289,11 +283,19 @@ asset_item<T> find_asset(const asset_pool<T> *pool, asset_id id)
 }
 
 template<typename T>
-asset_item<T> find_asset(const asset_cache *cache, asset_id id)
+asset_item<T> find_asset(asset_cache *cache, asset_id id)
 {
     asrt(cache);
     auto pool = get_pool<T>(cache);
     return pool ? find_asset(pool, id) : asset_item<T>{};
+}
+
+template<typename T>
+asset_item<const T> find_asset(const asset_cache *cache, asset_id id)
+{
+    asrt(cache);
+    auto pool = get_pool<T>(cache);
+    return pool ? find_asset(pool, id) : asset_item<const T>{};
 }
 
 template<typename T>

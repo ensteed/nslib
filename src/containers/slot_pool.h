@@ -29,7 +29,7 @@ op_neq_func_tt(slot_handle);
 template<typename T>
 bool is_valid(slot_handle<T> h)
 {
-    return h.id != 0;
+    return h.generation != 0;
 }
 
 template<typename T>

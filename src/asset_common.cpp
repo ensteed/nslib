@@ -75,9 +75,9 @@ void init_cache_default_types(asset_cache *cache,
     init_cache(cache, overall_mem_budget, upstream, name);
     
     // NOTE: Manually update this on adding different asset types
-    create_pool<mesh>(cache, ASSET_POOL_MEMORY_BUDGETS[mesh::type_id], ASSET_POOL_ITEM_BUDGETS[mesh::type_id]);
-    create_pool<texture>(cache, ASSET_POOL_MEMORY_BUDGETS[texture::type_id], ASSET_POOL_ITEM_BUDGETS[texture::type_id]);
-    create_pool<material>(cache, ASSET_POOL_MEMORY_BUDGETS[material::type_id], ASSET_POOL_ITEM_BUDGETS[material::type_id]);
+    create_pool<mesh>(cache, mem_budgets[mesh::type_id], item_budgets[mesh::type_id]);
+    create_pool<texture>(cache, mem_budgets[texture::type_id], item_budgets[texture::type_id]);
+    create_pool<material>(cache, mem_budgets[material::type_id], item_budgets[material::type_id]);
 }
 
 void terminate_cache_default_types(asset_cache *cache)
