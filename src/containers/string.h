@@ -16,12 +16,12 @@ struct string
     char sos[SMALL_STR_SIZE]{};
     array<char> buf{};
 
-    string();
-    string(const string &copy);
-    string(const char *copy, mem_arena *arena = nullptr);
+    string(mem_arena *arena = get_global_arena());
+    string(const string &copy, mem_arena *arena = get_global_arena());
+    string(const char *copy, mem_arena *arena = get_global_arena());
     ~string();
 
-    string &operator=(string rhs);
+    string &operator=(const string &rhs);
     string &operator+=(const string &rhs);
     const char &operator[](sizet ind) const;
     char &operator[](sizet ind);

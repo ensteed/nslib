@@ -122,7 +122,8 @@ asset_pool<T>::iterator pool_prev(asset_pool<T> *pool, typename asset_pool<T>::i
 {
     asrt(pool);
     u32 ind = iter.hndl.index - 1;
-    while (ind >= 0) {
+    // We utilize u32 wrapping here
+    while (ind < pool->assets.slots.size) {
         auto hndl = get_slot_current_handle(&pool->assets, ind);
         if (is_valid(hndl)) {
             return {.hndl = hndl, .item = &pool->assets.slots[ind].item};
@@ -137,7 +138,8 @@ asset_pool<T>::const_iterator pool_prev(const asset_pool<T> *pool, typename asse
 {
     asrt(pool);
     u32 ind = iter.hndl.index - 1;
-    while (ind >= 0) {
+    // We utilize u32 wrapping here
+    while (ind < pool->assets.slots.size) {
         auto hndl = get_slot_current_handle(&pool->assets, ind);
         if (is_valid(hndl)) {
             return {.hndl = hndl, .item = &pool->assets.slots[ind].item};
@@ -177,20 +179,19 @@ asset_item<T> create_asset(asset_pool<T> *pool, const char *name)
     auto sl = get_slot_item(&pool->assets, hndl);
     asrt(sl);
 
-    sl->arena = &pool->rarena;
-    str_init(&sl->name, sl->arena);
-
-    if (name) {
-        str_copy(&sl->name, name);
-    }
+    sl->arena = &pool->rarena;    
     sl->id = generate_asset_id();
-    init_asset(sl);
     auto item = hmap_insert(&pool->rmap, sl->id, hndl);
     if (!item) {
         release_slot(&pool->assets, hndl);
         wlog("Generated id %lu had collision", sl->id.id);
         return {};
     }
+    str_init(&sl->name, sl->arena);
+    if (name) {
+        str_copy(&sl->name, name);
+    }
+    init_asset(sl);
     return {.hndl = hndl, .item = sl};
 }
 
@@ -202,6 +203,7 @@ asset_item<T> create_asset(asset_pool<T> *pool, const T &copy, const char *new_a
     if (is_valid(cpy)) {
         asset_id gen_id = cpy.item->id;
         *cpy.item = copy;
+        cpy.item->arena = &pool->rarena;
         cpy.item->id = gen_id;
         if (new_asset_name) {
             str_copy(&cpy.item->name, new_asset_name);
@@ -276,7 +278,7 @@ asset_item<const T> find_asset(const asset_pool<T> *pool, asset_id id)
     asset_item<const T> ret{};
     auto item = hmap_find(&pool->rmap, id);
     if (item) {
-        ret.hndl = item.val;
+        ret.hndl = item->val;
         ret.item = get_asset(pool, ret.hndl);
     }
     return ret;
@@ -310,7 +312,6 @@ bool destroy_asset(asset_pool<T> *pool, asset_handle<T> hndl)
     str_terminate(&sl->name);
     terminate_asset(sl);
 
-    // Remove from id map
     asrt(hmap_remove(&pool->rmap, sl->id));
     asrt(release_slot(&pool->assets, hndl));
     return true;
@@ -353,12 +354,10 @@ void terminate_asset_pool(asset_pool<T> *pool)
     terminate_arena(&pool->rarena);
 }
 
-// Add and initialize a cache to the passed in cache group
 template<typename T>
 asset_pool<T> *create_pool(asset_cache *cache, sizet memory_budget, u32 item_budget)
 {
     asrt(cache);
-    // Most likely won't have to resize unless this is a non engine type pool
     if ((T::type_id + 1) > cache->pools.size) {
         arr_resize(&cache->pools, T::type_id + 1);
     }

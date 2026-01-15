@@ -39,12 +39,12 @@ struct array
     sizet size{};
     sizet capacity{};
 
-    array(mem_arena *arena = get_global_arena(), sizet initial_capacity = 0)
+    array(sizet initial_capacity = 0, mem_arena *arena = get_global_arena())
     {
         arr_init(this, arena, initial_capacity);
     }
 
-    array(const array &copy)
+    array(const array &copy, mem_arena *arena = get_global_arena())
     {
         arr_init(this, copy.arena, copy.capacity);
         arr_copy(this, &copy);
@@ -55,9 +55,9 @@ struct array
         arr_terminate(this);
     }
 
-    array &operator=(array rhs)
+    array &operator=(const array &rhs)
     {
-        swap(this, &rhs);
+        arr_copy(this, &rhs);
         return *this;
     }
 

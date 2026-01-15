@@ -47,12 +47,12 @@ void str_set_capacity(string *str, sizet new_cap)
     str_data(str)[str->buf.size] = 0;
 }
 
-string::string()
+string::string(mem_arena *arena)
 {
-    str_init(this);
+    str_init(this, arena);
 }
 
-string::string(const string &copy)
+string::string(const string &copy, mem_arena *arena)
 {
     str_init(this, copy.buf.arena);
     str_copy(this, copy);
@@ -60,9 +60,6 @@ string::string(const string &copy)
 
 string::string(const char *copy, mem_arena *arena)
 {
-    if (!arena) {
-        arena = get_global_arena();
-    }
     str_init(this, arena);
     str_copy(this, copy);
 }
@@ -72,9 +69,9 @@ string::~string()
     str_terminate(this);
 }
 
-string &string::operator=(string rhs)
+string &string::operator=(const string& rhs)
 {
-    swap(this, &rhs);
+    str_copy(this, rhs);
     return *this;
 }
 

@@ -50,6 +50,15 @@
     #define asrt_break(msg) assert(!msg)
 #endif
 
+#define asrt_log(expr)                                                                                                                     \
+    do {                                                                                                                                   \
+        b32 asrt_ok = (expr);                                                                                                              \
+        asrt(asrt_ok);                                                                                                                     \
+        if (asrt_ok) {                                                                                                                     \
+            ilog("asrt ok: %s", #expr);                                                                                                    \
+        }                                                                                                                                  \
+    } while (0)
+
 namespace nslib
 {
 using s8 = int8_t;
