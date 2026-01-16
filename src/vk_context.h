@@ -289,7 +289,7 @@ struct vkr_rpass_cfg_subpass
     static_array<VkAttachmentReference, 16> input_attachments;
     static_array<VkAttachmentReference, 16> resolve_attachments;
     static_array<u32, 16> preserve_attachments;
-    const VkAttachmentReference *depth_stencil_attachment{};
+    VkAttachmentReference depth_stencil_attachment{.attachment=VK_ATTACHMENT_UNUSED};
 };
 
 struct vkr_rpass_cfg

@@ -1289,8 +1289,170 @@ intern VkImageLayout get_baked_initial_layout(rresource_requirement req) {
     return test_flags(req.flags,RESOURCE_REQUIREMENT_FLAG_CLEAR) ?  VK_IMAGE_LAYOUT_UNDEFINED : get_layout_from_requirement(req);
 }
 
+intern VkAttachmentLoadOp get_requirement_load_op(const rresource_requirement &req)
+{
+    if (test_flags(req.flags, RESOURCE_REQUIREMENT_FLAG_READ)) {
+        return VK_ATTACHMENT_LOAD_OP_LOAD;
+    }
+    if (test_flags(req.flags, RESOURCE_REQUIREMENT_FLAG_CLEAR)) {
+        return VK_ATTACHMENT_LOAD_OP_CLEAR;
+    }
+    return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+}
+
+intern VkAttachmentStoreOp get_requirement_store_op(const rresource_requirement &req)
+{
+    if (test_flags(req.flags, RESOURCE_REQUIREMENT_FLAG_WRITE)) {
+        return VK_ATTACHMENT_STORE_OP_STORE;
+    }
+    return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+}
+
+intern int find_attachment_index(const static_array<resid, MAX_ATTACHMENT_COUNT> &att_ids, resid id)
+{
+    for (int i = 0; i < att_ids.size; ++i) {
+        if (att_ids.data[i] == id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+intern VkFormat get_requirement_format(const rresource_requirement &req, const rresource_registry &render_resources)
+{
+    asrt(req.id < render_resources.textures.size);
+    return render_resources.textures[req.id].images[0].format;
+}
+
 void compile_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources, const vkr_context *vk)
 {
+    asrt(rbp);
+    asrt(render_resources);
+    asrt(vk);
+
+    for (int pass_ind = 0; pass_ind < rbp->passes.size; ++pass_ind) {
+        auto *pass = &rbp->passes[pass_ind];
+        vkr_rpass_cfg rp_cfg{};
+        
+        // The config doesn't track our res ids as part of the attachment so we gotta do that
+        static_array<resid, MAX_ATTACHMENT_COUNT> attachment_ids{};
+        
+        for (int subpass_ind = 0; subpass_ind < pass->subpasses.size; ++subpass_ind) {
+            auto *subpass = &pass->subpasses[subpass_ind];
+            
+            vkr_rpass_cfg_subpass subpass_cfg{};
+            subpass_cfg.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
+
+            for (int att_ind = 0; att_ind < subpass->resources.size; ++att_ind) {
+                const rresource_requirement &req = subpass->resources[att_ind];
+                
+                // Skip any non attachments
+                if (req.usage == rresource_usage::SAMPLED_IMAGE || req.usage == rresource_usage::STORAGE_BUFFER ||
+                    req.usage == rresource_usage::UNDEFINED) {
+                    continue;
+                }
+
+                // If there already is an attachment entry, use that, otherwise create one
+                // Attachments use the loadOp from the earliest subpass reference, and the storeOp from the latest
+                // We also update the finalLayout with the last subpass image layout
+                int rpass_att_ind = find_attachment_index(attachment_ids, req.id);
+                if (rpass_att_ind < 0) {
+                    
+                    // For a newly created attachment we take both the loadOp and storeOps of the subpass resource, then
+                    // we will update the store ops if we encounter the attachment again in a later subpass
+                    VkAttachmentDescription att_desc{};
+                    att_desc.format = get_requirement_format(req, *render_resources);
+                    att_desc.samples = VK_SAMPLE_COUNT_1_BIT;
+                    att_desc.loadOp = get_requirement_load_op(req);
+                    att_desc.storeOp = get_requirement_store_op(req);
+                    att_desc.initialLayout = get_baked_initial_layout(req);
+                    att_desc.finalLayout = get_layout_from_requirement(req);
+
+                    // Set stencil load ops only if our attachment has stencil component
+                    if (req.usage == rresource_usage::STENCIL_ATTACHMENT ||
+                        req.usage == rresource_usage::DEPTH_STENCIL_ATTACHMENT) {
+                        att_desc.stencilLoadOp = att_desc.loadOp;
+                        att_desc.stencilStoreOp = att_desc.storeOp;
+                    }
+                    else {
+                        att_desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                        att_desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+                    }
+                    
+                    rpass_att_ind = (int)rp_cfg.attachments.size;
+                    arr_push_back(&rp_cfg.attachments, att_desc);
+                    arr_push_back(&attachment_ids, req.id);
+                }
+                else {
+                    // So now we have encountered a later subpass and will update our store ops in the attachment
+                    auto *att_desc = &rp_cfg.attachments[rpass_att_ind];
+                    if (test_flags(req.flags, RESOURCE_REQUIREMENT_FLAG_WRITE)) {
+                        att_desc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+                        if (req.usage == rresource_usage::STENCIL_ATTACHMENT ||
+                            req.usage == rresource_usage::DEPTH_STENCIL_ATTACHMENT) {
+                            att_desc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+                        }
+                    }
+                    att_desc->finalLayout = get_layout_from_requirement(req);
+                }
+
+                // Create 
+                VkAttachmentReference att_ref{};
+                att_ref.attachment = (u32)rpass_att_ind;
+                att_ref.layout = get_layout_from_requirement(req);
+
+                if (req.usage == rresource_usage::COLOR_ATTACHMENT) {
+                    arr_push_back(&subpass_cfg.color_attachments, att_ref);
+                }
+                else if (req.usage == rresource_usage::INPUT_ATTACHMENT) {
+                    arr_push_back(&subpass_cfg.input_attachments, att_ref);
+                }
+                else if (req.usage == rresource_usage::DEPTH_ATTACHMENT || req.usage == rresource_usage::STENCIL_ATTACHMENT ||
+                         req.usage == rresource_usage::DEPTH_STENCIL_ATTACHMENT) {
+                    asrt(subpass_cfg.depth_stencil_attachment.attachment == VK_ATTACHMENT_UNUSED);
+                    subpass_cfg.depth_stencil_attachment = att_ref;
+                }
+            }
+
+            arr_push_back(&rp_cfg.subpasses, subpass_cfg);
+        }
+        
+        if (rp_cfg.subpasses.size > 0) {
+            VkSubpassDependency sp_dep{};
+            sp_dep.srcSubpass = VK_SUBPASS_EXTERNAL;
+            sp_dep.dstSubpass = 0;
+            sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            sp_dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            sp_dep.srcAccessMask = 0;
+            sp_dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
+
+            for (int dep_ind = 1; dep_ind < rp_cfg.subpasses.size; ++dep_ind) {
+                VkSubpassDependency sp_inner{};
+                sp_inner.srcSubpass = (u32)(dep_ind - 1);
+                sp_inner.dstSubpass = (u32)dep_ind;
+                sp_inner.srcStageMask =
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+                sp_inner.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+                sp_inner.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                sp_inner.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                arr_push_back(&rp_cfg.subpass_dependencies, sp_inner);
+            }
+
+            sp_dep.srcSubpass = (u32)(rp_cfg.subpasses.size - 1);
+            sp_dep.dstSubpass = VK_SUBPASS_EXTERNAL;
+            sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            sp_dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+            sp_dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            sp_dep.dstAccessMask = 0;
+            arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
+        }
+
+        int ret = vkr_init_render_pass(&pass->handle, rp_cfg, vk);
+        if (ret != err_code::VKR_NO_ERROR) {
+            elog("Failed to create render pass for blueprint %s with code %d", ls(rbp->name), ret);
+        }
+    }
 }
 
 

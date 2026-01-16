@@ -454,6 +454,12 @@ enum rresource_requirement_flag
     RESOURCE_REQUIREMENT_FLAG_WRITE, // Resource overwritten - if set then store op write otherwise store op don't care
 };
 
+enum rbp_pass_type
+{
+    GRAPHICS,
+    COMPUTE
+};
+
 struct rresource_requirement
 {
     resid id;
@@ -463,15 +469,22 @@ struct rresource_requirement
 
 struct rbp_subpass
 {
-    static_array<rresource_requirement, MAX_ATTACHMENT_COUNT> attachments;
+    static_array<rresource_requirement, MAX_ATTACHMENT_COUNT> resources;
 };
 
 struct rbp_pass
 {
-    static_array<rbp_subpass, MAX_SUBPASS_COUNT> subpasses;
-
-    // The pre-baked Vulkan object
-    VkRenderPass handle;
+    rbp_pass_type type;
+    union
+    {
+        struct
+        {
+            static_array<rbp_subpass, MAX_SUBPASS_COUNT> subpasses;
+            // The pre-baked Vulkan object
+            VkRenderPass handle;
+        };
+        rbp_subpass p;
+    };
 };
 
 struct render_blueprint
