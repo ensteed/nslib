@@ -1289,9 +1289,8 @@ intern VkImageLayout get_baked_initial_layout(rresource_requirement req) {
     return test_flags(req.flags,RESOURCE_REQUIREMENT_FLAG_CLEAR) ?  VK_IMAGE_LAYOUT_UNDEFINED : get_layout_from_requirement(req);
 }
 
-void build_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources)
+void compile_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources, const vkr_context *vk)
 {
-    
 }
 
 

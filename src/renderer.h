@@ -463,8 +463,7 @@ struct rresource_requirement
 
 struct rbp_subpass
 {
-    static_array<rresource_requirement, MAX_ATTACHMENT_COUNT> inputs;
-    static_array<rresource_requirement, MAX_ATTACHMENT_COUNT> outputs;
+    static_array<rresource_requirement, MAX_ATTACHMENT_COUNT> attachments;
 };
 
 struct rbp_pass
@@ -570,6 +569,6 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt);
 
 void terminate_renderer(renderer *rndr);
 
-void build_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources);
+void compile_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources, const vkr_context *vk);
 
 } // namespace nslib
