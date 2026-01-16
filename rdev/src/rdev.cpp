@@ -256,7 +256,7 @@ void register_textures_with_renderer(texture_pool *tex_pool, renderer *rndr, mem
 }
 
 void build_render_blueprint(render_blueprint *bp) {
-    auto pass = create_pass(bp);
+    //auto pass = create_pass(bp);
 }
 
 int init(platform_ctxt *ctxt, void *user_data)

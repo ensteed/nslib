@@ -1243,7 +1243,6 @@ int vkr_init_framebuffer(vkr_framebuffer *fb, const vkr_framebuffer_cfg &cfg, co
 
     arr_init(&fb->attachments, vk->cfg.arenas.persistent_arena);
     fb->size = cfg.size;
-    fb->rpass = cfg.rpass;
     fb->layers = fb->layers;
 
     arr_copy(&fb->attachments, cfg.attachments, cfg.attachment_count);

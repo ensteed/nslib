@@ -168,12 +168,21 @@ intern int setup_render_passes(renderer *rndr)
     // Since the depth image isn't 'presented', we don't have to have a separate depth image across each FIF.
     VkSubpassDependency sp_dep{};
     sp_dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    sp_dep.srcAccessMask = 0;
     sp_dep.dstSubpass = 0;
+    sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     sp_dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    sp_dep.srcAccessMask = 0;
     sp_dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
+
+    sp_dep.srcSubpass = 0;
+    sp_dep.dstSubpass = VK_SUBPASS_EXTERNAL;
+    sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    sp_dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    sp_dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    sp_dep.dstAccessMask = 0;
+    arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
+    
 
     rpass_info rpi{};
     int ret = vkr_init_render_pass(&rpi.vk_hndl, rp_cfg, vk);
@@ -1245,6 +1254,46 @@ intern void recreate_swapchain(renderer *rndr)
     vkr_init_swapchain(&dev->swapchain, &rndr->vk);
     init_swapchain_images_and_framebuffer(rndr);
 }
+
+VkImageLayout get_layout_from_requirement(rresource_requirement r) {
+    bool is_write = test_flags(r.flags,RESOURCE_REQUIREMENT_FLAG_WRITE);
+    switch (r.usage) {
+        case rresource_usage::COLOR_ATTACHMENT:
+            // There isn't really a common "Read Only" color attachment layout 
+            // used during a render pass (usually it's sampled instead).
+            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        case rresource_usage::DEPTH_ATTACHMENT:
+            return is_write ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+        case rresource_usage::STENCIL_ATTACHMENT:
+            return is_write ? VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL;
+        case rresource_usage::DEPTH_STENCIL_ATTACHMENT:
+            return is_write ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        case rresource_usage::SAMPLED_IMAGE:
+            asrt(!is_write);
+            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        case rresource_usage::INPUT_ATTACHMENT:
+            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        case rresource_usage::STORAGE_BUFFER: 
+            return VK_IMAGE_LAYOUT_GENERAL;
+        default:
+            return VK_IMAGE_LAYOUT_UNDEFINED;
+    }
+}
+
+intern VkImageLayout get_baked_initial_layout(rresource_requirement req) {
+    // Make sure we can't have both CLEAR and READ set
+    asrt(!test_flags(req.flags,RESOURCE_REQUIREMENT_FLAG_CLEAR) || !test_flags(req.flags,RESOURCE_REQUIREMENT_FLAG_READ));
+    
+    // Optimization: If we are clearing and don't care about previous contents,
+    // we tell the render pass to ignore the current layout and just treat it as undefined.
+    return test_flags(req.flags,RESOURCE_REQUIREMENT_FLAG_CLEAR) ?  VK_IMAGE_LAYOUT_UNDEFINED : get_layout_from_requirement(req);
+}
+
+void build_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources)
+{
+    
+}
+
 
 int begin_render_frame(renderer *rndr, int finished_frames)
 {

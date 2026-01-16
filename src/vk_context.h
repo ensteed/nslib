@@ -254,7 +254,6 @@ struct vkr_framebuffer
 {
     uvec2 size;
     u32 layers;
-    VkRenderPass rpass;
     array<vkr_framebuffer_attachment> attachments;
     VkFramebuffer hndl{VK_NULL_HANDLE};
 };

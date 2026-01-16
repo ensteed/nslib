@@ -51,6 +51,9 @@ const sizet MAX_SUBMESH_COUNT = 16;
 // Max subpasses supported
 const u8 MAX_SUBPASS_COUNT = 16;
 const u8 MAX_PASS_COUNT = 16;
+const u8 MAX_TEXTURE_RESOURCE_COUNT = 16;
+const u8 MAX_BUFFER_RESOURCE_COUNT = 16;
+const u8 MAX_ATTACHMENT_COUNT = 8;
 
 enum rvert_stream
 {
@@ -232,12 +235,13 @@ struct rtexture_create_info
     u32 flags;
 };
 
-struct rtechnique_create_info {
+struct rtechnique_create_info
+{
     rvert_layout vlayout;
-    
 };
 
-enum rmaterial_texture_slot {
+enum rmaterial_texture_slot
+{
     RMATERIAL_TEXTURE0,
     RMATERIAL_TEXTURE1,
     RMATERIAL_TEXTURE2,
@@ -255,7 +259,6 @@ struct rmaterial_create_info
     rtechnique_handle thndl;
     rtexture_handle slots[RMATERIAL_TEXTURE_COUNT];
 };
-
 
 enum rdesc_set_layout : u32
 {
@@ -397,40 +400,92 @@ struct rview
     mat4 proj_cam;
 };
 
-// struct rbp_pass_attachment {
-//     vkr_rpass_cfg
-// }
-
-
-// struct rbp_subpass {
-    
-// };
-
-struct rbp_pass {
-    asset_id id;
-    small_str name;
-    vkr_rpass_cfg cfg{};
-    static_array<rbp_subpass, MAX_SUBPASS_COUNT> subpasses{};
+struct rtexture_state
+{
+    VkImageLayout layout;
+    VkAccessFlags access;
+    VkPipelineStageFlags stage;
 };
 
-struct render_blueprint {
-    asset_id id;
+struct rbuffer_state
+{
+    VkAccessFlags access;
+    VkPipelineStageFlags stage;
+};
+
+struct rbuffer_resource
+{
+    vkr_buffer buffers[MAX_FRAMES_IN_FLIGHT];
+    rbuffer_state states[MAX_FRAMES_IN_FLIGHT]; // Current state of each frame's image
+};
+
+struct rtexture_resource
+{
+    vkr_image images[MAX_FRAMES_IN_FLIGHT];
+    VkImageView views[MAX_FRAMES_IN_FLIGHT];
+    rtexture_state states[MAX_FRAMES_IN_FLIGHT]; // Current state of each frame's image
+};
+
+struct rresource_registry
+{
+    static_array<rbuffer_resource, MAX_BUFFER_RESOURCE_COUNT> buffers;
+    static_array<rtexture_resource, MAX_TEXTURE_RESOURCE_COUNT> textures;
+};
+
+using resid = u32;
+
+// The "Intent" of how a resource is used in a specific pass
+enum struct rresource_usage
+{
+    COLOR_ATTACHMENT,         // Written to via Rasterizer
+    DEPTH_ATTACHMENT,         // Depth/Stencil testing
+    STENCIL_ATTACHMENT,       // Depth/Stencil testing
+    DEPTH_STENCIL_ATTACHMENT, // Depth/Stencil testing
+    INPUT_ATTACHMENT,         // Read via subpassLoad() (on-chip)
+    SAMPLED_IMAGE,            // Read via texture() (from VRAM)
+    STORAGE_BUFFER,           // Read/Write via SSBO
+    UNDEFINED
+};
+
+enum rresource_requirement_flag
+{
+    RESOURCE_REQUIREMENT_FLAG_READ,  // Resource read - load op is read if set
+    RESOURCE_REQUIREMENT_FLAG_CLEAR, // Resource cleared on load op - ignored if read is set - otherwise clear or dont care
+    RESOURCE_REQUIREMENT_FLAG_WRITE, // Resource overwritten - if set then store op write otherwise store op don't care
+};
+
+struct rresource_requirement
+{
+    resid id;
+    rresource_usage usage;
+    int flags;
+};
+
+struct rbp_subpass
+{
+    static_array<rresource_requirement, MAX_ATTACHMENT_COUNT> inputs;
+    static_array<rresource_requirement, MAX_ATTACHMENT_COUNT> outputs;
+};
+
+struct rbp_pass
+{
+    static_array<rbp_subpass, MAX_SUBPASS_COUNT> subpasses;
+
+    // The pre-baked Vulkan object
+    VkRenderPass handle;
+};
+
+struct render_blueprint
+{
     small_str name;
     static_array<rbp_pass, MAX_PASS_COUNT> passes{};
-    static_array<VkRenderPass, MAX_PASS_COUNT> vk_passes{};
 };
 
+// int init_render_blueprint(render_blueprint *bp);
+// void terminate_render_blueprint(render_blueprint *bp);
 
-int init_render_blueprint(render_blueprint *bp);
-void terminate_render_blueprint(render_blueprint *bp);
-
-rbp_pass* create_pass(render_blueprint *bp, const char *pass_t);
-void add_subpass(rbp_pass *pass);
-
-
-struct rpass_blueprint {
-    rvert_layout vlayout;
-};
+// rbp_pass *create_pass(render_blueprint *bp, const char *pass_t);
+// void add_subpass(rbp_pass *pass);
 
 struct renderer
 {
@@ -502,7 +557,6 @@ rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rnd
 rtexture_handle create_rtechnique(const rtechnique_create_info &ctinfo, renderer *rndr);
 rtexture_handle create_material(const rmaterial_create_info &ctinfo, renderer *rndr);
 
-
 // NOTE: All of these mesh operations kind of need to wait on all rendering operations to complete as they modify the
 // vertex and index buffers - not sure yet if this is better done within the functions or in the caller. Also these should be done at the
 // start of a frame because any indices submitted in command buffers will be invalid after these operations. It almost seems like we should
@@ -515,5 +569,7 @@ int begin_render_frame(renderer *rndr, int finished_frames);
 int end_render_frame(renderer *rndr, camera *cam, f64 dt);
 
 void terminate_renderer(renderer *rndr);
+
+void build_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources);
 
 } // namespace nslib
