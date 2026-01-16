@@ -48,6 +48,38 @@ const sizet MAX_TEXTURE_COUNT = 4096;
 const sizet MAX_OBJECT_COUNT = 1000000;
 // Max submeshes per rmesh_info - easy to change later
 const sizet MAX_SUBMESH_COUNT = 16;
+// Max subpasses supported
+const u8 MAX_SUBPASS_COUNT = 16;
+const u8 MAX_PASS_COUNT = 16;
+
+enum rvert_stream
+{
+    RVERT_STREAM_POS_COL,
+    RVERT_STREAM_NORM_TAN_UV,
+    RVERT_STREAM_SKINNED_POS_COL,
+    RVERT_STREAM_SKINNED_NORM_TAN_UV,
+    RVERT_STREAM_SKINNED_BONES_WEIGHT_ID,
+    RVERT_STREAM_COUNT,
+};
+
+enum rvert_layout : u32
+{
+    RVERT_LAYOUT_STATIC_MESH,
+    RVERT_LAYOUT_SKINNED_MESH,
+    RVERT_LAYOUT_COUNT
+};
+
+enum rsampler_type : u32
+{
+    RSAMPLER_TYPE_LINEAR_REPEAT,
+    RSAMPLER_TYPE_COUNT
+};
+
+enum rpass_type
+{
+    RPASS_TYPE_OPAQUE,
+    RPASS_TYPE_COUNT
+};
 
 struct rsubmesh_range
 {
@@ -176,6 +208,7 @@ enum struct rformat
     R32_SFLOAT,
     R32_UINT,
     R32_SINT,
+    INVALID,
 };
 
 enum rtexture_create_flag : u32
@@ -199,35 +232,30 @@ struct rtexture_create_info
     u32 flags;
 };
 
-// TODO: Rename these to something more sensible
-enum rvert_stream
-{
-    RVERT_STREAM_POS_COL,
-    RVERT_STREAM_NORM_TAN_UV,
-    RVERT_STREAM_SKINNED_POS_COL,
-    RVERT_STREAM_SKINNED_NORM_TAN_UV,
-    RVERT_STREAM_SKINNED_BONES_WEIGHT_ID,
-    RVERT_STREAM_COUNT,
+struct rtechnique_create_info {
+    rvert_layout vlayout;
+    
 };
 
-enum rvert_layout : u32
-{
-    RVERT_LAYOUT_STATIC_MESH,
-    RVERT_LAYOUT_SKINNED_MESH,
-    RVERT_LAYOUT_COUNT
+enum rmaterial_texture_slot {
+    RMATERIAL_TEXTURE0,
+    RMATERIAL_TEXTURE1,
+    RMATERIAL_TEXTURE2,
+    RMATERIAL_TEXTURE3,
+    RMATERIAL_TEXTURE4,
+    RMATERIAL_TEXTURE5,
+    RMATERIAL_TEXTURE6,
+    RMATERIAL_TEXTURE7,
+    RMATERIAL_TEXTURE_COUNT,
 };
 
-enum rsampler_type : u32
+struct rmaterial_create_info
 {
-    RSAMPLER_TYPE_LINEAR_REPEAT,
-    RSAMPLER_TYPE_COUNT
+    const char *name;
+    rtechnique_handle thndl;
+    rtexture_handle slots[RMATERIAL_TEXTURE_COUNT];
 };
 
-enum rpass_type
-{
-    RPASS_TYPE_OPAQUE,
-    RPASS_TYPE_COUNT
-};
 
 enum rdesc_set_layout : u32
 {
@@ -363,7 +391,46 @@ struct geometry_buffer_info
 };
 
 struct rview
-{};
+{
+    mat4 proj;
+    mat4 cam;
+    mat4 proj_cam;
+};
+
+// struct rbp_pass_attachment {
+//     vkr_rpass_cfg
+// }
+
+
+// struct rbp_subpass {
+    
+// };
+
+struct rbp_pass {
+    asset_id id;
+    small_str name;
+    vkr_rpass_cfg cfg{};
+    static_array<rbp_subpass, MAX_SUBPASS_COUNT> subpasses{};
+};
+
+struct render_blueprint {
+    asset_id id;
+    small_str name;
+    static_array<rbp_pass, MAX_PASS_COUNT> passes{};
+    static_array<VkRenderPass, MAX_PASS_COUNT> vk_passes{};
+};
+
+
+int init_render_blueprint(render_blueprint *bp);
+void terminate_render_blueprint(render_blueprint *bp);
+
+rbp_pass* create_pass(render_blueprint *bp, const char *pass_t);
+void add_subpass(rbp_pass *pass);
+
+
+struct rpass_blueprint {
+    rvert_layout vlayout;
+};
 
 struct renderer
 {
@@ -431,8 +498,10 @@ struct renderer
 // rtexture_handle register_texture(const texture *tex, renderer *rndr);
 
 rmesh_handle create_mesh(const rmesh_create_info &cminfo, renderer *rndr);
-
 rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rndr);
+rtexture_handle create_rtechnique(const rtechnique_create_info &ctinfo, renderer *rndr);
+rtexture_handle create_material(const rmaterial_create_info &ctinfo, renderer *rndr);
+
 
 // NOTE: All of these mesh operations kind of need to wait on all rendering operations to complete as they modify the
 // vertex and index buffers - not sure yet if this is better done within the functions or in the caller. Also these should be done at the

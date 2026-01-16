@@ -40,7 +40,7 @@ struct material
 {
     ASSET(MATERIAL, nsmat);
     vec4 col;
-    asset_id technique;
+    hmap<asset_id, asset_id> techniques;
     static_array<asset_id, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
     rmaterial_handle rndr_hndl;
 };
@@ -48,7 +48,7 @@ struct material
 pup_func(material)
 {
     pup_member(col);
-    pup_member(technique);
+    pup_member(techniques);
     pup_member(textures);
 }
 

@@ -237,6 +237,7 @@ rformat get_rformat_for_usage(texture_usage usage)
         return rformat::RGBA16_SFLOAT;
     default:
         asrt_break("Failed to handle texture usage case");
+        return rformat::INVALID;
     }
 }
 
@@ -254,9 +255,14 @@ void register_textures_with_renderer(texture_pool *tex_pool, renderer *rndr, mem
     }
 }
 
+void build_render_blueprint(render_blueprint *bp) {
+    auto pass = create_pass(bp);
+}
+
 int init(platform_ctxt *ctxt, void *user_data)
 {
     auto app = (app_data *)user_data;
+    render_blueprint bp{};
 
     init_cache_default_types(&app->cg, "asset-cache", get_global_arena());
 
@@ -266,6 +272,8 @@ int init(platform_ctxt *ctxt, void *user_data)
     mesh *rect, *cube;
     create_meshes(msh_pool, &rect, &cube);
     create_textures(tex_pool);
+
+    build_render_blueprint(&bp);
 
     // Initialize our renderer - fail early if init fails
     int ret = init_renderer(&app->rndr, ctxt->win_hndl, &ctxt->arenas.free_list);
@@ -360,6 +368,8 @@ int run_frame(platform_ctxt *ctxt, void *user_data)
 
     // Gather visible items and do stuff
     ImGui::ShowDebugLogWindow();
+    // bool open{true};
+    // ImGui::ShowDemoWindow();
 
     res = end_render_frame(&app->rndr, cam, ctxt->time_pts.dt);
 

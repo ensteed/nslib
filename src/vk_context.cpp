@@ -606,9 +606,6 @@ int vkr_init_device(vkr_device *dev,
         return err;
     }
 
-    // Set framebuffers
-    arr_init(&dev->swapchain.fbs, vk->cfg.arenas.persistent_arena);
-    arr_resize(&dev->swapchain.fbs, dev->swapchain.image_views.size);
     return err_code::VKR_NO_ERROR;
 }
 
@@ -1678,6 +1675,10 @@ void vkr_init_swapchain_framebuffers(vkr_device *device,
                                      VkRenderPass rpass,
                                      const array<array<vkr_framebuffer_attachment>> *other_attachments)
 {
+    //arr_init(vk->inst.)
+    // Set framebuffers
+    arr_init(&device->swapchain.fbs, vk->cfg.arenas.persistent_arena);
+    arr_resize(&device->swapchain.fbs, device->swapchain.image_views.size);
     for (int i = 0; i < vk->inst.device.swapchain.fbs.size; ++i) {
         vkr_framebuffer_cfg cfg{};
         cfg.size = {vk->inst.device.swapchain.extent.width, vk->inst.device.swapchain.extent.height};

@@ -1315,6 +1315,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     }
     else if (vk_res != VK_SUCCESS && vk_res != VK_SUBOPTIMAL_KHR) {
         elog("Failed to acquire swapchain image");
+        ImGui::EndFrame();
         return err_code::RENDER_ACQUIRE_IMAGE_FAIL;
     }
 
@@ -1334,6 +1335,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
     // ind to the command pool
     auto fb = &dev->swapchain.fbs[im_ind];
+    asrt(fb && "Invalid framebuffer");
 
     ///////////////////////////
     // Record Command Buffer //
