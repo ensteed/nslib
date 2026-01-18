@@ -4,56 +4,15 @@
 #include "math/matrix4.h"
 #include "containers/slot_pool.h"
 #include "containers/hmap.h"
-#include "vk_context.h"
+#include "render_blueprint.h"
 #include "render_handles.h"
 
 struct ImGuiContext;
 
 namespace nslib
 {
-#define INVALID_IND ((sizet) - 1)
-
-inline const asset_id FWD_RPASS = make_asset_id("forward");
-inline const asset_id PLINE_FWD_RPASS_S0_OPAQUE_COL = make_asset_id("forward-s0-opaque-col");
-inline const asset_id PLINE_FWD_RPASS_S0_OPAQUE_DIFFUSE = make_asset_id("forward-s0-opaque-diffuse");
-
-struct vkr_context;
 struct camera;
-struct static_model;
 struct transform;
-
-// 20 million triangles... thats a lot - works on desktop
-const sizet MAX_STATIC_TRIANGLE_COUNT = 2000000;
-const sizet MAX_SKINNED_TRIANGLE_COUNT = 200000;
-// Default ind buffer size (holding all of our inds) in ind count (not byte size)
-const sizet MAX_TOTAL_MESH_IND_COUNT = (MAX_STATIC_TRIANGLE_COUNT + MAX_SKINNED_TRIANGLE_COUNT) * 3;
-// Default vert buffer size (holding all of our verts) in vert count (not byte size)
-// Gemeni showed me that on average we will have 2 : 1 triangle to vert ratio
-const sizet MAX_STATIC_MESH_VERT_COUNT = MAX_STATIC_TRIANGLE_COUNT / 2;
-const sizet MAX_SKINNED_MESH_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
-
-// Maximum number of render passes supported
-// const sizet MAX_RENDERPASS_COUNT = 32;
-// Maximum number of techniques the renderer supports
-const sizet MAX_TECHNIQUE_COUNT = 1024;
-// Maximum number of materials the renderer supports
-const sizet MAX_PIPELINE_COUNT = 2048;
-// Maximum number of materials the renderer supports
-const sizet MAX_MATERIAL_COUNT = 4096;
-// Maximum number of materials the renderer supports
-const sizet MAX_MESH_COUNT = 4096;
-// Maximum number of textures the renderer supports
-const sizet MAX_TEXTURE_COUNT = 4096;
-// Maximum number of objects
-const sizet MAX_OBJECT_COUNT = 1000000;
-// Max submeshes per rmesh_info - easy to change later
-const sizet MAX_SUBMESH_COUNT = 16;
-// Max subpasses supported
-const u8 MAX_SUBPASS_COUNT = 16;
-const u8 MAX_PASS_COUNT = 16;
-const u8 MAX_TEXTURE_RESOURCE_COUNT = 16;
-const u8 MAX_BUFFER_RESOURCE_COUNT = 16;
-const u8 MAX_ATTACHMENT_COUNT = 8;
 
 enum rvert_stream
 {
@@ -76,12 +35,6 @@ enum rsampler_type : u32
 {
     RSAMPLER_TYPE_LINEAR_REPEAT,
     RSAMPLER_TYPE_COUNT
-};
-
-enum rpass_type
-{
-    RPASS_TYPE_OPAQUE,
-    RPASS_TYPE_COUNT
 };
 
 struct rsubmesh_range
@@ -355,7 +308,7 @@ struct rmaterial_info
 
 struct rtechnique_info
 {
-    static_array<VkPipeline, RPASS_TYPE_COUNT> rpass_plines;
+    static_array<VkPipeline, MAX_BP_PASS_COUNT> rpass_plines;
 };
 
 struct rpass_info
@@ -393,104 +346,30 @@ struct geometry_buffer_info
     vkr_buffer ind_buffer;
 };
 
+struct stream_buffer_entry
+{
+    small_str dbg_name;
+    vkr_buffer buffer;
+};
+
+struct geometry_buffer_layout_entry
+{
+    vkr_vertex_layout vert_layout;
+    VmaVirtualBlock vert_block;
+    static_array<stream_buffer_entry, 16> vert_buffers;
+};
+
+struct geometry_streams_group {
+    static_array<geometry_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> vert_groups{};
+    VmaVirtualBlock indices_block{VK_NULL_HANDLE};
+    stream_buffer_entry indice_buffer;
+};
+
 struct rview
 {
     mat4 proj;
     mat4 cam;
     mat4 proj_cam;
-};
-
-struct rtexture_state
-{
-    VkImageLayout layout;
-    VkAccessFlags access;
-    VkPipelineStageFlags stage;
-};
-
-struct rbuffer_state
-{
-    VkAccessFlags access;
-    VkPipelineStageFlags stage;
-};
-
-struct rbuffer_resource
-{
-    vkr_buffer buffers[MAX_FRAMES_IN_FLIGHT];
-    rbuffer_state states[MAX_FRAMES_IN_FLIGHT]; // Current state of each frame's image
-};
-
-struct rtexture_resource
-{
-    vkr_image images[MAX_FRAMES_IN_FLIGHT];
-    VkImageView views[MAX_FRAMES_IN_FLIGHT];
-    rtexture_state states[MAX_FRAMES_IN_FLIGHT]; // Current state of each frame's image
-};
-
-struct rresource_registry
-{
-    static_array<rbuffer_resource, MAX_BUFFER_RESOURCE_COUNT> buffers;
-    static_array<rtexture_resource, MAX_TEXTURE_RESOURCE_COUNT> textures;
-};
-
-using resid = u32;
-
-// The "Intent" of how a resource is used in a specific pass
-enum struct rresource_usage
-{
-    COLOR_ATTACHMENT,         // Written to via Rasterizer
-    DEPTH_ATTACHMENT,         // Depth/Stencil testing
-    STENCIL_ATTACHMENT,       // Depth/Stencil testing
-    DEPTH_STENCIL_ATTACHMENT, // Depth/Stencil testing
-    INPUT_ATTACHMENT,         // Read via subpassLoad() (on-chip)
-    SAMPLED_IMAGE,            // Read via texture() (from VRAM)
-    STORAGE_BUFFER,           // Read/Write via SSBO
-    UNDEFINED
-};
-
-enum rresource_requirement_flag
-{
-    RESOURCE_REQUIREMENT_FLAG_READ,  // Resource read - load op is read if set
-    RESOURCE_REQUIREMENT_FLAG_CLEAR, // Resource cleared on load op - ignored if read is set - otherwise clear or dont care
-    RESOURCE_REQUIREMENT_FLAG_WRITE, // Resource overwritten - if set then store op write otherwise store op don't care
-};
-
-enum rbp_pass_type
-{
-    GRAPHICS,
-    COMPUTE
-};
-
-struct rresource_requirement
-{
-    resid id;
-    rresource_usage usage;
-    int flags;
-};
-
-struct rbp_subpass
-{
-    static_array<rresource_requirement, MAX_ATTACHMENT_COUNT> resources;
-};
-
-struct rbp_pass
-{
-    rbp_pass_type type;
-    union
-    {
-        struct
-        {
-            static_array<rbp_subpass, MAX_SUBPASS_COUNT> subpasses;
-            // The pre-baked Vulkan object
-            VkRenderPass handle;
-        };
-        rbp_subpass p;
-    };
-};
-
-struct render_blueprint
-{
-    small_str name;
-    static_array<rbp_pass, MAX_PASS_COUNT> passes{};
 };
 
 // int init_render_blueprint(render_blueprint *bp);
@@ -512,7 +391,7 @@ struct renderer
 
     // Render pass indices referenced by ids which are just pass names - map a pass name to a static array indice
     hmap<asset_id, sizet> rpass_name_map;
-    static_array<rpass_info, RPASS_TYPE_COUNT> rpasses{};
+    static_array<rpass_info, MAX_BP_PASS_COUNT> rpasses{};
 
     // Created pipelines cached on pipeline state
 
@@ -532,6 +411,9 @@ struct renderer
 
     // Globabl geometry attribute buffers
     geometry_buffer_info geometry_buffers;
+
+    // Really a single 
+    static_array<geometry_streams_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
     // Global pipeline layout
     VkPipelineLayout g_layout{VK_NULL_HANDLE};
@@ -561,27 +443,15 @@ struct renderer
     rtexture_handle swapchain_fb_depth_stencil{};
 };
 
-// rmaterial_handle register_material(rtechnique_handle technique, static_array<rtexture_handle, )
-// rtexture_handle register_texture(const texture *tex, renderer *rndr);
-
 rmesh_handle create_mesh(const rmesh_create_info &cminfo, renderer *rndr);
 rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rndr);
 rtexture_handle create_rtechnique(const rtechnique_create_info &ctinfo, renderer *rndr);
 rtexture_handle create_material(const rmaterial_create_info &ctinfo, renderer *rndr);
 
-// NOTE: All of these mesh operations kind of need to wait on all rendering operations to complete as they modify the
-// vertex and index buffers - not sure yet if this is better done within the functions or in the caller. Also these should be done at the
-// start of a frame because any indices submitted in command buffers will be invalid after these operations. It almost seems like we should
-// get a list of these and then just do it at start of frame after we wait for sync if there are any to do.
-
-int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena);
-
 int begin_render_frame(renderer *rndr, int finished_frames);
-
 int end_render_frame(renderer *rndr, camera *cam, f64 dt);
 
+int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena);
 void terminate_renderer(renderer *rndr);
-
-void compile_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources, const vkr_context *vk);
 
 } // namespace nslib

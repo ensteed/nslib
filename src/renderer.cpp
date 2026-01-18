@@ -49,9 +49,7 @@ intern void *imgui_mem_alloc(sizet sz, void *usr)
 
 intern void check_vk_result(VkResult err)
 {
-    if (err != VK_SUCCESS) {
-        wlog("vulkan err: %d", err);
-    }
+    if (err != VK_SUCCESS) wlog("vulkan err: %d", err);
     asrt(err >= 0);
 }
 
@@ -182,7 +180,6 @@ intern int setup_render_passes(renderer *rndr)
     sp_dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     sp_dep.dstAccessMask = 0;
     arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
-    
 
     rpass_info rpi{};
     int ret = vkr_init_render_pass(&rpi.vk_hndl, rp_cfg, vk);
@@ -431,10 +428,9 @@ rmesh_handle create_mesh(const rmesh_create_info &cminfo, renderer *rndr)
     vkr_buffer *ind_stream = &rndr->geometry_buffers.ind_buffer;
 
     // Set the mesh item virtual blocks
-    mesh_item->vert_block =
-        !cminfo.weights_ids ? rndr->geometry_buffers.static_mesh_block : rndr->geometry_buffers.skinned_mesh_block;
+    mesh_item->vert_block = !cminfo.weights_ids ? rndr->geometry_buffers.static_mesh_block : rndr->geometry_buffers.skinned_mesh_block;
     mesh_item->ind_block = rndr->geometry_buffers.indices_block;
-    
+
     ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
     ci.pUserData = mesh_item->name;
 
@@ -671,11 +667,11 @@ rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rnd
     auto tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
 
     rtexture_info ti{};
-    
+
     // Just in case we ensure null terminated
     strncpy(ti.name, ctinfo.name, SMALL_STR_LEN - 1);
     ti.name[SMALL_STR_LEN - 1] = 0;
-    
+
     vkr_image_cfg cfg{};
     cfg.format = get_vk_format(ctinfo.format);
     asrt(cfg.format != VK_FORMAT_UNDEFINED && "Forgot to add vk support to rformat type");
@@ -692,7 +688,7 @@ rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rnd
     }
 
     // Upload texture data to created image using staging buffer
-    // NOTE: This call currently blocks with waiting on a 
+    // NOTE: This call currently blocks with waiting on a
     vk_ret = vkr_stage_and_upload_image_data(&ti.im, ctinfo.data, ctinfo.data_size, tmp_cmd_buf, tmp_q, &rndr->vk);
     vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
     if (vk_ret != err_code::VKR_NO_ERROR) {
@@ -1175,63 +1171,6 @@ intern void terminate_frame_contexts(renderer *rndr)
     arr_clear(&rndr->fifs);
 }
 
-int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
-{
-    asrt(fl_arena->alloc_type == mem_alloc_type::FREE_LIST);
-    init_fl_arena(&rndr->persist_fl, 200*MB_SIZE, fl_arena, "rndr-fl");
-    init_fl_arena(&rndr->vk_free_list, 50*MB_SIZE, &rndr->persist_fl, "rndr-vk-fl");
-    init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, &rndr->persist_fl, "rndr-vk-frame");
-    init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "rndr-frame-linear");
-    init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "rndr-frame-stack");
-
-    // Slot pools
-    init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->meshes, MAX_MESH_COUNT, &rndr->persist_fl);
-    dlog("HERE");
-    // Render pass names
-    hmap_init(&rndr->rpass_name_map, hash_type, &rndr->persist_fl);
-    hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
-
-    vkr_cfg vkii{.app_name = "rdev",
-                 .vi{1, 0, 0},
-                 .arenas{.persistent_arena = &rndr->vk_free_list, .command_arena = &rndr->vk_frame_linear},
-                 .log_verbosity = LOG_DEBUG,
-                 .window = win_hndl,
-                 .inst_create_flags = INST_CREATE_FLAGS,
-                 .extra_instance_extension_names = ADDITIONAL_INST_EXTENSIONS,
-                 .extra_instance_extension_count = ADDITIONAL_INST_EXTENSION_COUNT,
-                 .device_extension_names = DEVICE_EXTENSIONS,
-                 .device_extension_count = DEVICE_EXTENSION_COUNT,
-                 .validation_layer_names = VALIDATION_LAYERS,
-                 .validation_layer_count = VALIDATION_LAYER_COUNT};
-
-    if (vkr_init(&vkii, &rndr->vk) != err_code::VKR_NO_ERROR) {
-        return err_code::RENDER_INIT_FAIL;
-    }
-
-    // Create transient command pool
-    vkr_init_cmd_pool(&rndr->transient_pool,
-                      rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
-                      VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                      &rndr->vk);
-
-    // Setup frames in flight
-    init_frame_contexts(rndr);
-
-    int err = setup_rendering(rndr);
-    if (err != err_code::VKR_NO_ERROR) {
-        elog("Failed to initialize renderer with code %d", err);
-        return err;
-    }
-
-    init_imgui(rndr, win_hndl);
-
-    // Setup our indice and vert buffer sbuffer
-    return err_code::RENDER_NO_ERROR;
-}
-
 intern void terminate_swapchain_images_and_framebuffer(renderer *rndr)
 {
     auto dev = &rndr->vk.inst.device;
@@ -1254,207 +1193,6 @@ intern void recreate_swapchain(renderer *rndr)
     vkr_init_swapchain(&dev->swapchain, &rndr->vk);
     init_swapchain_images_and_framebuffer(rndr);
 }
-
-VkImageLayout get_layout_from_requirement(rresource_requirement r) {
-    bool is_write = test_flags(r.flags,RESOURCE_REQUIREMENT_FLAG_WRITE);
-    switch (r.usage) {
-        case rresource_usage::COLOR_ATTACHMENT:
-            // There isn't really a common "Read Only" color attachment layout 
-            // used during a render pass (usually it's sampled instead).
-            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        case rresource_usage::DEPTH_ATTACHMENT:
-            return is_write ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
-        case rresource_usage::STENCIL_ATTACHMENT:
-            return is_write ? VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL;
-        case rresource_usage::DEPTH_STENCIL_ATTACHMENT:
-            return is_write ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        case rresource_usage::SAMPLED_IMAGE:
-            asrt(!is_write);
-            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        case rresource_usage::INPUT_ATTACHMENT:
-            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        case rresource_usage::STORAGE_BUFFER: 
-            return VK_IMAGE_LAYOUT_GENERAL;
-        default:
-            return VK_IMAGE_LAYOUT_UNDEFINED;
-    }
-}
-
-intern VkImageLayout get_baked_initial_layout(rresource_requirement req) {
-    // Make sure we can't have both CLEAR and READ set
-    asrt(!test_flags(req.flags,RESOURCE_REQUIREMENT_FLAG_CLEAR) || !test_flags(req.flags,RESOURCE_REQUIREMENT_FLAG_READ));
-    
-    // Optimization: If we are clearing and don't care about previous contents,
-    // we tell the render pass to ignore the current layout and just treat it as undefined.
-    return test_flags(req.flags,RESOURCE_REQUIREMENT_FLAG_CLEAR) ?  VK_IMAGE_LAYOUT_UNDEFINED : get_layout_from_requirement(req);
-}
-
-intern VkAttachmentLoadOp get_requirement_load_op(const rresource_requirement &req)
-{
-    if (test_flags(req.flags, RESOURCE_REQUIREMENT_FLAG_READ)) {
-        return VK_ATTACHMENT_LOAD_OP_LOAD;
-    }
-    if (test_flags(req.flags, RESOURCE_REQUIREMENT_FLAG_CLEAR)) {
-        return VK_ATTACHMENT_LOAD_OP_CLEAR;
-    }
-    return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-}
-
-intern VkAttachmentStoreOp get_requirement_store_op(const rresource_requirement &req)
-{
-    if (test_flags(req.flags, RESOURCE_REQUIREMENT_FLAG_WRITE)) {
-        return VK_ATTACHMENT_STORE_OP_STORE;
-    }
-    return VK_ATTACHMENT_STORE_OP_DONT_CARE;
-}
-
-intern int find_attachment_index(const static_array<resid, MAX_ATTACHMENT_COUNT> &att_ids, resid id)
-{
-    for (int i = 0; i < att_ids.size; ++i) {
-        if (att_ids.data[i] == id) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-intern VkFormat get_requirement_format(const rresource_requirement &req, const rresource_registry &render_resources)
-{
-    asrt(req.id < render_resources.textures.size);
-    return render_resources.textures[req.id].images[0].format;
-}
-
-void compile_render_blueprint(render_blueprint *rbp, const rresource_registry *render_resources, const vkr_context *vk)
-{
-    asrt(rbp);
-    asrt(render_resources);
-    asrt(vk);
-
-    for (int pass_ind = 0; pass_ind < rbp->passes.size; ++pass_ind) {
-        auto *pass = &rbp->passes[pass_ind];
-        vkr_rpass_cfg rp_cfg{};
-        
-        // The config doesn't track our res ids as part of the attachment so we gotta do that
-        static_array<resid, MAX_ATTACHMENT_COUNT> attachment_ids{};
-        
-        for (int subpass_ind = 0; subpass_ind < pass->subpasses.size; ++subpass_ind) {
-            auto *subpass = &pass->subpasses[subpass_ind];
-            
-            vkr_rpass_cfg_subpass subpass_cfg{};
-            subpass_cfg.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
-
-            for (int att_ind = 0; att_ind < subpass->resources.size; ++att_ind) {
-                const rresource_requirement &req = subpass->resources[att_ind];
-                
-                // Skip any non attachments
-                if (req.usage == rresource_usage::SAMPLED_IMAGE || req.usage == rresource_usage::STORAGE_BUFFER ||
-                    req.usage == rresource_usage::UNDEFINED) {
-                    continue;
-                }
-
-                // If there already is an attachment entry, use that, otherwise create one
-                // Attachments use the loadOp from the earliest subpass reference, and the storeOp from the latest
-                // We also update the finalLayout with the last subpass image layout
-                int rpass_att_ind = find_attachment_index(attachment_ids, req.id);
-                if (rpass_att_ind < 0) {
-                    
-                    // For a newly created attachment we take both the loadOp and storeOps of the subpass resource, then
-                    // we will update the store ops if we encounter the attachment again in a later subpass
-                    VkAttachmentDescription att_desc{};
-                    att_desc.format = get_requirement_format(req, *render_resources);
-                    att_desc.samples = VK_SAMPLE_COUNT_1_BIT;
-                    att_desc.loadOp = get_requirement_load_op(req);
-                    att_desc.storeOp = get_requirement_store_op(req);
-                    att_desc.initialLayout = get_baked_initial_layout(req);
-                    att_desc.finalLayout = get_layout_from_requirement(req);
-
-                    // Set stencil load ops only if our attachment has stencil component
-                    if (req.usage == rresource_usage::STENCIL_ATTACHMENT ||
-                        req.usage == rresource_usage::DEPTH_STENCIL_ATTACHMENT) {
-                        att_desc.stencilLoadOp = att_desc.loadOp;
-                        att_desc.stencilStoreOp = att_desc.storeOp;
-                    }
-                    else {
-                        att_desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-                        att_desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-                    }
-                    
-                    rpass_att_ind = (int)rp_cfg.attachments.size;
-                    arr_push_back(&rp_cfg.attachments, att_desc);
-                    arr_push_back(&attachment_ids, req.id);
-                }
-                else {
-                    // So now we have encountered a later subpass and will update our store ops in the attachment
-                    auto *att_desc = &rp_cfg.attachments[rpass_att_ind];
-                    if (test_flags(req.flags, RESOURCE_REQUIREMENT_FLAG_WRITE)) {
-                        att_desc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                        if (req.usage == rresource_usage::STENCIL_ATTACHMENT ||
-                            req.usage == rresource_usage::DEPTH_STENCIL_ATTACHMENT) {
-                            att_desc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-                        }
-                    }
-                    att_desc->finalLayout = get_layout_from_requirement(req);
-                }
-
-                // Create 
-                VkAttachmentReference att_ref{};
-                att_ref.attachment = (u32)rpass_att_ind;
-                att_ref.layout = get_layout_from_requirement(req);
-
-                if (req.usage == rresource_usage::COLOR_ATTACHMENT) {
-                    arr_push_back(&subpass_cfg.color_attachments, att_ref);
-                }
-                else if (req.usage == rresource_usage::INPUT_ATTACHMENT) {
-                    arr_push_back(&subpass_cfg.input_attachments, att_ref);
-                }
-                else if (req.usage == rresource_usage::DEPTH_ATTACHMENT || req.usage == rresource_usage::STENCIL_ATTACHMENT ||
-                         req.usage == rresource_usage::DEPTH_STENCIL_ATTACHMENT) {
-                    asrt(subpass_cfg.depth_stencil_attachment.attachment == VK_ATTACHMENT_UNUSED);
-                    subpass_cfg.depth_stencil_attachment = att_ref;
-                }
-            }
-
-            arr_push_back(&rp_cfg.subpasses, subpass_cfg);
-        }
-        
-        if (rp_cfg.subpasses.size > 0) {
-            VkSubpassDependency sp_dep{};
-            sp_dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-            sp_dep.dstSubpass = 0;
-            sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-            sp_dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-            sp_dep.srcAccessMask = 0;
-            sp_dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
-
-            for (int dep_ind = 1; dep_ind < rp_cfg.subpasses.size; ++dep_ind) {
-                VkSubpassDependency sp_inner{};
-                sp_inner.srcSubpass = (u32)(dep_ind - 1);
-                sp_inner.dstSubpass = (u32)dep_ind;
-                sp_inner.srcStageMask =
-                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-                sp_inner.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-                sp_inner.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                sp_inner.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-                arr_push_back(&rp_cfg.subpass_dependencies, sp_inner);
-            }
-
-            sp_dep.srcSubpass = (u32)(rp_cfg.subpasses.size - 1);
-            sp_dep.dstSubpass = VK_SUBPASS_EXTERNAL;
-            sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-            sp_dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-            sp_dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            sp_dep.dstAccessMask = 0;
-            arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
-        }
-
-        int ret = vkr_init_render_pass(&pass->handle, rp_cfg, vk);
-        if (ret != err_code::VKR_NO_ERROR) {
-            elog("Failed to create render pass for blueprint %s with code %d", ls(rbp->name), ret);
-        }
-    }
-}
-
 
 int begin_render_frame(renderer *rndr, int finished_frames)
 {
@@ -1617,6 +1355,63 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     return err_code::RENDER_NO_ERROR;
 }
 
+int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
+{
+    asrt(fl_arena->alloc_type == mem_alloc_type::FREE_LIST);
+    init_fl_arena(&rndr->persist_fl, 200 * MB_SIZE, fl_arena, "rndr-fl");
+    init_fl_arena(&rndr->vk_free_list, 50 * MB_SIZE, &rndr->persist_fl, "rndr-vk-fl");
+    init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, &rndr->persist_fl, "rndr-vk-frame");
+    init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "rndr-frame-linear");
+    init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "rndr-frame-stack");
+
+    // Slot pools
+    init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->meshes, MAX_MESH_COUNT, &rndr->persist_fl);
+    dlog("HERE");
+    // Render pass names
+    hmap_init(&rndr->rpass_name_map, hash_type, &rndr->persist_fl);
+    hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
+
+    vkr_cfg vkii{.app_name = "rdev",
+                 .vi{1, 0, 0},
+                 .arenas{.persistent_arena = &rndr->vk_free_list, .command_arena = &rndr->vk_frame_linear},
+                 .log_verbosity = LOG_DEBUG,
+                 .window = win_hndl,
+                 .inst_create_flags = INST_CREATE_FLAGS,
+                 .extra_instance_extension_names = ADDITIONAL_INST_EXTENSIONS,
+                 .extra_instance_extension_count = ADDITIONAL_INST_EXTENSION_COUNT,
+                 .device_extension_names = DEVICE_EXTENSIONS,
+                 .device_extension_count = DEVICE_EXTENSION_COUNT,
+                 .validation_layer_names = VALIDATION_LAYERS,
+                 .validation_layer_count = VALIDATION_LAYER_COUNT};
+
+    if (vkr_init(&vkii, &rndr->vk) != err_code::VKR_NO_ERROR) {
+        return err_code::RENDER_INIT_FAIL;
+    }
+
+    // Create transient command pool
+    vkr_init_cmd_pool(&rndr->transient_pool,
+                      rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
+                      VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                      &rndr->vk);
+
+    // Setup frames in flight
+    init_frame_contexts(rndr);
+
+    int err = setup_rendering(rndr);
+    if (err != err_code::VKR_NO_ERROR) {
+        elog("Failed to initialize renderer with code %d", err);
+        return err;
+    }
+
+    init_imgui(rndr, win_hndl);
+
+    // Setup our indice and vert buffer sbuffer
+    return err_code::RENDER_NO_ERROR;
+}
+
 void terminate_renderer(renderer *rndr)
 {
     ilog("Terminating");
@@ -1634,7 +1429,7 @@ void terminate_renderer(renderer *rndr)
 
     // Terminate all meshes
     for (int i = 0; i < rndr->meshes.slots.size; ++i) {
-        release_mesh(get_slot_current_handle(&rndr->meshes,i), rndr);
+        release_mesh(get_slot_current_handle(&rndr->meshes, i), rndr);
     }
     terminate_slot_pool(&rndr->meshes);
 
@@ -1697,6 +1492,277 @@ void terminate_renderer(renderer *rndr)
     terminate_arena(&rndr->frame_linear);
     terminate_arena(&rndr->frame_stack);
     terminate_arena(&rndr->persist_fl);
+}
+
+struct vert_attrib_desc
+{
+    u32 shader_location;
+    rformat fmt;
+};
+
+struct vert_stream_desc
+{
+    const char*dbg_name;
+    static_array<vert_attrib_desc, MAX_VERT_ATTRIBS> attribs;
+};
+
+struct geometry_vert_layout_desc {
+    static_array<vert_stream_desc, MAX_VERT_BINDINGS> streams;
+    u32 max_vert_count;
+};
+
+struct geometry_group_desc
+{
+    const char*dbg_name;
+    static_array<geometry_vert_layout_desc, MAX_GEOMETRY_LAYOUT_COUNT> layouts;
+    u32 max_ind_count;
+};
+
+intern u32 get_format_byte_size(rformat format)
+{
+    switch (format) {
+    // 128-bit formats (16 bytes per pixel)
+    case rformat::RGBA32_SFLOAT:
+    case rformat::RGBA32_UINT:
+    case rformat::RGBA32_SINT:
+        return 16;
+
+    // 96-bit formats (12 bytes per pixel)
+    case rformat::RGB32_SFLOAT:
+    case rformat::RGB32_UINT:
+    case rformat::RGB32_SINT:
+        return 12;
+
+    // 64-bit formats (8 bytes per pixel)
+    case rformat::RGBA16_SFLOAT:
+    case rformat::RGBA16_UNORM:
+    case rformat::RGBA16_SNORM:
+    case rformat::RGBA16_UINT:
+    case rformat::RGBA16_SINT:
+    case rformat::RG32_SFLOAT:
+    case rformat::RG32_UINT:
+    case rformat::RG32_SINT:
+        return 8;
+
+    // 48-bit formats (6 bytes per pixel)
+    case rformat::RGB16_SFLOAT:
+    case rformat::RGB16_UNORM:
+    case rformat::RGB16_SNORM:
+    case rformat::RGB16_UINT:
+    case rformat::RGB16_SINT:
+        return 6;
+
+    // 32-bit formats (4 bytes per pixel)
+    case rformat::RGBA8_SRGB:
+    case rformat::RGBA8_UNORM:
+    case rformat::RGBA8_SNORM:
+    case rformat::RGBA8_UINT:
+    case rformat::RGBA8_SINT:
+    case rformat::RG16_SFLOAT:
+    case rformat::RG16_UNORM:
+    case rformat::RG16_SNORM:
+    case rformat::RG16_UINT:
+    case rformat::RG16_SINT:
+    case rformat::R32_SFLOAT:
+    case rformat::R32_UINT:
+    case rformat::R32_SINT:
+        return 4;
+
+    // 24-bit formats (3 bytes per pixel)
+    case rformat::RGB8_SRGB:
+    case rformat::RGB8_UNORM:
+    case rformat::RGB8_SNORM:
+    case rformat::RGB8_UINT:
+    case rformat::RGB8_SINT:
+        return 3;
+
+    // 16-bit formats (2 bytes per pixel)
+    case rformat::RG8_SRGB:
+    case rformat::RG8_UNORM:
+    case rformat::RG8_SNORM:
+    case rformat::RG8_UINT:
+    case rformat::RG8_SINT:
+    case rformat::R16_SFLOAT:
+    case rformat::R16_UNORM:
+    case rformat::R16_SNORM:
+    case rformat::R16_UINT:
+    case rformat::R16_SINT:
+        return 2;
+
+    // 8-bit formats (1 byte per pixel)
+    case rformat::R8_SRGB:
+    case rformat::R8_UNORM:
+    case rformat::R8_SNORM:
+    case rformat::R8_UINT:
+    case rformat::R8_SINT:
+        return 1;
+
+    // Compressed formats (Handled as special cases)
+    // Note: For BC/ASTC, you generally want a get_block_size() function.
+    // Returning 0 or an assertion here forces the caller to handle
+    // the block-based nature of compressed data.
+    case rformat::RGBA8_SRGB_COMPRESSED:
+    case rformat::RGBA8_UNORM_COMPRESSED:
+    case rformat::RGB8_SRGB_COMPRESSED:
+    case rformat::RGB8_UNORM_COMPRESSED:
+    case rformat::RG8_UNORM_COMPRESSED:
+    case rformat::RG8_SNORM_COMPRESSED:
+    case rformat::R8_UNORM_COMPRESSED:
+    case rformat::R8_SNORM_COMPRESSED: {
+        // If these are BC1-BC3, they are technically 0.5 to 1 byte per pixel
+        // on average, but memory must be allocated in blocks.
+        asrt_break("Cannot get simple pixel size for compressed format. Use block size.");
+        return 0;
+    }
+
+    case rformat::INVALID:
+    default:
+        asrt_break("Invalid format");
+        return 0;
+    }
+}
+
+intern void teardown_geometry_stream_group(geometry_streams_group * gp, const vkr_context *vk)
+{
+    for (u32 i = 0; i < gp->vert_groups.size; ++i) {
+        vmaDestroyVirtualBlock(gp->vert_groups[i].vert_block);
+        for (u32 bufi = 0; bufi < gp->vert_groups[i].vert_buffers.size; ++bufi) {
+            vkr_terminate_buffer(&gp->vert_groups[i].vert_buffers[bufi].buffer, vk);
+        }
+    }
+    vmaDestroyVirtualBlock(gp->indices_block);
+    vkr_terminate_buffer(&gp->indice_buffer.buffer, vk);
+    *gp = {};
+}
+
+intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout, sizet cur_buffer_offset, const geometry_vert_layout_desc &desc, const vkr_context *vk) {
+    vkr_buffer_cfg alloc_cfg{};
+    alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    alloc_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
+    alloc_cfg.vma_alloc = &vk->inst.device.vma_alloc;
+    alloc_cfg.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    
+    layout->vert_layout.bindings.size = desc.streams.size;
+    layout->vert_buffers.size = desc.streams.size;
+
+    // Virtual block used for this layout entry - we use vert stream 0 as the guide for all other vert streams.. that is
+    // it dictates at what range (in vertices) each buffer uses for each mesh.. this is not the most "efficient" thing
+    // since other buffers might do better with space usage if they had their own block, but it allows us to bind all
+    // vert buffers at once and use them in shaders
+    VmaVirtualBlockCreateInfo ci{};    
+    
+    // Create the vert buffers
+    bool failed{false};
+    for (u32 stri = 0; stri < desc.streams.size && !failed; ++stri) {
+        auto cur_binding = &layout->vert_layout.bindings[stri];
+        auto cur_stream_desc = &desc.streams[stri];
+        auto cur_buffer = &layout->vert_buffers[stri];
+
+        cur_binding->binding = cur_buffer_offset + stri;
+        cur_binding->inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        sizet layout_attrib_offset = layout->vert_layout.attribs.size;
+        layout->vert_layout.attribs.size += cur_stream_desc->attribs.size;
+        
+        for (u32 atti = 0; atti < cur_stream_desc->attribs.size; ++atti) {
+            auto cur_attrib_desc = &cur_stream_desc->attribs[atti];
+            auto cur_attrib_layout = &layout->vert_layout.attribs[atti + layout_attrib_offset];
+
+            cur_attrib_layout->binding = cur_binding->binding;
+            cur_attrib_layout->format = get_vk_format(cur_attrib_desc.fmt);
+            cur_attrib_layout->location = cur_attrib_desc.shader_location;
+            cur_attrib_layout->offset = cur_binding->stride;
+            
+            cur_binding->stride += get_format_byte_size(cur_attrib_desc.fmt);                
+        }
+
+        strncpy(cur_buffer->dbg_name, cur_stream_desc->dbg_name, SMALL_STR_LEN-1);
+        
+        alloc_cfg.buffer_size = desc.max_vert_count * cur_binding->stride;
+        alloc_cfg.user_data = cur_buffer->dbg_name;
+
+        if (stri == 0) {
+            ci.size = alloc_cfg.buffer_size;
+        }
+
+        int result = vkr_init_buffer(&cur_buffer->buffer, alloc_cfg);
+        failed = result != err_code::VKR_NO_ERROR;
+        // layout->vert_layout.bindings[stri].stride =
+    }
+
+    // Create the virtual block using stream 0 as the guide (ci.size set in the loop above)
+    if (!failed) {
+        ci.pAllocationCallbacks = &vk->alloc_cbs;
+        int result = vmaCreateVirtualBlock(&ci, &layout->vert_block);
+        failed = result != VK_SUCCESS;
+        if (failed) {
+            wlog("Failed to create virtual block - error code: %d", result);
+        }
+    }
+    
+}
+
+u32 create_geometry_group(renderer *rndr, const geometry_group_desc &desc)
+{
+    asrt(desc.max_ind_count > 0);
+    asrt(desc.layouts.size > 0);
+    asrt(desc.layouts[0].streams.size > 0);
+    asrt(desc.layouts[0].streams[0].attribs.size > 0);
+    asrt(rndr->geom_groups.size < rndr->geom_groups.capacity);
+
+    u32 gp_ind = rndr->geom_groups.size;
+    auto cur_group = &rndr->geom_groups.data[gp_ind];
+    ++rndr->geom_groups.size;
+
+    // Create all vert layout groups
+    cur_group->vert_groups.size = desc.layouts.size;
+    sizet buffer_offset;
+    bool failed{false};
+    for (int i = 0; i < desc.layouts.size && !failed; ++i) {
+        failed = !fill_geometry_layout_entry(&cur_group->vert_groups[i], buffer_offset, desc.layouts[i], &rndr->vk);
+        buffer_offset += cur_group->vert_groups[i].vert_buffers.size;
+    }
+
+    // Create the indice buffer and virtual block for the indice buffer
+    if (!failed) {
+        // Set debug name - ind buffer stores entry for whole geometry layout
+        strncpy(cur_group->indice_buffer.dbg_name, desc.dbg_name, SMALL_STR_LEN-1);
+        
+        vkr_buffer_cfg alloc_cfg{};
+        alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        alloc_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
+        alloc_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+        alloc_cfg.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        alloc_cfg.buffer_size = desc.max_ind_count * sizeof(ind_t);
+        alloc_cfg.user_data = cur_group->indice_buffer.dbg_name;
+        int result = vkr_init_buffer(&cur_group->indice_buffer.buffer, alloc_cfg);
+        failed = result != err_code::VKR_NO_ERROR;
+        if (!failed) {
+            // Create the virtual block for the indice buffer
+            VmaVirtualBlockCreateInfo ci{};
+            ci.size = alloc_cfg.buffer_size;
+            ci.pAllocationCallbacks = &rndr->vk.alloc_cbs;
+            result = vmaCreateVirtualBlock(&ci, &cur_group->indices_block);
+            failed = result != VK_SUCCESS;
+            if (failed) {
+                wlog("Failed to create virtual block - error code: %d", result);
+            }
+        }
+    }
+
+    if (failed) {
+        teardown_geometry_stream_group(cur_group, &rndr->vk);
+        --rndr->geom_groups.size;
+        return INVALID_ID;
+    }
+    
+    return gp_ind;
+}
+
+rmesh_handle create_mesh(u32 geom_group, u32 layout, const void **vert_data, u32 vert_count, void *ind_data, u32 ind_count, const rsubmesh_range *submeshes, u32 submesh_cnt) {
+    // Expect data to be laid out how?
+    // data should point to an array of void*, each pointing to stream data as created 
 }
 
 } // namespace nslib
