@@ -4,7 +4,10 @@
 namespace nslib
 {
 // Rendering resource id
-using resid = u32;
+using runtime_id = u32;
+using resource_id = u64;
+
+//using rid
 // 20 million triangles... thats a lot - works on desktop
 const u32 MAX_STATIC_TRIANGLE_COUNT = 2000000;
 const u32 MAX_SKINNED_TRIANGLE_COUNT = 200000;
@@ -36,6 +39,8 @@ const u8 MAX_GEOMETRY_STREAM_GROUP_COUNT = 8;
 const u8 MAX_BP_SUBPASS_COUNT = 16;
 // Max number of blueprint passes in a render blueprint
 const u8 MAX_BP_PASS_COUNT = 16;
+// Max number of blueprints
+const u8 MAX_BP_COUNT = 8;
 // Max number of rendering texture resources supported
 const u8 MAX_TEXTURE_RRESOURCE_COUNT = 16;
 // Max number of rendering buffer resources supported

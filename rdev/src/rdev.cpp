@@ -148,7 +148,7 @@ void register_meshes_with_renderer(asset_pool<mesh> *meshes, renderer *rndr, mem
         asrt(rm.item->skinned_verts_info.size == cinf.vert_count || rm.item->skinned_verts_info.size == 0);
 
         // Allocate temporary buffers for everything
-        rsubmesh_range *tmp_smeshes = mem_alloc<rsubmesh_range>(arena, cinf.sm_count);
+        rsubgeom_range *tmp_smeshes = mem_alloc<rsubgeom_range>(arena, cinf.sm_count);
         rmesh_vert_pos_col *tmp_pos_cols = mem_alloc<rmesh_vert_pos_col>(arena, cinf.vert_count);
         rmesh_vert_norm_tan_uv *tmp_norm_tan_uvs = mem_alloc<rmesh_vert_norm_tan_uv>(arena, cinf.vert_count);
         rmesh_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rmesh_vert_bone_weights_ids>(arena, rm.item->skinned_verts_info.size);

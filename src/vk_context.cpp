@@ -972,7 +972,7 @@ int vkr_init_render_pass(VkRenderPass *hndl, const vkr_rpass_cfg &cfg, const vkr
     arr_init(&subpasses, vk->cfg.arenas.command_arena);
     arr_resize(&subpasses, cfg.subpasses.size);
 
-    for (int i = 0; i < cfg.subpasses.size; ++i) {
+    for (u32 i = 0; i < cfg.subpasses.size; ++i) {
         subpasses[i].pipelineBindPoint = cfg.subpasses[i].pipeline_bind_point;
 
         subpasses[i].colorAttachmentCount = (u32)cfg.subpasses[i].color_attachments.size;
@@ -994,7 +994,7 @@ int vkr_init_render_pass(VkRenderPass *hndl, const vkr_rpass_cfg &cfg, const vkr
             subpasses[i].pResolveAttachments = cfg.subpasses[i].resolve_attachments.data;
         }
 
-        subpasses[i].pDepthStencilAttachment = cfg.subpasses[i].depth_stencil_attachment;
+        subpasses[i].pDepthStencilAttachment = &cfg.subpasses[i].depth_stencil_attachment;
     }
 
     VkRenderPassCreateInfo rpass_info{};

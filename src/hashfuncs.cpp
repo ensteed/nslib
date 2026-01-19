@@ -426,9 +426,8 @@ inline u64 xxh3_mul128_fold64(u64 lhs, u64 rhs)
 #endif
 }
 
-u64 xxh3(const char *input)
+u64 xxh3(const char *input, sizet len)
 {
-    size_t len = strlen(input);
     u64 acc = len * XXH3_PRIME64_1;
 
     // Process input in 16-byte chunks (Scalar version)
@@ -551,15 +550,29 @@ u64 hash_ptr_xxh64(const void *data, sizet len, u64 seed0, u64 seed1)
     return xxh64(data, len, seed0);
 }
 
-u64 hash_ptr_xxh3(const void *data, sizet, u64, u64)
+u64 hash_ptr_xxh3(const void *data, sizet len)
 {
-    return xxh3((const char*)data);
+    return xxh3((const char *)data, len);
 }
 
-u64 hash_type(const cstr &key, u64 seed0, u64 seed1)
+u64 hash_type(const void *data, sizet sz)
 {
-    u64 ret = hash_ptr_xxh64(key, strlen(key), seed0, seed1);
-    return ret;
+    return hash_ptr_xxh3(data, sz);
+}
+
+u64 hash_type(const void *data, sizet sz, u64, u64)
+{
+    return hash_ptr_xxh3(data, sz);
+}
+
+u64 hash_type(const cstr &key, u64, u64)
+{
+    return xxh3(key, strlen(key));
+}
+
+u64 hash_type(const cstr &key)
+{
+    return xxh3(key, strlen(key));
 }
 
 } // namespace nslib

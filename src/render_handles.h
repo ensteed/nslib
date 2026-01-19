@@ -14,7 +14,7 @@ using rmaterial_handle = slot_handle<rmaterial_info>;
 struct rtechnique_info;
 using rtechnique_handle = slot_handle<rtechnique_info>;
 
-struct rmesh_info;
-using rmesh_handle = slot_handle<rmesh_info>;
+struct rgeom_info;
+using rgeom_handle = slot_handle<rgeom_info>;
 
 } // namespace nslib

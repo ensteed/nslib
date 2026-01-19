@@ -14,30 +14,13 @@ namespace nslib
 struct camera;
 struct transform;
 
-enum rvert_stream
-{
-    RVERT_STREAM_POS_COL,
-    RVERT_STREAM_NORM_TAN_UV,
-    RVERT_STREAM_SKINNED_POS_COL,
-    RVERT_STREAM_SKINNED_NORM_TAN_UV,
-    RVERT_STREAM_SKINNED_BONES_WEIGHT_ID,
-    RVERT_STREAM_COUNT,
-};
-
-enum rvert_layout : u32
-{
-    RVERT_LAYOUT_STATIC_MESH,
-    RVERT_LAYOUT_SKINNED_MESH,
-    RVERT_LAYOUT_COUNT
-};
-
 enum rsampler_type : u32
 {
     RSAMPLER_TYPE_LINEAR_REPEAT,
     RSAMPLER_TYPE_COUNT
 };
 
-struct rsubmesh_range
+struct rsubgeom_range
 {
     // Indice offset
     sizet offset;
@@ -45,49 +28,11 @@ struct rsubmesh_range
     sizet count;
 };
 
-struct rmesh_vert_pos_col
-{
-    vec3 pos;
-    u32 col;
-};
-
-struct rmesh_vert_norm_tan_uv
-{
-    vec3 norm;
-    vec3 tangent;
-    vec2 uv;
-};
-
-struct rmesh_vert_bone_weights_ids
-{
-    // TODO: Pack these to unorm weights and u8 bonde ids
-    vec4 bone_weights;
-    uvec4 bone_ids;
-};
-
 using ind_t = u16;
 
 enum struct rmesh_topology : u8
 {
     RMESH_TOPOLOGY_TRIANGLE_STRIP,
-};
-
-struct rmesh_create_info
-{
-    const char *name;
-    const rmesh_vert_pos_col *pos_col;
-    const rmesh_vert_norm_tan_uv *norm_tan_uv;
-    // If weight ids are none null then the mesh is skinned
-    const rmesh_vert_bone_weights_ids *weights_ids;
-    sizet vert_count;
-
-    const ind_t *inds;
-    sizet ind_count;
-
-    const rsubmesh_range *sm_info;
-    sizet sm_count;
-
-    rmesh_topology topology;
 };
 
 enum struct rformat
@@ -190,7 +135,6 @@ struct rtexture_create_info
 
 struct rtechnique_create_info
 {
-    rvert_layout vlayout;
 };
 
 enum rmaterial_texture_slot
@@ -261,22 +205,21 @@ struct material_ubo_data
 };
 
 // We use a single vertex and indice buffer for all meshes
-struct rmesh_info
+struct rgeom_info
 {
     // Attached to the vert_mem allocation
     small_str name;
 
-    // Mem for pos buf that will need to be released in pos/buf
+    // Mem for stream 0 of the vert layout
     VmaVirtualAllocation vert_mem{VK_NULL_HANDLE};
 
-    // This is the block that was used for the vert virtual block allocations (either static or skinned mesh pos/col
-    // stream block)
+    // This is the block that was used for the virtual block allocation above
     VmaVirtualBlock vert_block;
 
     // This is determined by taking the byte offset / sizeof(stream element)
     u32 vert_offset;
 
-    // Mem for pos buf that will need to be released in pos/buf
+    // Mem for index stream
     VmaVirtualAllocation ind_mem{VK_NULL_HANDLE};
 
     // This is the block that was used for the ind virtual block allocations
@@ -286,7 +229,7 @@ struct rmesh_info
     u32 ind_offset;
 
     // Indice range for each submesh
-    static_array<rsubmesh_range, MAX_SUBMESH_COUNT> submesh_vert_ind_counts;
+    static_array<rsubgeom_range, MAX_SUBMESH_COUNT> subgeom_vert_ind_counts;
 };
 
 struct imgui_ctxt;
@@ -337,15 +280,6 @@ struct frame_context
     VkSemaphore image_avail;
 };
 
-struct geometry_buffer_info
-{
-    VmaVirtualBlock static_mesh_block{VK_NULL_HANDLE};
-    VmaVirtualBlock skinned_mesh_block{VK_NULL_HANDLE};
-    VmaVirtualBlock indices_block{VK_NULL_HANDLE};
-    vkr_buffer vert_buffers[RVERT_STREAM_COUNT];
-    vkr_buffer ind_buffer;
-};
-
 struct stream_buffer_entry
 {
     small_str dbg_name;
@@ -356,13 +290,35 @@ struct geometry_buffer_layout_entry
 {
     vkr_vertex_layout vert_layout;
     VmaVirtualBlock vert_block;
-    static_array<stream_buffer_entry, 16> vert_buffers;
+    static_array<stream_buffer_entry, 16> vert_streams;
 };
 
-struct geometry_streams_group {
-    static_array<geometry_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> vert_groups{};
+// Geometry stream groups all share the same indice buffer, so can all bound bound at the same time
+struct geom_streams_group {
+    static_array<geometry_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
-    stream_buffer_entry indice_buffer;
+    stream_buffer_entry indice_stream;
+};
+
+struct rgeom_create_info
+{
+    const char *name{};
+    // Which geometry streams group
+    slot_handle<geom_streams_group> group{};
+    // The specific layout to use within the geometry streams group
+    u32 layout{};
+    // Number of verts in this geometry. Each stream must have the same vert count
+    u32 vert_count{};
+    // Should be an array of void* mem pointers - the array size matching the number of vert streams specified in layout
+    const void *const *vert_data{};
+    // Indice data
+    const void *ind_data{};
+    // The number of indices in this geometry
+    u32 ind_count{};
+    // The indice range for each sub geometry
+    const rsubgeom_range *subgeoms{};
+    // The total number of sub geometries
+    u32 subgeom_cnt{};
 };
 
 struct rview
@@ -401,7 +357,7 @@ struct renderer
     slot_pool<rtechnique_info> techniques{};
     slot_pool<rmaterial_info> materials{};
     slot_pool<rtexture_info> textures{};
-    slot_pool<rmesh_info> meshes{};
+    slot_pool<rgeom_info> geometry{};
 
     // Frames in flight
     static_array<frame_context, MAX_FRAMES_IN_FLIGHT> fifs{};
@@ -409,13 +365,10 @@ struct renderer
     // Global descriptor set layouts (used for creating descriptor sets and pipelines)
     static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
 
-    // Globabl geometry attribute buffers
-    geometry_buffer_info geometry_buffers;
+    // Really a single
+    slot_pool<geom_streams_group> geom_groups;
 
-    // Really a single 
-    static_array<geometry_streams_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
-
-    // Global pipeline layout
+    // global pipeline layout
     VkPipelineLayout g_layout{VK_NULL_HANDLE};
 
     // Transient pool for image transfers and such
@@ -423,9 +376,6 @@ struct renderer
 
     // Global texture samplers
     static_array<rsampler_info, RSAMPLER_TYPE_COUNT> samplers{};
-
-    // Vert layout presets
-    static_array<vkr_vertex_layout, RVERT_LAYOUT_COUNT> vertex_layouts;
 
     // ImGUI context
     imgui_ctxt imgui{};
@@ -436,6 +386,10 @@ struct renderer
     // This is incremented every frame there are no resize events
     f64 no_resize_frames;
 
+    // Render blueprints - last one is active one
+    hmap<resource_id, runtime_id> blueprint_id_map{};
+    static_array<render_blueprint, MAX_BP_COUNT> blueprints{};
+
     // TEMP
     rtechnique_handle default_technique{};
     rmaterial_handle default_mat{};
@@ -443,7 +397,8 @@ struct renderer
     rtexture_handle swapchain_fb_depth_stencil{};
 };
 
-rmesh_handle create_mesh(const rmesh_create_info &cminfo, renderer *rndr);
+rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci);
+
 rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rndr);
 rtexture_handle create_rtechnique(const rtechnique_create_info &ctinfo, renderer *rndr);
 rtexture_handle create_material(const rmaterial_create_info &ctinfo, renderer *rndr);

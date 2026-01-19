@@ -45,7 +45,7 @@ u64 murmurhash3(const void *key, sizet len, u32 seed);
 //-----------------------------------------------------------------------------
 u64 xxh64(const void *data, sizet len, u64 seed);
 
-u64 xxh3(const char *input);
+u64 xxh3(const char *input, sizet len);
 
 void crc32(const void *key, int len, u32 seed, void *out);
 
@@ -57,7 +57,7 @@ u64 hash_ptr_murmur(const void *data, sizet len, u64 seed0, u64 seed1);
 
 u64 hash_ptr_xxh64(const void *data, sizet len, u64 seed0, u64 seed1);
 
-u64 hash_ptr_xxh3(const void *data, sizet len, u64 seed0, u64 seed1);
+u64 hash_ptr_xxh3(const void *data, sizet len);
 
 // Hash strings
 
@@ -67,9 +67,19 @@ inline u64 hash_type(const T &key, u64, u64) {
     return (T)key;
 }
 
-u64 hash_type(const void*, u64, u64);
+template<integral T>
+inline u64 hash_type(const T &key) {
+    return (T)key;
+}
+
+u64 hash_type(const void*, sizet sz, u64, u64);
+
+u64 hash_type(const void*, sizet sz);
 
 u64 hash_type(const cstr&, u64, u64);
+
+u64 hash_type(const cstr&);
+
 
 
 } // namespace nslib

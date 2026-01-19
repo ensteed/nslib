@@ -109,7 +109,7 @@ struct mesh
     array<submesh_range> sm_info;
     mesh_topology topology;
 
-    rmesh_handle rhndl;
+    rgeom_handle rhndl;
 };
 
 pup_func(mesh)

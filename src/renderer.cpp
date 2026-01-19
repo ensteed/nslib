@@ -182,12 +182,12 @@ intern int setup_render_passes(renderer *rndr)
     arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
 
     rpass_info rpi{};
-    int ret = vkr_init_render_pass(&rpi.vk_hndl, rp_cfg, vk);
-    if (ret == err_code::VKR_NO_ERROR) {
+    int geom_hndl = vkr_init_render_pass(&rpi.vk_hndl, rp_cfg, vk);
+    if (geom_hndl == err_code::VKR_NO_ERROR) {
         hmap_set(&rndr->rpass_name_map, FWD_RPASS, rndr->rpasses.size);
         arr_push_back(&rndr->rpasses, rpi);
     }
-    return ret;
+    return geom_hndl;
 }
 
 intern void fill_default_pipeline_config(vkr_pipeline_cfg *cfg, renderer *rndr)
@@ -278,222 +278,6 @@ intern int setup_diffuse_technique(renderer *rndr)
     auto mat_item = get_slot_item(&rndr->materials, rndr->default_mat);
 
     return err_code::RENDER_NO_ERROR;
-}
-
-intern void teardown_geometry_buffers(renderer *rndr)
-{
-    // Destroy virtual blocks
-    vmaDestroyVirtualBlock(rndr->geometry_buffers.indices_block);
-    vmaDestroyVirtualBlock(rndr->geometry_buffers.skinned_mesh_block);
-    vmaDestroyVirtualBlock(rndr->geometry_buffers.static_mesh_block);
-    for (s32 i = 0; i < RVERT_STREAM_COUNT; ++i) {
-        auto cur_buf = &rndr->geometry_buffers.vert_buffers[i];
-        vkr_terminate_buffer(cur_buf, &rndr->vk);
-    }
-    vkr_terminate_buffer(&rndr->geometry_buffers.ind_buffer, &rndr->vk);
-    rndr->geometry_buffers = {};
-}
-
-intern const char *RVERT_STREAM_NAMES[] = {
-    "pos-col",
-    "norm-tan-uv",
-    "skinned-pos-col",
-    "skinned-norm-tan-uv",
-    "skinned-bones-weight-id",
-};
-
-intern const char *RIND_STREAM_NAME = "indices";
-
-intern sizet RVERT_STREAM_BUFFER_SZS[] = {
-    MAX_STATIC_MESH_VERT_COUNT * sizeof(rmesh_vert_pos_col),
-    MAX_STATIC_MESH_VERT_COUNT * sizeof(rmesh_vert_norm_tan_uv),
-    MAX_SKINNED_MESH_VERT_COUNT * sizeof(rmesh_vert_pos_col),
-    MAX_SKINNED_MESH_VERT_COUNT * sizeof(rmesh_vert_norm_tan_uv),
-    MAX_SKINNED_MESH_VERT_COUNT * sizeof(rmesh_vert_bone_weights_ids),
-};
-
-intern int setup_geometry_buffers(renderer *rndr)
-{
-    asrt(rndr);
-    auto vk = &rndr->vk;
-    auto dev = &vk->inst.device;
-
-    vkr_buffer_cfg alloc_cfg{};
-    alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    alloc_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
-    alloc_cfg.vma_alloc = &dev->vma_alloc;
-    alloc_cfg.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-    // Create the vert buffers
-    bool failed{false};
-    for (s32 i = 0; i < RVERT_STREAM_COUNT && !failed; ++i) {
-        alloc_cfg.buffer_size = RVERT_STREAM_BUFFER_SZS[i];
-        alloc_cfg.user_data = (void *)RVERT_STREAM_NAMES[i];
-        auto cur_buf = &rndr->geometry_buffers.vert_buffers[i];
-        int result = vkr_init_buffer(cur_buf, alloc_cfg);
-        failed = result != err_code::VKR_NO_ERROR;
-    }
-
-    // Create the virtual block for static meshes (using pos/col stream as the BOSS)
-    if (!failed) {
-        VmaVirtualBlockCreateInfo ci{};
-        ci.size = RVERT_STREAM_BUFFER_SZS[RVERT_STREAM_POS_COL];
-        ci.pAllocationCallbacks = &vk->alloc_cbs;
-        int result = vmaCreateVirtualBlock(&ci, &rndr->geometry_buffers.static_mesh_block);
-        failed = result != VK_SUCCESS;
-        if (failed) {
-            wlog("Failed to create virtual block - error code: %d", result);
-        }
-    }
-
-    // Create the virtual block for skinned meshes (using pos/col stream as the BOSS)
-    if (!failed) {
-        VmaVirtualBlockCreateInfo ci{};
-        ci.size = RVERT_STREAM_BUFFER_SZS[RVERT_STREAM_SKINNED_POS_COL];
-        ci.pAllocationCallbacks = &vk->alloc_cbs;
-        int result = vmaCreateVirtualBlock(&ci, &rndr->geometry_buffers.skinned_mesh_block);
-        failed = result != VK_SUCCESS;
-        if (failed) {
-            wlog("Failed to create virtual block - error code: %d", result);
-        }
-    }
-
-    // Create the indice buffer and virtual block for the indice buffer
-    if (!failed) {
-        alloc_cfg.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        alloc_cfg.buffer_size = (MAX_STATIC_MESH_VERT_COUNT + MAX_SKINNED_MESH_VERT_COUNT) * sizeof(ind_t);
-        alloc_cfg.user_data = (void *)RIND_STREAM_NAME;
-
-        auto cur_buf = &rndr->geometry_buffers.ind_buffer;
-        int result = vkr_init_buffer(cur_buf, alloc_cfg);
-        failed = result != err_code::VKR_NO_ERROR;
-        if (!failed) {
-            VmaVirtualBlockCreateInfo ci{};
-            ci.size = alloc_cfg.buffer_size;
-            ci.pAllocationCallbacks = &vk->alloc_cbs;
-            result = vmaCreateVirtualBlock(&ci, &rndr->geometry_buffers.indices_block);
-            failed = result != VK_SUCCESS;
-            if (failed) {
-                wlog("Failed to create virtual block - error code: %d", result);
-            }
-        }
-    }
-
-    if (failed) {
-        teardown_geometry_buffers(rndr);
-        return err_code::RENDER_SETUP_GEOMETRY_BUFFERS_FAIL;
-    }
-    return err_code::RENDER_NO_ERROR;
-}
-
-intern bool release_mesh(rmesh_handle hndl, renderer *rndr)
-{
-    auto sl_item = get_slot_item(&rndr->meshes, hndl);
-    vmaVirtualFree(sl_item->vert_block, sl_item->vert_mem);
-    vmaVirtualFree(sl_item->ind_block, sl_item->ind_mem);
-    *sl_item = {};
-    return release_slot(&rndr->meshes, hndl);
-}
-
-rmesh_handle create_mesh(const rmesh_create_info &cminfo, renderer *rndr)
-{
-    asrt(rndr);
-    asrt(cminfo.sm_info);
-    asrt(cminfo.pos_col);
-    asrt(cminfo.inds);
-
-    VkCommandBuffer tmp_cmd_buf;
-    int result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
-    if (result != err_code::VKR_NO_ERROR) {
-        return {};
-    }
-    auto tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
-
-    rmesh_handle mhndl = acquire_slot(&rndr->meshes);
-    auto mesh_item = get_slot_item(&rndr->meshes, mhndl);
-
-    // Just in case we ensure null terminated
-    strncpy(mesh_item->name, cminfo.name, SMALL_STR_LEN - 1);
-    mesh_item->name[SMALL_STR_LEN - 1] = 0;
-
-    // We use vma to do memory management for us using a vk buffer as a virtual block. For non skinned meshes (where
-    // mdata.weight_ids is nullptr), we use the pos/col stream as the "leader" of the other blocks. That is we just
-    // insert stuff in the other
-    VmaVirtualAllocationCreateInfo ci{};
-    vkr_buffer *vert_streams = rndr->geometry_buffers.vert_buffers;
-    vkr_buffer *pos_col_stream = !cminfo.weights_ids ? &vert_streams[RVERT_STREAM_POS_COL] : &vert_streams[RVERT_STREAM_SKINNED_POS_COL];
-    vkr_buffer *norm_tan_uv_stream =
-        !cminfo.weights_ids ? &vert_streams[RVERT_STREAM_NORM_TAN_UV] : &vert_streams[RVERT_STREAM_SKINNED_NORM_TAN_UV];
-    vkr_buffer *bones_weight_id_stream = &vert_streams[RVERT_STREAM_SKINNED_BONES_WEIGHT_ID];
-    vkr_buffer *ind_stream = &rndr->geometry_buffers.ind_buffer;
-
-    // Set the mesh item virtual blocks
-    mesh_item->vert_block = !cminfo.weights_ids ? rndr->geometry_buffers.static_mesh_block : rndr->geometry_buffers.skinned_mesh_block;
-    mesh_item->ind_block = rndr->geometry_buffers.indices_block;
-
-    ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
-    ci.pUserData = mesh_item->name;
-
-    // Alignment really should be to 16 byte boundaries
-    ci.alignment = sizeof(rmesh_vert_pos_col);
-
-    // Cache byte size to use later
-    VkDeviceSize pos_col_byte_size = cminfo.vert_count * ci.alignment;
-    ci.size = pos_col_byte_size;
-
-    // Fill the vert mem and byte offset
-    VkDeviceSize pos_col_byte_offset;
-    vmaVirtualAllocate(mesh_item->vert_block, &ci, &mesh_item->vert_mem, &pos_col_byte_offset);
-
-    // Calculate the vertex offset from the byte offset - assert that our byte offset is exactly a multiple of alignment
-    // or else everything will get messed up
-    asrt(pos_col_byte_offset % ci.alignment == 0);
-    mesh_item->vert_offset = pos_col_byte_offset / ci.alignment;
-
-    // Reuse and update our vma virtual alloc create struct - need to update alignment and size
-    ci.alignment = sizeof(ind_t);
-
-    // Cache byte size to use later
-    VkDeviceSize ind_byte_size = cminfo.ind_count * ci.alignment;
-    ci.size = ind_byte_size;
-
-    // Fill the ind mem and byte offset for ind buf
-    VkDeviceSize ind_byte_offset;
-    vmaVirtualAllocate(mesh_item->ind_block, &ci, &mesh_item->ind_mem, &ind_byte_offset);
-
-    // Calculate the ind offset from the byte offset - assert that our byte offset is exactly a multiple of alignment
-    // or else everything will get messed up
-    asrt(ind_byte_offset % ci.alignment == 0);
-    mesh_item->ind_offset = ind_byte_offset / ci.alignment;
-
-    sizet vbuf_cnt = !cminfo.weights_ids ? 3 : 4;
-
-    // Align up all our data so a for i loop can just straight copy this stuff
-    const void *src_data[] = {cminfo.pos_col, cminfo.norm_tan_uv, cminfo.inds, cminfo.weights_ids};
-    vkr_buffer *dest_streams[] = {pos_col_stream, norm_tan_uv_stream, ind_stream, bones_weight_id_stream};
-    VkDeviceSize byte_offsets[] = {pos_col_byte_offset,
-                                   sizeof(rmesh_vert_norm_tan_uv) * mesh_item->vert_offset,
-                                   ind_byte_offset,
-                                   sizeof(rmesh_vert_bone_weights_ids) * mesh_item->vert_offset};
-    VkDeviceSize byte_sizes[] = {pos_col_byte_size,
-                                 sizeof(rmesh_vert_norm_tan_uv) * cminfo.vert_count,
-                                 sizeof(ind_t) * cminfo.ind_count,
-                                 sizeof(rmesh_vert_bone_weights_ids) * cminfo.vert_count};
-
-    for (u32 i = 0; i < vbuf_cnt; ++i) {
-        // Do a sub allocation from the larger geometry buffer and save the offset
-        VkBufferCopy region{};
-        region.size = byte_sizes[i];
-        region.dstOffset = byte_offsets[i];
-        result = vkr_stage_and_upload_buffer_data(dest_streams[i], src_data[i], &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
-        if (result != err_code::VKR_NO_ERROR) {
-            release_mesh(mhndl, rndr);
-            return {};
-        }
-    }
-
-    vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
-    return mhndl;
 }
 
 intern int setup_global_samplers(renderer *rndr)
@@ -647,8 +431,9 @@ intern VkFormat get_vk_format(rformat fmt)
         return VK_FORMAT_R32_UINT;
     case (rformat::R32_SINT):
         return VK_FORMAT_R32_SINT;
+    default:
+        return VK_FORMAT_UNDEFINED;
     }
-    return VK_FORMAT_UNDEFINED;
 }
 
 rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rndr)
@@ -804,115 +589,6 @@ intern int setup_global_pipeline_layout(renderer *rndr)
     return vkr_init_pipeline_layout(&rndr->g_layout, cfg, &rndr->vk);
 }
 
-void setup_vertex_layout_presets(renderer *rndr)
-{
-    /////////////////////////////
-    // STATIC MESH VERT LAYOUT //
-    /////////////////////////////
-    auto sm_layout = &rndr->vertex_layouts[RVERT_LAYOUT_STATIC_MESH];
-
-    // Strides (2 streams for static meshes)
-    sm_layout->bindings.size = 2;
-
-    // Pos/color stream
-    sm_layout->bindings[0].binding = RVERT_STREAM_POS_COL;
-    sm_layout->bindings[0].stride = sizeof(rmesh_vert_pos_col);
-    sm_layout->bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    // Norm/tan/uv stream
-    sm_layout->bindings[1].binding = RVERT_STREAM_NORM_TAN_UV;
-    sm_layout->bindings[1].stride = sizeof(rmesh_vert_norm_tan_uv);
-    sm_layout->bindings[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    // Attributes - 5 total
-    sm_layout->attribs.size = 5;
-
-    // Positions
-    sm_layout->attribs[0].binding = RVERT_STREAM_POS_COL;
-    sm_layout->attribs[0].location = 0;
-    sm_layout->attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    sm_layout->attribs[0].offset = offsetof(rmesh_vert_pos_col, pos);
-
-    // Colors
-    sm_layout->attribs[1].binding = RVERT_STREAM_POS_COL;
-    sm_layout->attribs[1].location = 1;
-    sm_layout->attribs[1].format = VK_FORMAT_R8G8B8A8_UNORM;
-    sm_layout->attribs[1].offset = offsetof(rmesh_vert_pos_col, col);
-
-    // Normals
-    sm_layout->attribs[2].binding = RVERT_STREAM_NORM_TAN_UV;
-    sm_layout->attribs[2].location = 2;
-    sm_layout->attribs[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-    sm_layout->attribs[2].offset = offsetof(rmesh_vert_norm_tan_uv, norm);
-
-    // Tangents
-    sm_layout->attribs[3].binding = RVERT_STREAM_NORM_TAN_UV;
-    sm_layout->attribs[3].location = 3;
-    sm_layout->attribs[3].format = VK_FORMAT_R32G32B32_SFLOAT;
-    sm_layout->attribs[3].offset = offsetof(rmesh_vert_norm_tan_uv, tangent);
-
-    // UV Coords
-    sm_layout->attribs[4].binding = RVERT_STREAM_NORM_TAN_UV;
-    sm_layout->attribs[4].location = 4;
-    sm_layout->attribs[4].format = VK_FORMAT_R32G32_SFLOAT;
-    sm_layout->attribs[4].offset = offsetof(rmesh_vert_norm_tan_uv, uv);
-
-    /////////////////////////
-    // SKINNED MESH LAYOUT //
-    /////////////////////////
-    auto skinm_layout = &rndr->vertex_layouts[RVERT_LAYOUT_SKINNED_MESH];
-
-    // Strides (3 stream total). The first two streams are the same stride/inputRate as static mesh
-    skinm_layout->bindings.size = 3;
-
-    // Pos/color stream
-    skinm_layout->bindings[0] = sm_layout->bindings[0];
-    skinm_layout->bindings[0].binding = RVERT_STREAM_SKINNED_POS_COL;
-
-    // Norm/tan/uv stream
-    skinm_layout->bindings[1] = sm_layout->bindings[1];
-    skinm_layout->bindings[1].binding = RVERT_STREAM_SKINNED_NORM_TAN_UV;
-
-    // Bone weights/ids stream
-    skinm_layout->bindings[2].binding = RVERT_STREAM_SKINNED_BONES_WEIGHT_ID;
-    skinm_layout->bindings[2].stride = sizeof(rmesh_vert_bone_weights_ids);
-    skinm_layout->bindings[2].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    // Attributes - 7 total, first 5 are the same as the static meshes except for binding
-    skinm_layout->attribs.size = 7;
-
-    // Positions
-    skinm_layout->attribs[0] = sm_layout->attribs[0];
-    skinm_layout->attribs[0].binding = RVERT_STREAM_SKINNED_POS_COL;
-
-    // Colors
-    skinm_layout->attribs[1] = sm_layout->attribs[1];
-    skinm_layout->attribs[1].binding = RVERT_STREAM_SKINNED_POS_COL;
-
-    // Normals
-    skinm_layout->attribs[2] = sm_layout->attribs[2];
-    skinm_layout->attribs[2].binding = RVERT_STREAM_SKINNED_NORM_TAN_UV;
-
-    // Tangents
-    skinm_layout->attribs[3] = sm_layout->attribs[3];
-    skinm_layout->attribs[3].binding = RVERT_STREAM_SKINNED_NORM_TAN_UV;
-
-    // UV Coords
-    skinm_layout->attribs[4] = sm_layout->attribs[4];
-    skinm_layout->attribs[4].binding = RVERT_STREAM_SKINNED_NORM_TAN_UV;
-
-    // Bone weights
-    skinm_layout->attribs[5].binding = RVERT_STREAM_SKINNED_BONES_WEIGHT_ID;
-    skinm_layout->attribs[5].location = 5;
-    skinm_layout->attribs[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    skinm_layout->attribs[5].offset = offsetof(rmesh_vert_bone_weights_ids, bone_weights);
-
-    // Bone ids
-    skinm_layout->attribs[6].binding = RVERT_STREAM_SKINNED_BONES_WEIGHT_ID;
-    skinm_layout->attribs[6].location = 6;
-    skinm_layout->attribs[6].format = VK_FORMAT_R32G32B32A32_UINT;
-    skinm_layout->attribs[6].offset = offsetof(rmesh_vert_bone_weights_ids, bone_ids);
-}
 
 intern int setup_rendering(renderer *rndr)
 {
@@ -937,8 +613,6 @@ intern int setup_rendering(renderer *rndr)
         elog("Failed to setup global pipeline layout");
         return err;
     }
-
-    setup_vertex_layout_presets(rndr);
 
     err = setup_diffuse_technique(rndr);
     if (err != err_code::VKR_NO_ERROR) {
@@ -1368,7 +1042,7 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
     init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->meshes, MAX_MESH_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->geometry, MAX_MESH_COUNT, &rndr->persist_fl);
     dlog("HERE");
     // Render pass names
     hmap_init(&rndr->rpass_name_map, hash_type, &rndr->persist_fl);
@@ -1428,10 +1102,10 @@ void terminate_renderer(renderer *rndr)
     terminate_imgui(rndr);
 
     // Terminate all meshes
-    for (int i = 0; i < rndr->meshes.slots.size; ++i) {
-        release_mesh(get_slot_current_handle(&rndr->meshes, i), rndr);
+    for (int i = 0; i < rndr->geometry.slots.size; ++i) {
+        release_mesh(get_slot_current_handle(&rndr->geometry, i), rndr);
     }
-    terminate_slot_pool(&rndr->meshes);
+    terminate_slot_pool(&rndr->geometry);
 
     // Terminate all images and image views
     for (int i = 0; i < rndr->textures.slots.size; ++i) {
@@ -1502,18 +1176,19 @@ struct vert_attrib_desc
 
 struct vert_stream_desc
 {
-    const char*dbg_name;
+    const char *dbg_name;
     static_array<vert_attrib_desc, MAX_VERT_ATTRIBS> attribs;
 };
 
-struct geometry_vert_layout_desc {
+struct geometry_vert_layout_desc
+{
     static_array<vert_stream_desc, MAX_VERT_BINDINGS> streams;
     u32 max_vert_count;
 };
 
 struct geometry_group_desc
 {
-    const char*dbg_name;
+    const char *dbg_name;
     static_array<geometry_vert_layout_desc, MAX_GEOMETRY_LAYOUT_COUNT> layouts;
     u32 max_ind_count;
 };
@@ -1622,49 +1297,52 @@ intern u32 get_format_byte_size(rformat format)
     }
 }
 
-intern void teardown_geometry_stream_group(geometry_streams_group * gp, const vkr_context *vk)
+intern void teardown_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
 {
-    for (u32 i = 0; i < gp->vert_groups.size; ++i) {
-        vmaDestroyVirtualBlock(gp->vert_groups[i].vert_block);
-        for (u32 bufi = 0; bufi < gp->vert_groups[i].vert_buffers.size; ++bufi) {
-            vkr_terminate_buffer(&gp->vert_groups[i].vert_buffers[bufi].buffer, vk);
+    for (u32 i = 0; i < gp->layouts.size; ++i) {
+        vmaDestroyVirtualBlock(gp->layouts[i].vert_block);
+        for (u32 bufi = 0; bufi < gp->layouts[i].vert_streams.size; ++bufi) {
+            vkr_terminate_buffer(&gp->layouts[i].vert_streams[bufi].buffer, vk);
         }
     }
     vmaDestroyVirtualBlock(gp->indices_block);
-    vkr_terminate_buffer(&gp->indice_buffer.buffer, vk);
+    vkr_terminate_buffer(&gp->indice_stream.buffer, vk);
     *gp = {};
 }
 
-intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout, sizet cur_buffer_offset, const geometry_vert_layout_desc &desc, const vkr_context *vk) {
+intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
+                                       sizet cur_buffer_offset,
+                                       const geometry_vert_layout_desc &desc,
+                                       const vkr_context *vk)
+{
     vkr_buffer_cfg alloc_cfg{};
     alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     alloc_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
     alloc_cfg.vma_alloc = &vk->inst.device.vma_alloc;
     alloc_cfg.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    
     layout->vert_layout.bindings.size = desc.streams.size;
-    layout->vert_buffers.size = desc.streams.size;
+    layout->vert_streams.size = desc.streams.size;
 
     // Virtual block used for this layout entry - we use vert stream 0 as the guide for all other vert streams.. that is
     // it dictates at what range (in vertices) each buffer uses for each mesh.. this is not the most "efficient" thing
     // since other buffers might do better with space usage if they had their own block, but it allows us to bind all
     // vert buffers at once and use them in shaders
-    VmaVirtualBlockCreateInfo ci{};    
-    
+    VmaVirtualBlockCreateInfo ci{};
+
     // Create the vert buffers
     bool failed{false};
     for (u32 stri = 0; stri < desc.streams.size && !failed; ++stri) {
         auto cur_binding = &layout->vert_layout.bindings[stri];
         auto cur_stream_desc = &desc.streams[stri];
-        auto cur_buffer = &layout->vert_buffers[stri];
+        auto cur_buffer = &layout->vert_streams[stri];
 
         cur_binding->binding = cur_buffer_offset + stri;
         cur_binding->inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         sizet layout_attrib_offset = layout->vert_layout.attribs.size;
         layout->vert_layout.attribs.size += cur_stream_desc->attribs.size;
-        
+
         for (u32 atti = 0; atti < cur_stream_desc->attribs.size; ++atti) {
             auto cur_attrib_desc = &cur_stream_desc->attribs[atti];
             auto cur_attrib_layout = &layout->vert_layout.attribs[atti + layout_attrib_offset];
@@ -1673,12 +1351,12 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout, siz
             cur_attrib_layout->format = get_vk_format(cur_attrib_desc.fmt);
             cur_attrib_layout->location = cur_attrib_desc.shader_location;
             cur_attrib_layout->offset = cur_binding->stride;
-            
-            cur_binding->stride += get_format_byte_size(cur_attrib_desc.fmt);                
+
+            cur_binding->stride += get_format_byte_size(cur_attrib_desc.fmt);
         }
 
-        strncpy(cur_buffer->dbg_name, cur_stream_desc->dbg_name, SMALL_STR_LEN-1);
-        
+        strncpy(cur_buffer->dbg_name, cur_stream_desc->dbg_name, SMALL_STR_LEN - 1);
+
         alloc_cfg.buffer_size = desc.max_vert_count * cur_binding->stride;
         alloc_cfg.user_data = cur_buffer->dbg_name;
 
@@ -1700,43 +1378,43 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout, siz
             wlog("Failed to create virtual block - error code: %d", result);
         }
     }
-    
 }
 
-u32 create_geometry_group(renderer *rndr, const geometry_group_desc &desc)
+slot_handle<geom_streams_group> create_geometry_group(renderer *rndr, const geometry_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
     asrt(desc.layouts.size > 0);
     asrt(desc.layouts[0].streams.size > 0);
     asrt(desc.layouts[0].streams[0].attribs.size > 0);
-    asrt(rndr->geom_groups.size < rndr->geom_groups.capacity);
 
-    u32 gp_ind = rndr->geom_groups.size;
-    auto cur_group = &rndr->geom_groups.data[gp_ind];
-    ++rndr->geom_groups.size;
+    auto geom_hndl = acquire_slot(&rndr->geom_groups);
+    if (!is_valid(geom_hndl)) {
+        return geom_hndl;
+    }
+    auto cur_group = get_slot_item(&rndr->geom_groups, geom_hndl);
 
     // Create all vert layout groups
-    cur_group->vert_groups.size = desc.layouts.size;
-    sizet buffer_offset;
+    cur_group->layouts.size = desc.layouts.size;
+    sizet buffer_offset{0};
     bool failed{false};
     for (int i = 0; i < desc.layouts.size && !failed; ++i) {
-        failed = !fill_geometry_layout_entry(&cur_group->vert_groups[i], buffer_offset, desc.layouts[i], &rndr->vk);
-        buffer_offset += cur_group->vert_groups[i].vert_buffers.size;
+        failed = !fill_geometry_layout_entry(&cur_group->layouts[i], buffer_offset, desc.layouts[i], &rndr->vk);
+        buffer_offset += cur_group->layouts[i].vert_streams.size;
     }
 
     // Create the indice buffer and virtual block for the indice buffer
     if (!failed) {
         // Set debug name - ind buffer stores entry for whole geometry layout
-        strncpy(cur_group->indice_buffer.dbg_name, desc.dbg_name, SMALL_STR_LEN-1);
-        
+        strncpy(cur_group->indice_stream.dbg_name, desc.dbg_name, SMALL_STR_LEN - 1);
+
         vkr_buffer_cfg alloc_cfg{};
         alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         alloc_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
         alloc_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
         alloc_cfg.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         alloc_cfg.buffer_size = desc.max_ind_count * sizeof(ind_t);
-        alloc_cfg.user_data = cur_group->indice_buffer.dbg_name;
-        int result = vkr_init_buffer(&cur_group->indice_buffer.buffer, alloc_cfg);
+        alloc_cfg.user_data = cur_group->indice_stream.dbg_name;
+        int result = vkr_init_buffer(&cur_group->indice_stream.buffer, alloc_cfg);
         failed = result != err_code::VKR_NO_ERROR;
         if (!failed) {
             // Create the virtual block for the indice buffer
@@ -1753,16 +1431,134 @@ u32 create_geometry_group(renderer *rndr, const geometry_group_desc &desc)
 
     if (failed) {
         teardown_geometry_stream_group(cur_group, &rndr->vk);
-        --rndr->geom_groups.size;
-        return INVALID_ID;
+        release_slot(&rndr->geom_groups, geom_hndl);
+        geom_hndl = {};
     }
-    
-    return gp_ind;
+
+    return geom_hndl;
 }
 
-rmesh_handle create_mesh(u32 geom_group, u32 layout, const void **vert_data, u32 vert_count, void *ind_data, u32 ind_count, const rsubmesh_range *submeshes, u32 submesh_cnt) {
-    // Expect data to be laid out how?
-    // data should point to an array of void*, each pointing to stream data as created 
+
+bool destroy_geometry(rgeom_handle hndl, renderer *rndr)
+{
+    auto sl_item = get_slot_item(&rndr->geometry, hndl);
+    vmaVirtualFree(sl_item->vert_block, sl_item->vert_mem);
+    vmaVirtualFree(sl_item->ind_block, sl_item->ind_mem);
+    *sl_item = {};
+    return release_slot(&rndr->geometry, hndl);
+}
+
+
+rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
+{
+    // Make sure we have valid data
+    asrt(ci.vert_count > 0);
+    asrt(ci.vert_data);
+    asrt(ci.ind_count > 0);
+    asrt(ci.ind_data);
+    asrt(ci.subgeom_cnt > 0);
+    asrt(ci.subgeoms);
+
+    // Verify we have room for a mesh
+    auto gp = get_slot_item(&rndr->geom_groups, ci.group);
+    if (!gp) {
+        wlog("Passed in group handle has expired");
+        return {};
+    }
+    asrt(ci.layout < gp->layouts.size);
+    auto layout = &gp->layouts[ci.layout];
+
+    rgeom_handle geom_hndl = acquire_slot(&rndr->geometry);
+    if (!is_valid(geom_hndl)) {
+        wlog("Out of geometry slots");
+        return {};
+    }
+    rgeom_info *geom_item = get_slot_item(&rndr->geometry, geom_hndl);
+    asrt(geom_item);
+
+    // Set the vert/ind blocks
+    geom_item->vert_block = layout->vert_block;
+    geom_item->ind_block = gp->indices_block;
+
+    // Set the name if it was filled in
+    strncpy(geom_item->name, ci.name ? ci.name : "unnamed", SMALL_STR_LEN - 1);
+
+    // Copy subgeom data
+    geom_item->subgeom_vert_ind_counts.size = ci.subgeom_cnt;
+    for (u32 i = 0; i < ci.subgeom_cnt; ++i) {
+        geom_item->subgeom_vert_ind_counts[i] = ci.subgeoms[i];
+    }
+
+    // This info is shared between the vert stream and ind stream virtual alloc
+    VmaVirtualAllocationCreateInfo alloc_ci{};
+    alloc_ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
+    alloc_ci.pUserData = geom_item->name;
+
+    // Create the virtual allocation using vert stream 0 which dictates the vert offset in to each stream
+    alloc_ci.alignment = layout->vert_layout.bindings[0].stride;
+    alloc_ci.size = ci.vert_count * alloc_ci.alignment;
+    VkDeviceSize vert_stream_byte_offset{};
+    s32 result = vmaVirtualAllocate(geom_item->vert_block, &alloc_ci, &geom_item->vert_mem, &vert_stream_byte_offset);
+    if (result != err_code::VKR_NO_ERROR) {
+        wlog("Vma virtual allocate for vert stream failed with code %d", result);
+        release_slot(&rndr->geometry, geom_hndl);
+        return {};
+    }
+    asrt(vert_stream_byte_offset % alloc_ci.alignment == 0);
+    geom_item->vert_offset = vert_stream_byte_offset / alloc_ci.alignment;
+
+    // Create the virtual allocation for indices
+    alloc_ci.alignment = sizeof(ind_t);
+    alloc_ci.size = ci.ind_count * alloc_ci.alignment;
+    VkDeviceSize ind_stream_byte_offset{};
+    result = vmaVirtualAllocate(geom_item->ind_block, &alloc_ci, &geom_item->ind_mem, &ind_stream_byte_offset);
+    if (result != err_code::VKR_NO_ERROR) {
+        wlog("Vma virtual allocate indices stream failed with code %d", result);
+        vmaVirtualFree(geom_item->vert_block, geom_item->vert_mem);
+        release_slot(&rndr->geometry, geom_hndl);
+        return {};
+    }
+    asrt(ind_stream_byte_offset % alloc_ci.alignment == 0);
+    geom_item->ind_offset = ind_stream_byte_offset / alloc_ci.alignment;
+
+    // Create staging buffer and get the queue we will use
+    VkCommandBuffer tmp_cmd_buf{};
+    result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) {
+        wlog("Failed to create command buffer - error code: %d", result);
+        vmaVirtualFree(geom_item->vert_block, geom_item->vert_mem);
+        vmaVirtualFree(geom_item->ind_block, geom_item->ind_mem);
+        release_slot(&rndr->geometry, geom_hndl);
+        asrt(destroy_geometry(geom_hndl, rndr));
+        return {};
+    }
+    VkQueue tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
+
+    // Copy data for the vert buffers
+    for (u32 streami = 0; streami < layout->vert_streams.size; ++streami) {
+        VkBufferCopy region{};
+        region.size = ci.vert_count * layout->vert_layout.bindings[streami].stride;
+        region.dstOffset = geom_item->vert_offset * layout->vert_layout.bindings[streami].stride;
+        result = vkr_stage_and_upload_buffer_data(&layout->vert_streams[streami].buffer, ci.vert_data[streami], &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
+        if (result != err_code::VKR_NO_ERROR) {
+            asrt(destroy_geometry(geom_hndl, rndr));
+            vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
+            return {};
+        }
+    }
+
+    VkBufferCopy region{};
+    region.size = ci.ind_count * sizeof(ind_t);
+    region.dstOffset = geom_item->ind_offset * sizeof(ind_t);
+    result = vkr_stage_and_upload_buffer_data(&gp->indice_stream.buffer, ci.ind_data, &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) {
+        asrt(destroy_geometry(geom_hndl, rndr));
+        vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
+        return {};
+    }
+        
+    // Copy index buffer data
+    
 }
 
 } // namespace nslib
