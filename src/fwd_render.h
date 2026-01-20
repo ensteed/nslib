@@ -1,11 +1,24 @@
 #pragma once
 
-#include "renderer.h"
+#include "model.h"
+#include "render_defs.h"
 
 namespace nslib
 {
+// 20 million triangles... thats a lot - works on desktop
+const u32 MAX_STATIC_TRIANGLE_COUNT = 2000000;
+const u32 MAX_SKINNED_TRIANGLE_COUNT = 200000;
+// Default ind buffer size (holding all of our inds) in ind count (not byte size)
+const u32 MAX_TOTAL_MESH_IND_COUNT = (MAX_STATIC_TRIANGLE_COUNT + MAX_SKINNED_TRIANGLE_COUNT) * 3;
+// Default vert buffer size (holding all of our verts) in vert count (not byte size)
+// Gemeni showed me that on average we will have 2 : 1 triangle to vert ratio
+const u32 MAX_STATIC_MESH_VERT_COUNT = MAX_STATIC_TRIANGLE_COUNT / 2;
+const u32 MAX_SKINNED_MESH_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
+    
 
-    enum rvert_stream
+struct mem_arena;
+struct renderer;
+enum rvert_stream
 {
     RVERT_STREAM_POS_COL,
     RVERT_STREAM_NORM_TAN_UV,
@@ -42,23 +55,12 @@ struct rmesh_vert_bone_weights_ids
     uvec4 bone_ids;
 };
 
-struct rmesh_create_info
-{
-    const char *name;
-    const rmesh_vert_pos_col *pos_col;
-    const rmesh_vert_norm_tan_uv *norm_tan_uv;
-    // If weight ids are none null then the mesh is skinned
-    const rmesh_vert_bone_weights_ids *weights_ids;
-    sizet vert_count;
+// Setup vert/index buffers (stream group) for this geometry type and get the runtime id for it
+runtime_id setup_geometry_stream_group(renderer *rndr);
 
-    const ind_t *inds;
-    sizet ind_count;
+bool upload_geometry(renderer *rndr, runtime_id stream_gp, mesh *mesh, mem_arena *arena);
+u32 upload_geometry(renderer *rndr, runtime_id stream_gp, asset_pool<mesh> *meshes, mem_arena *arena);
 
-    const rsubgeom_range *sm_info;
-    sizet sm_count;
-
-    rmesh_topology topology;
-};
-
+void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena);
 
 } // namespace nslib

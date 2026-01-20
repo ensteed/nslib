@@ -6,6 +6,7 @@
 #include "containers/hmap.h"
 #include "render_blueprint.h"
 #include "render_handles.h"
+#include "rformat.h"
 
 struct ImGuiContext;
 
@@ -30,87 +31,11 @@ struct rsubgeom_range
 
 using ind_t = u16;
 
-enum struct rmesh_topology : u8
+enum struct rgeom_topology : u8
 {
     RMESH_TOPOLOGY_TRIANGLE_STRIP,
 };
 
-enum struct rformat
-{
-    // RGBA
-    RGBA8_SRGB,
-    RGBA8_SRGB_COMPRESSED,
-    RGBA8_UNORM,
-    RGBA8_UNORM_COMPRESSED,
-    RGBA8_SNORM,
-    RGBA8_UINT,
-    RGBA8_SINT,
-    // RGB
-    RGB8_SRGB,
-    RGB8_SRGB_COMPRESSED,
-    RGB8_UNORM,
-    RGB8_UNORM_COMPRESSED,
-    RGB8_SNORM,
-    RGB8_UINT,
-    RGB8_SINT,
-    // RG
-    RG8_SRGB,
-    RG8_UNORM,
-    RG8_UNORM_COMPRESSED,
-    RG8_SNORM,
-    RG8_SNORM_COMPRESSED,
-    RG8_UINT,
-    RG8_SINT,
-    // R
-    R8_SRGB,
-    R8_UNORM,
-    R8_UNORM_COMPRESSED,
-    R8_SNORM,
-    R8_SNORM_COMPRESSED,
-    R8_UINT,
-    R8_SINT,
-    // RGBA 16 bpp
-    RGBA16_SFLOAT,
-    RGBA16_UNORM,
-    RGBA16_SNORM,
-    RGBA16_UINT,
-    RGBA16_SINT,
-    // RGB
-    RGB16_SFLOAT,
-    RGB16_UNORM,
-    RGB16_SNORM,
-    RGB16_UINT,
-    RGB16_SINT,
-    // RG
-    RG16_SFLOAT,
-    RG16_UNORM,
-    RG16_SNORM,
-    RG16_UINT,
-    RG16_SINT,
-    // R
-    R16_SFLOAT,
-    R16_UNORM,
-    R16_SNORM,
-    R16_UINT,
-    R16_SINT,
-    // RGBA 32 bpp
-    RGBA32_SFLOAT,
-    RGBA32_UINT,
-    RGBA32_SINT,
-    // RGB
-    RGB32_SFLOAT,
-    RGB32_UINT,
-    RGB32_SINT,
-    // RG
-    RG32_SFLOAT,
-    RG32_UINT,
-    RG32_SINT,
-    // R
-    R32_SFLOAT,
-    R32_UINT,
-    R32_SINT,
-    INVALID,
-};
 
 enum rtexture_create_flag : u32
 {
@@ -134,8 +59,7 @@ struct rtexture_create_info
 };
 
 struct rtechnique_create_info
-{
-};
+{};
 
 enum rmaterial_texture_slot
 {
@@ -232,6 +156,31 @@ struct rgeom_info
     static_array<rsubgeom_range, MAX_SUBMESH_COUNT> subgeom_vert_ind_counts;
 };
 
+struct vert_attrib_desc
+{
+    u32 shader_location;
+    rformat fmt;
+};
+
+struct vert_stream_desc
+{
+    const char *dbg_name;
+    static_array<vert_attrib_desc, MAX_VERT_ATTRIBS> attribs;
+};
+
+struct geometry_vert_layout_desc
+{
+    static_array<vert_stream_desc, MAX_VERT_BINDINGS> streams;
+    u32 max_vert_count;
+};
+
+struct geometry_group_desc
+{
+    const char *dbg_name;
+    static_array<geometry_vert_layout_desc, MAX_GEOMETRY_LAYOUT_COUNT> layouts;
+    u32 max_ind_count;
+};
+
 struct imgui_ctxt;
 
 struct rtexture_info
@@ -294,7 +243,8 @@ struct geometry_buffer_layout_entry
 };
 
 // Geometry stream groups all share the same indice buffer, so can all bound bound at the same time
-struct geom_streams_group {
+struct geom_streams_group
+{
     static_array<geometry_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
     stream_buffer_entry indice_stream;
@@ -304,9 +254,9 @@ struct rgeom_create_info
 {
     const char *name{};
     // Which geometry streams group
-    slot_handle<geom_streams_group> group{};
+    runtime_id group{};
     // The specific layout to use within the geometry streams group
-    u32 layout{};
+    runtime_id layout{};
     // Number of verts in this geometry. Each stream must have the same vert count
     u32 vert_count{};
     // Should be an array of void* mem pointers - the array size matching the number of vert streams specified in layout
@@ -319,6 +269,8 @@ struct rgeom_create_info
     const rsubgeom_range *subgeoms{};
     // The total number of sub geometries
     u32 subgeom_cnt{};
+    // Topology
+    rgeom_topology topology;
 };
 
 struct rview
@@ -366,7 +318,7 @@ struct renderer
     static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
 
     // Really a single
-    slot_pool<geom_streams_group> geom_groups;
+    static_array<geom_streams_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
     // global pipeline layout
     VkPipelineLayout g_layout{VK_NULL_HANDLE};
@@ -378,7 +330,9 @@ struct renderer
     static_array<rsampler_info, RSAMPLER_TYPE_COUNT> samplers{};
 
     // ImGUI context
+    #ifdef USE_IMGUI
     imgui_ctxt imgui{};
+    #endif
 
     // Stored on reset render frame - used in subsequent frame calls to get the current frame
     s32 finished_frames;
@@ -396,6 +350,23 @@ struct renderer
 
     rtexture_handle swapchain_fb_depth_stencil{};
 };
+
+runtime_id create_geometry_stream_group(renderer *rndr, const geometry_group_desc &desc);
+
+// Geometry group desc builder
+geometry_vert_layout_desc *push_geometry_layout(geometry_group_desc *desc, u32 layout_max_vert_count);
+vert_stream_desc *push_geometry_stream(geometry_vert_layout_desc *vert_layout, const char *dbg_name);
+void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &att_desc);
+
+template<typename T>
+void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location) {
+    push_geometry_attribute(stream, {.shader_location=shader_location, .fmt = get_rformat_for_type<T>()});
+}
+
+template<typename T>
+void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool normalize_in_shader) {
+    push_geometry_attribute(stream, {.shader_location=shader_location, .fmt = get_rformat_for_type<T>(normalize_in_shader)});
+}
 
 rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci);
 

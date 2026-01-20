@@ -271,13 +271,47 @@ runtime_id push_rbp_subpass(rbp_pass *pass)
     return ret;
 }
 
+rtarget_res_texture *push_target_texture(rtarget_res_registry *reg, const char *name)
+{
+    runtime_id ind = (u32)reg->textures.size++;
+    asrt(ind < reg->textures.capacity);
+    rtarget_res_texture *tex = &reg->textures[ind];
+    tex->ind = ind;
+    strncpy(tex->name, name, SMALL_STR_LEN - 1);
+    tex->id = hash_type(tex->name);
+    hmap_insert(&reg->texture_id_map, tex->id, tex->ind);
+    return tex;
+}
+
+rtarget_res_texture *push_target_texture(render_blueprint *rbp, const char *name)
+{
+    return push_target_texture(&rbp->targets, name);
+}
+
+rtarget_res_buffer *push_target_buffer(rtarget_res_registry *reg, const char *name)
+{
+    runtime_id ind = (u32)reg->buffers.size++;
+    asrt(ind < reg->buffers.capacity);
+    rtarget_res_buffer *buf = &reg->buffers[ind];
+    buf->ind = ind;
+    strncpy(buf->name, name, SMALL_STR_LEN - 1);
+    buf->id = hash_type(buf->name);
+    hmap_insert(&reg->buffer_id_map, buf->id, buf->ind);
+    return buf;
+}
+
+rtarget_res_buffer *push_target_buffer(render_blueprint *rbp, const char *name)
+{
+    return push_target_buffer(&rbp->targets, name);
+}
+
 rbp_pass *push_rbp_pass(render_blueprint *rbp, const char *name)
 {
     runtime_id ind = (u32)rbp->passes.size++;
     asrt(ind < rbp->passes.capacity);
-    rbp_pass* pass = &rbp->passes[ind];
+    rbp_pass *pass = &rbp->passes[ind];
     pass->ind = ind;
-    strncpy(pass->name, name, SMALL_STR_LEN-1);
+    strncpy(pass->name, name, SMALL_STR_LEN - 1);
     pass->id = hash_type(pass->name);
     hmap_insert(&rbp->pass_idmap, pass->id, pass->ind);
     return pass;
@@ -289,14 +323,14 @@ runtime_id find_rbp_pass(render_blueprint *rbp, resource_id resid)
     return fiter ? fiter->val : INVALID_ID;
 }
 
-render_blueprint* push_render_blueprint(const char *name, renderer *rndr)
+render_blueprint *push_render_blueprint(const char *name, renderer *rndr)
 {
     runtime_id ind = (u32)rndr->blueprints.size++;
     asrt(ind < rndr->blueprints.capacity);
-    render_blueprint* bp = &rndr->blueprints[ind];
-    hmap_init(&bp->pass_idmap, hash_type, &rndr->persist_fl);    
+    render_blueprint *bp = &rndr->blueprints[ind];
+    hmap_init(&bp->pass_idmap, hash_type, &rndr->persist_fl);
     bp->ind = ind;
-    strncpy(bp->name, name, SMALL_STR_LEN-1);
+    strncpy(bp->name, name, SMALL_STR_LEN - 1);
     bp->id = hash_type(bp->name);
     hmap_insert(&rndr->blueprint_id_map, bp->id, bp->ind);
     return bp;
@@ -342,7 +376,7 @@ bool compile_render_blueprint(render_blueprint *rbp, renderer *rndr)
             auto cur_rt = &rbp->targets.textures[texid];
             s32 result = vkr_init_image(&cur_rt->images[fif], cur_rt->img_cfg);
             if (result != err_code::VKR_NO_ERROR) {
-                clean_render_blueprint(bpind, rndr);
+                clean_render_blueprint(rbp, rndr);
                 return false;
             }
             // TODO: Set the correct state
@@ -351,7 +385,7 @@ bool compile_render_blueprint(render_blueprint *rbp, renderer *rndr)
             auto cur_rt = &rbp->targets.buffers[bufid];
             s32 result = vkr_init_buffer(&cur_rt->buffers[fif], cur_rt->buf_cfg);
             if (result != err_code::VKR_NO_ERROR) {
-                clean_render_blueprint(bpind, rndr);
+                clean_render_blueprint(rbp, rndr);
                 return false;
             }
             // TODO: Set the correct state
@@ -449,9 +483,10 @@ bool compile_render_blueprint(render_blueprint *rbp, renderer *rndr)
 
         s32 result = vkr_init_render_pass(&pass->handle, rp_cfg, vk);
         if (result != err_code::VKR_NO_ERROR) {
-            elog("Failed to create render pass for blueprint %s with code %d", ls(rbp->name), result);
+            elog("Failed to create render pass for blueprint %s with code %d", rbp->name, result);
         }
     }
+    return true;
 }
 
 } // namespace nslib

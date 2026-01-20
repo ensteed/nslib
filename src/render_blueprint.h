@@ -25,6 +25,9 @@ struct rtarget_res_buffer
     small_str name;
     resource_id id;
     vkr_buffer_cfg buf_cfg{};
+    
+    // Filled after load if loading from disk
+    runtime_id ind;
 
     // Filled in during compile
     vkr_buffer buffers[MAX_FRAMES_IN_FLIGHT];
@@ -37,6 +40,9 @@ struct rtarget_res_texture
     small_str name;
     resource_id id;
     vkr_image_cfg img_cfg{};
+
+    // Filled after load if loading from disk
+    runtime_id ind;
 
     // Fille during compile
     vkr_image images[MAX_FRAMES_IN_FLIGHT];
@@ -88,7 +94,7 @@ enum rbp_pass_type
 struct rtarget_res_requirement
 {
     // Set while building
-    resource_id resid{};
+    resource_id resid;
     rtarget_res_usage usage;
     u32 access;
     u32 visibility;
@@ -109,14 +115,7 @@ struct rbp_pass
     resource_id id;
     rbp_pass_type type;
     bool use_subpass_bookends{false};
-    union
-    {
-        struct
-        {
-            static_array<rbp_subpass, MAX_BP_SUBPASS_COUNT> subpasses;
-        };
-        rbp_subpass p;
-    };
+    static_array<rbp_subpass, MAX_BP_SUBPASS_COUNT> subpasses{};
 
     // Populated after load (if loading from disk)
     runtime_id ind;
@@ -143,6 +142,12 @@ rtarget_res_requirement *push_res_requirement(rbp_pass *rbp, const char *name, r
 runtime_id push_rbp_subpass(rbp_pass *pass);
 rbp_pass *push_rbp_pass(render_blueprint *rbp, const char *name);
 runtime_id find_rbp_pass(render_blueprint *rbp, resource_id resid);
+
+rtarget_res_texture *push_target_texture(render_blueprint *rbp, const char *name);
+rtarget_res_texture *push_target_texture(rtarget_res_registry *reg, const char *name);
+rtarget_res_buffer *push_target_buffer(render_blueprint *rbp, const char *name);
+rtarget_res_buffer *push_target_buffer(rtarget_res_registry *reg, const char *name);
+
 
 // Renderer takes ownership of blueprint
 render_blueprint *push_render_blueprint(const char *name, renderer *rndr);

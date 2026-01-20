@@ -3,10 +3,12 @@
 #include "renderer.h"
 #include "sim_region.h"
 
-#include "imgui/imgui.h"
-#include "imgui/imgui_impl_sdl3.h"
-#include "imgui/imgui_impl_vulkan.h"
-#include "SDL3/SDL_events.h"
+#ifdef USE_IMGUI
+    #include "imgui/imgui.h"
+    #include "imgui/imgui_impl_sdl3.h"
+    #include "imgui/imgui_impl_vulkan.h"
+    #include "SDL3/SDL_events.h"
+#endif
 
 namespace nslib
 {
@@ -53,11 +55,14 @@ intern void check_vk_result(VkResult err)
     asrt(err >= 0);
 }
 
+#ifdef USE_IMGUI
 bool sdl_event_func(void *sdl_event, void *)
 {
     auto *ev = (SDL_Event *)sdl_event;
+
     auto io = ImGui::GetIO();
     ImGui_ImplSDL3_ProcessEvent(ev);
+
     if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP || ev->type == SDL_EVENT_MOUSE_WHEEL) {
         return io.WantCaptureMouse;
     }
@@ -67,7 +72,6 @@ bool sdl_event_func(void *sdl_event, void *)
     }
     return false;
 }
-
 intern void init_imgui(renderer *rndr, void *win_hndl)
 {
     auto dev = &rndr->vk.inst.device;
@@ -76,7 +80,7 @@ intern void init_imgui(renderer *rndr, void *win_hndl)
 
     // Use the main forward pass for imgui.. this might only change if we use deferred shading.. but i think the imgui
     // created pipeling only requires a color attachment
-    rndr->imgui.rpass = rndr->rpasses[RPASS_TYPE_OPAQUE].vk_hndl;
+    // rndr->imgui.rpass = rndr->rpasses[RPASS_TYPE_OPAQUE].vk_hndl;
 
     ImGui::SetAllocatorFunctions(imgui_mem_alloc, imgui_mem_free, &rndr->imgui.fl);
     rndr->imgui.ctxt = ImGui::CreateContext();
@@ -118,7 +122,6 @@ intern void init_imgui(renderer *rndr, void *win_hndl)
 
     set_platform_sdl_event_hook(win_hndl, {.cb = sdl_event_func});
 }
-
 intern void terminate_imgui(renderer *rndr)
 {
     ImGui_ImplVulkan_Shutdown();
@@ -127,6 +130,7 @@ intern void terminate_imgui(renderer *rndr)
     ImGui::DestroyContext(rndr->imgui.ctxt);
     terminate_arena(&rndr->imgui.fl);
 }
+#endif
 
 intern int setup_render_passes(renderer *rndr)
 {
@@ -157,7 +161,7 @@ intern int setup_render_passes(renderer *rndr)
 
     att_ref.attachment = 1;
     att_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    subpass.depth_stencil_attachment = &att_ref;
+    subpass.depth_stencil_attachment = att_ref;
     arr_push_back(&rp_cfg.subpasses, subpass);
 
     // Because we use this render pass each frame, this dependency makes it so that we won't begin our first subpass
@@ -184,7 +188,6 @@ intern int setup_render_passes(renderer *rndr)
     rpass_info rpi{};
     int geom_hndl = vkr_init_render_pass(&rpi.vk_hndl, rp_cfg, vk);
     if (geom_hndl == err_code::VKR_NO_ERROR) {
-        hmap_set(&rndr->rpass_name_map, FWD_RPASS, rndr->rpasses.size);
         arr_push_back(&rndr->rpasses, rpi);
     }
     return geom_hndl;
@@ -238,6 +241,7 @@ intern void fill_default_pipeline_config(vkr_pipeline_cfg *cfg, renderer *rndr)
 
 intern int setup_diffuse_technique(renderer *rndr)
 {
+#if 0
     auto vk = &rndr->vk;
     vkr_pipeline_cfg info{};
 
@@ -276,8 +280,17 @@ intern int setup_diffuse_technique(renderer *rndr)
     rndr->default_mat = acquire_slot(&rndr->materials);
 
     auto mat_item = get_slot_item(&rndr->materials, rndr->default_mat);
-
+#endif
     return err_code::RENDER_NO_ERROR;
+}
+
+intern bool destroy_geometry(rgeom_handle hndl, renderer *rndr)
+{
+    auto sl_item = get_slot_item(&rndr->geometry, hndl);
+    vmaVirtualFree(sl_item->vert_block, sl_item->vert_mem);
+    vmaVirtualFree(sl_item->ind_block, sl_item->ind_mem);
+    *sl_item = {};
+    return release_slot(&rndr->geometry, hndl);
 }
 
 intern int setup_global_samplers(renderer *rndr)
@@ -431,6 +444,30 @@ intern VkFormat get_vk_format(rformat fmt)
         return VK_FORMAT_R32_UINT;
     case (rformat::R32_SINT):
         return VK_FORMAT_R32_SINT;
+    case (rformat::RGBA64_SFLOAT):
+        return VK_FORMAT_R64G64B64A64_SFLOAT;
+    case (rformat::RGBA64_UINT):
+        return VK_FORMAT_R64G64B64A64_UINT;
+    case (rformat::RGBA64_SINT):
+        return VK_FORMAT_R64G64B64A64_SINT;
+    case (rformat::RGB64_SFLOAT):
+        return VK_FORMAT_R64G64B64_SFLOAT;
+    case (rformat::RGB64_UINT):
+        return VK_FORMAT_R64G64B64_UINT;
+    case (rformat::RGB64_SINT):
+        return VK_FORMAT_R64G64B64_SINT;
+    case (rformat::RG64_SFLOAT):
+        return VK_FORMAT_R64G64_SFLOAT;
+    case (rformat::RG64_UINT):
+        return VK_FORMAT_R64G64_UINT;
+    case (rformat::RG64_SINT):
+        return VK_FORMAT_R64G64_SINT;
+    case (rformat::R64_SFLOAT):
+        return VK_FORMAT_R64_SFLOAT;
+    case (rformat::R64_UINT):
+        return VK_FORMAT_R64_UINT;
+    case (rformat::R64_SINT):
+        return VK_FORMAT_R64_SINT;
     default:
         return VK_FORMAT_UNDEFINED;
     }
@@ -533,8 +570,8 @@ intern int init_swapchain_images_and_framebuffer(renderer *rndr)
     }
 
     // We need the render pass associated with our main framebuffer
-    vkr_framebuffer_attachment fb_att{.im_view = sl_item->im_view};
-    vkr_init_swapchain_framebuffers(dev, vk, rndr->rpasses[RPASS_TYPE_OPAQUE].vk_hndl, fb_att);
+    // vkr_framebuffer_attachment fb_att{.im_view = sl_item->im_view};
+    // vkr_init_swapchain_framebuffers(dev, vk, rndr->rpasses[RPASS_TYPE_OPAQUE].vk_hndl, fb_att);
     return err;
 }
 
@@ -589,7 +626,6 @@ intern int setup_global_pipeline_layout(renderer *rndr)
     return vkr_init_pipeline_layout(&rndr->g_layout, cfg, &rndr->vk);
 }
 
-
 intern int setup_rendering(renderer *rndr)
 {
     ilog("Setting up default rendering...");
@@ -626,11 +662,11 @@ intern int setup_rendering(renderer *rndr)
         return err;
     }
 
-    err = setup_geometry_buffers(rndr);
-    if (err != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup geometry buffers");
-        return err;
-    }
+    // err = setup_geometry_buffers(rndr);
+    // if (err != err_code::VKR_NO_ERROR) {
+    //     elog("Failed to setup geometry buffers");
+    //     return err;
+    // }
 
     ////////////////////////////////////////////////////////////////////////////////
     // Create uniform buffers and descriptor sets pointing to them for each frame //
@@ -695,14 +731,14 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
 
     VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
 
-    // Bind the global vertex/index buffer/s
-    VkBuffer vert_bufs[RVERT_STREAM_COUNT]{};
-    VkDeviceSize offsets[RVERT_STREAM_COUNT]{};
-    for (int i = 0; i < RVERT_STREAM_COUNT; ++i) {
-        vert_bufs[i] = rndr->geometry_buffers.vert_buffers[i].hndl;
-    }
-    vkCmdBindVertexBuffers(cur_frame->cmd_buffer, 0, 1, vert_bufs, offsets);
-    vkCmdBindIndexBuffer(cur_frame->cmd_buffer, rndr->geometry_buffers.ind_buffer.hndl, 0, get_vk_index_type(sizeof(ind_t)));
+    // // Bind the global vertex/index buffer/s
+    // VkBuffer vert_bufs[RVERT_STREAM_COUNT]{};
+    // VkDeviceSize offsets[RVERT_STREAM_COUNT]{};
+    // for (int i = 0; i < RVERT_STREAM_COUNT; ++i) {
+    //     vert_bufs[i] = rndr->geometry_buffers.vert_buffers[i].hndl;
+    // }
+    // vkCmdBindVertexBuffers(cur_frame->cmd_buffer, 0, 1, vert_bufs, offsets);
+    // vkCmdBindIndexBuffer(cur_frame->cmd_buffer, rndr->geometry_buffers.ind_buffer.hndl, 0, get_vk_index_type(sizeof(ind_t)));
 
     // TODO: This really can't go in any order we want for render passes.. We might have dependency ordered between
     // them.. for now we just have the one.. I'm not sure if we need to do a
@@ -724,66 +760,68 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
         scissor.extent = {fb->size.w, fb->size.h};
         vkCmdSetScissor(cur_frame->cmd_buffer, 0, 1, &scissor);
 
-        // Bind frame rpass descriptor set
-        // auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->frame_set_layouti].hndl;
-        // vkCmdBindDescriptorSets(
-        //     cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, G_FRAME_PL_LAYOUT, DESCRIPTOR_SET_LAYOUT_FRAME, 1, &ds, 0, nullptr);
+// Bind frame rpass descriptor set
+// auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->frame_set_layouti].hndl;
+// vkCmdBindDescriptorSets(
+//     cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, G_FRAME_PL_LAYOUT, DESCRIPTOR_SET_LAYOUT_FRAME, 1, &ds, 0, nullptr);
 
-        // // We could make our render pass have the vert/index buffer info.. ie
-        // auto pl_iter = hmap_begin(&rpass_iter->val->plines);
-        // while (pl_iter) {
-        //     // Grab the pipeline and set it, and set the viewport/scissor
-        //     auto pipeline = &dev->pipelines[pl_iter->val->plinfo->plind];
-        //     vkCmdBindPipeline(cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->hndl);
+// // We could make our render pass have the vert/index buffer info.. ie
+// auto pl_iter = hmap_begin(&rpass_iter->val->plines);
+// while (pl_iter) {
+//     // Grab the pipeline and set it, and set the viewport/scissor
+//     auto pipeline = &dev->pipelines[pl_iter->val->plinfo->plind];
+//     vkCmdBindPipeline(cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->hndl);
 
-        //     auto ds = cur_frame->desc_pool.desc_sets[pl_iter->val->set_layouti].hndl;
-        //     vkCmdBindDescriptorSets(
-        //         cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout_hndl, DESCRIPTOR_SET_LAYOUT_PIPELINE, 1, &ds, 0,
-        //         nullptr);
+//     auto ds = cur_frame->desc_pool.desc_sets[pl_iter->val->set_layouti].hndl;
+//     vkCmdBindDescriptorSets(
+//         cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout_hndl, DESCRIPTOR_SET_LAYOUT_PIPELINE, 1, &ds, 0,
+//         nullptr);
 
-        //     auto mat_iter = hmap_begin(&pl_iter->val->mats);
-        //     while (mat_iter) {
-        //         // Bind the material set
-        //         auto ds = cur_frame->desc_pool.desc_sets[mat_iter->val->set_layouti].hndl;
-        //         vkCmdBindDescriptorSets(
-        //             cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout_hndl, DESCRIPTOR_SET_LAYOUT_MATERIAL, 1, &ds, 0,
-        //             nullptr);
+//     auto mat_iter = hmap_begin(&pl_iter->val->mats);
+//     while (mat_iter) {
+//         // Bind the material set
+//         auto ds = cur_frame->desc_pool.desc_sets[mat_iter->val->set_layouti].hndl;
+//         vkCmdBindDescriptorSets(
+//             cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout_hndl, DESCRIPTOR_SET_LAYOUT_MATERIAL, 1, &ds, 0,
+//             nullptr);
 
-        //         for (u32 dci = 0; dci < mat_iter->val->dcs.size; ++dci) {
-        //             const draw_call *cur_dc = &mat_iter->val->dcs[dci];
-        //             auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->obj_set_layouti].hndl;
-        //             sizet obj_ubo_item_size = vkr_uniform_buffer_offset_alignment(&rndr->vk, sizeof(obj_ubo_data));
-        //             // Our dynamic ubo_offset in to our singlestoring all of our transforms is computed by adding
-        //             // the material base draw call ubo_offset (computed each frame).
-        //             u32 dyn_offset = (u32)(obj_ubo_item_size * cur_dc->ubo_offset);
-        //             vkCmdBindDescriptorSets(cmd_buf->hndl,
-        //                                     VK_PIPELINE_BIND_POINT_GRAPHICS,
-        //                                     pipeline->layout_hndl,
-        //                                     DESCRIPTOR_SET_LAYOUT_OBJECT,
-        //                                     1,
-        //                                     &ds,
-        //                                     1,
-        //                                     &dyn_offset);
+//         for (u32 dci = 0; dci < mat_iter->val->dcs.size; ++dci) {
+//             const draw_call *cur_dc = &mat_iter->val->dcs[dci];
+//             auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->obj_set_layouti].hndl;
+//             sizet obj_ubo_item_size = vkr_uniform_buffer_offset_alignment(&rndr->vk, sizeof(obj_ubo_data));
+//             // Our dynamic ubo_offset in to our singlestoring all of our transforms is computed by adding
+//             // the material base draw call ubo_offset (computed each frame).
+//             u32 dyn_offset = (u32)(obj_ubo_item_size * cur_dc->ubo_offset);
+//             vkCmdBindDescriptorSets(cmd_buf->hndl,
+//                                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+//                                     pipeline->layout_hndl,
+//                                     DESCRIPTOR_SET_LAYOUT_OBJECT,
+//                                     1,
+//                                     &ds,
+//                                     1,
+//                                     &dyn_offset);
 
-        //             push_constants pc{3};
-        //             vkCmdPushConstants(cmd_buf->hndl, pipeline->layout_hndl, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constants), &pc);
-        //             vkCmdDrawIndexed(cmd_buf->hndl,
-        //                              cur_dc->index_count,
-        //                              cur_dc->instance_count,
-        //                              cur_dc->first_index,
-        //                              cur_dc->vertex_offset,
-        //                              cur_dc->first_instance);
-        //         }
-        //         mat_iter = hmap_next(&pl_iter->val->mats, mat_iter);
-        //     }
-        //     pl_iter = hmap_next(&rpass_iter->val->plines, pl_iter);
-        // }
+//             push_constants pc{3};
+//             vkCmdPushConstants(cmd_buf->hndl, pipeline->layout_hndl, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constants), &pc);
+//             vkCmdDrawIndexed(cmd_buf->hndl,
+//                              cur_dc->index_count,
+//                              cur_dc->instance_count,
+//                              cur_dc->first_index,
+//                              cur_dc->vertex_offset,
+//                              cur_dc->first_instance);
+//         }
+//         mat_iter = hmap_next(&pl_iter->val->mats, mat_iter);
+//     }
+//     pl_iter = hmap_next(&rpass_iter->val->plines, pl_iter);
+// }
 
-        // If we are on the imgui rpass, render its stuff. It has it's own pipeling, vertex/index buffers, etc
+// If we are on the imgui rpass, render its stuff. It has it's own pipeling, vertex/index buffers, etc
+#ifdef USE_IMGUI
         if (rpass->vk_hndl == rndr->imgui.rpass) {
             auto img_data = ImGui::GetDrawData();
             ImGui_ImplVulkan_RenderDrawData(img_data, cur_frame->cmd_buffer);
         }
+#endif
 
         vkr_cmd_end_rpass(cur_frame->cmd_buffer);
     }
@@ -868,6 +906,19 @@ intern void recreate_swapchain(renderer *rndr)
     init_swapchain_images_and_framebuffer(rndr);
 }
 
+intern void teardown_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
+{
+    for (u32 i = 0; i < gp->layouts.size; ++i) {
+        vmaDestroyVirtualBlock(gp->layouts[i].vert_block);
+        for (u32 bufi = 0; bufi < gp->layouts[i].vert_streams.size; ++bufi) {
+            vkr_terminate_buffer(&gp->layouts[i].vert_streams[bufi].buffer, vk);
+        }
+    }
+    vmaDestroyVirtualBlock(gp->indices_block);
+    vkr_terminate_buffer(&gp->indice_stream.buffer, vk);
+    *gp = {};
+}
+
 int begin_render_frame(renderer *rndr, int finished_frames)
 {
     auto dev = &rndr->vk.inst.device;
@@ -876,10 +927,12 @@ int begin_render_frame(renderer *rndr, int finished_frames)
     reset_arena(&rndr->frame_linear);
     reset_arena(&rndr->frame_stack);
 
-    // Start GUI frame
+// Start GUI frame
+#ifdef USE_IMGUI
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
+#endif
 
     // Update finished frames which is used to get the current frame
     rndr->finished_frames = finished_frames;
@@ -932,12 +985,16 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
         if (rndr->no_resize_frames > RESIZE_DEBOUNCE_FRAME_COUNT) {
             recreate_swapchain(rndr);
         }
+#ifdef USE_IMGUI
         ImGui::EndFrame();
+#endif
         return vk_res;
     }
     else if (vk_res != VK_SUCCESS && vk_res != VK_SUBOPTIMAL_KHR) {
         elog("Failed to acquire swapchain image");
+#ifdef USE_IMGUI
         ImGui::EndFrame();
+#endif
         return err_code::RENDER_ACQUIRE_IMAGE_FAIL;
     }
 
@@ -950,8 +1007,10 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
         }
     }
 
-    // Finalize IM GUI data - not dependent on our render stuff currently
+// Finalize IM GUI data - not dependent on our render stuff currently
+#ifdef USE_IMGUI
     ImGui::Render();
+#endif
 
     // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
@@ -1080,7 +1139,9 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
         return err;
     }
 
+#ifdef USE_IMGUI
     init_imgui(rndr, win_hndl);
+#endif
 
     // Setup our indice and vert buffer sbuffer
     return err_code::RENDER_NO_ERROR;
@@ -1098,12 +1159,14 @@ void terminate_renderer(renderer *rndr)
     // Device needs to be idle before finishing with everything
     vkr_device_wait_idle(&rndr->vk.inst.device);
 
-    // IMGUI
+// IMGUI
+#ifdef USE_IMGUI
     terminate_imgui(rndr);
+#endif
 
     // Terminate all meshes
     for (int i = 0; i < rndr->geometry.slots.size; ++i) {
-        release_mesh(get_slot_current_handle(&rndr->geometry, i), rndr);
+        destroy_geometry(get_slot_current_handle(&rndr->geometry, i), rndr);
     }
     terminate_slot_pool(&rndr->geometry);
 
@@ -1131,7 +1194,10 @@ void terminate_renderer(renderer *rndr)
     arr_clear(&rndr->samplers);
 
     // Remove source geometry buffers
-    teardown_geometry_buffers(rndr);
+    for (int i = 0; i < rndr->geom_groups.size; ++i) {
+        teardown_geometry_stream_group(&rndr->geom_groups[i], &rndr->vk);
+    }
+    rndr->geom_groups.size = 0;
 
     // Terminate our default descriptor layout sets
     dlog("Should be terminating %d layouts", rndr->set_layouts.size);
@@ -1167,31 +1233,6 @@ void terminate_renderer(renderer *rndr)
     terminate_arena(&rndr->frame_stack);
     terminate_arena(&rndr->persist_fl);
 }
-
-struct vert_attrib_desc
-{
-    u32 shader_location;
-    rformat fmt;
-};
-
-struct vert_stream_desc
-{
-    const char *dbg_name;
-    static_array<vert_attrib_desc, MAX_VERT_ATTRIBS> attribs;
-};
-
-struct geometry_vert_layout_desc
-{
-    static_array<vert_stream_desc, MAX_VERT_BINDINGS> streams;
-    u32 max_vert_count;
-};
-
-struct geometry_group_desc
-{
-    const char *dbg_name;
-    static_array<geometry_vert_layout_desc, MAX_GEOMETRY_LAYOUT_COUNT> layouts;
-    u32 max_ind_count;
-};
 
 intern u32 get_format_byte_size(rformat format)
 {
@@ -1297,19 +1338,6 @@ intern u32 get_format_byte_size(rformat format)
     }
 }
 
-intern void teardown_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
-{
-    for (u32 i = 0; i < gp->layouts.size; ++i) {
-        vmaDestroyVirtualBlock(gp->layouts[i].vert_block);
-        for (u32 bufi = 0; bufi < gp->layouts[i].vert_streams.size; ++bufi) {
-            vkr_terminate_buffer(&gp->layouts[i].vert_streams[bufi].buffer, vk);
-        }
-    }
-    vmaDestroyVirtualBlock(gp->indices_block);
-    vkr_terminate_buffer(&gp->indice_stream.buffer, vk);
-    *gp = {};
-}
-
 intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
                                        sizet cur_buffer_offset,
                                        const geometry_vert_layout_desc &desc,
@@ -1348,11 +1376,11 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
             auto cur_attrib_layout = &layout->vert_layout.attribs[atti + layout_attrib_offset];
 
             cur_attrib_layout->binding = cur_binding->binding;
-            cur_attrib_layout->format = get_vk_format(cur_attrib_desc.fmt);
-            cur_attrib_layout->location = cur_attrib_desc.shader_location;
+            cur_attrib_layout->format = get_vk_format(cur_attrib_desc->fmt);
+            cur_attrib_layout->location = cur_attrib_desc->shader_location;
             cur_attrib_layout->offset = cur_binding->stride;
 
-            cur_binding->stride += get_format_byte_size(cur_attrib_desc.fmt);
+            cur_binding->stride += get_format_byte_size(cur_attrib_desc->fmt);
         }
 
         strncpy(cur_buffer->dbg_name, cur_stream_desc->dbg_name, SMALL_STR_LEN - 1);
@@ -1378,20 +1406,19 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
             wlog("Failed to create virtual block - error code: %d", result);
         }
     }
+    return !failed;
 }
 
-slot_handle<geom_streams_group> create_geometry_group(renderer *rndr, const geometry_group_desc &desc)
+runtime_id create_geometry_stream_group(renderer *rndr, const geometry_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
     asrt(desc.layouts.size > 0);
     asrt(desc.layouts[0].streams.size > 0);
     asrt(desc.layouts[0].streams[0].attribs.size > 0);
+    asrt(rndr->geom_groups.size < rndr->geom_groups.capacity);
 
-    auto geom_hndl = acquire_slot(&rndr->geom_groups);
-    if (!is_valid(geom_hndl)) {
-        return geom_hndl;
-    }
-    auto cur_group = get_slot_item(&rndr->geom_groups, geom_hndl);
+    auto geom_id = rndr->geom_groups.size++;
+    auto cur_group = &rndr->geom_groups[geom_id];
 
     // Create all vert layout groups
     cur_group->layouts.size = desc.layouts.size;
@@ -1431,23 +1458,11 @@ slot_handle<geom_streams_group> create_geometry_group(renderer *rndr, const geom
 
     if (failed) {
         teardown_geometry_stream_group(cur_group, &rndr->vk);
-        release_slot(&rndr->geom_groups, geom_hndl);
-        geom_hndl = {};
+        --rndr->geom_groups.size;
+        geom_id = INVALID_ID;
     }
-
-    return geom_hndl;
+    return geom_id;
 }
-
-
-bool destroy_geometry(rgeom_handle hndl, renderer *rndr)
-{
-    auto sl_item = get_slot_item(&rndr->geometry, hndl);
-    vmaVirtualFree(sl_item->vert_block, sl_item->vert_mem);
-    vmaVirtualFree(sl_item->ind_block, sl_item->ind_mem);
-    *sl_item = {};
-    return release_slot(&rndr->geometry, hndl);
-}
-
 
 rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
 {
@@ -1458,13 +1473,10 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
     asrt(ci.ind_data);
     asrt(ci.subgeom_cnt > 0);
     asrt(ci.subgeoms);
+    asrt(ci.group < rndr->geom_groups.size);
 
     // Verify we have room for a mesh
-    auto gp = get_slot_item(&rndr->geom_groups, ci.group);
-    if (!gp) {
-        wlog("Passed in group handle has expired");
-        return {};
-    }
+    auto gp = &rndr->geom_groups[ci.group];
     asrt(ci.layout < gp->layouts.size);
     auto layout = &gp->layouts[ci.layout];
 
@@ -1539,7 +1551,8 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
         VkBufferCopy region{};
         region.size = ci.vert_count * layout->vert_layout.bindings[streami].stride;
         region.dstOffset = geom_item->vert_offset * layout->vert_layout.bindings[streami].stride;
-        result = vkr_stage_and_upload_buffer_data(&layout->vert_streams[streami].buffer, ci.vert_data[streami], &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
+        result = vkr_stage_and_upload_buffer_data(
+            &layout->vert_streams[streami].buffer, ci.vert_data[streami], &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
             asrt(destroy_geometry(geom_hndl, rndr));
             vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
@@ -1554,11 +1567,29 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
     if (result != err_code::VKR_NO_ERROR) {
         asrt(destroy_geometry(geom_hndl, rndr));
         vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
-        return {};
+        geom_hndl = {};
     }
-        
-    // Copy index buffer data
-    
+    return geom_hndl;
+}
+
+geometry_vert_layout_desc *push_geometry_layout(geometry_group_desc *desc, u32 layout_max_vert_count)
+{
+    u32 ind = (u32)desc->layouts.size++;
+    desc->layouts[ind].max_vert_count = layout_max_vert_count;
+    return &desc->layouts[ind];
+}
+
+vert_stream_desc *push_geometry_stream(geometry_vert_layout_desc *vert_layout, const char *dbg_name)
+{
+    u32 ind = (u32)vert_layout->streams.size++;
+    vert_layout->streams[ind].dbg_name = dbg_name;
+    return &vert_layout->streams[ind];
+}
+
+void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &att_desc)
+{
+    u32 ind = (u32)stream->attribs.size++;
+    stream->attribs[ind] = att_desc;
 }
 
 } // namespace nslib

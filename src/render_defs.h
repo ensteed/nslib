@@ -7,16 +7,6 @@ namespace nslib
 using runtime_id = u32;
 using resource_id = u64;
 
-//using rid
-// 20 million triangles... thats a lot - works on desktop
-const u32 MAX_STATIC_TRIANGLE_COUNT = 2000000;
-const u32 MAX_SKINNED_TRIANGLE_COUNT = 200000;
-// Default ind buffer size (holding all of our inds) in ind count (not byte size)
-const u32 MAX_TOTAL_MESH_IND_COUNT = (MAX_STATIC_TRIANGLE_COUNT + MAX_SKINNED_TRIANGLE_COUNT) * 3;
-// Default vert buffer size (holding all of our verts) in vert count (not byte size)
-// Gemeni showed me that on average we will have 2 : 1 triangle to vert ratio
-const u32 MAX_STATIC_MESH_VERT_COUNT = MAX_STATIC_TRIANGLE_COUNT / 2;
-const u32 MAX_SKINNED_MESH_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
 // Maximum number of techniques the renderer supports
 const u32 MAX_TECHNIQUE_COUNT = 1024;
 // Maximum number of materials the renderer supports

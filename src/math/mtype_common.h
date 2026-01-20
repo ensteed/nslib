@@ -109,6 +109,12 @@ template<class T>
 concept holds_arithmetic_type = arithmetic_type<typename T::value_type>;
 
 template<class T>
+concept holds_signed_integral = signed_integral<typename T::value_type>;
+
+template<class T>
+concept holds_unsigned_integral = unsigned_integral<typename T::value_type>;
+
+template<class T>
 struct vector2;
 
 template<class T>

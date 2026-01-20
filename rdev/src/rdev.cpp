@@ -4,8 +4,12 @@
 #include "input_mapping.h"
 #include "sim_region.h"
 #include "basic_types.h"
-#include "imgui/imgui.h"
+#include "fwd_render.h"
 using namespace nslib;
+
+#ifdef USE_IMGUI
+    #include "imgui/imgui.h"
+#endif
 
 struct app_data
 {
@@ -129,76 +133,6 @@ intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const m
     }
 }
 
-// Great use for a stack arena - will work
-void register_meshes_with_renderer(asset_pool<mesh> *meshes, renderer *rndr, mem_arena *arena)
-{
-    for (auto rm = pool_begin(meshes); is_valid(rm); rm = pool_next(meshes, rm)) {
-        ilog("Registering mesh id: %s  name: %s", ls(rm.item->name), str_cstr(rm.item->name));
-        asrt(rm.item->verts.size > 0);
-        rmesh_create_info cinf{};
-
-        // Vert/Ind counts
-        cinf.vert_count = rm.item->verts.size;
-        cinf.ind_count = rm.item->inds.size;
-
-        // Submesh ranges
-        cinf.sm_count = rm.item->sm_info.size;
-
-        // bone weight ids will be null if size is 0 - size will either be 0 or same size as verts (we assert that now)
-        asrt(rm.item->skinned_verts_info.size == cinf.vert_count || rm.item->skinned_verts_info.size == 0);
-
-        // Allocate temporary buffers for everything
-        rsubgeom_range *tmp_smeshes = mem_alloc<rsubgeom_range>(arena, cinf.sm_count);
-        rmesh_vert_pos_col *tmp_pos_cols = mem_alloc<rmesh_vert_pos_col>(arena, cinf.vert_count);
-        rmesh_vert_norm_tan_uv *tmp_norm_tan_uvs = mem_alloc<rmesh_vert_norm_tan_uv>(arena, cinf.vert_count);
-        rmesh_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rmesh_vert_bone_weights_ids>(arena, rm.item->skinned_verts_info.size);
-        ind_t *tmp_inds = mem_alloc<ind_t>(arena, cinf.ind_count);
-
-        // Copy submeshes
-        for (u32 i = 0; i < cinf.sm_count; ++i) {
-            tmp_smeshes[i].count = rm.item->sm_info[i].count;
-            tmp_smeshes[i].offset = rm.item->sm_info[i].offset;
-        }
-
-        // Copy vert data
-        for (u32 i = 0; i < cinf.vert_count; ++i) {
-            tmp_pos_cols[i].pos = rm.item->verts[i].pos;
-            tmp_pos_cols[i].col = rm.item->verts[i].col;
-            tmp_norm_tan_uvs[i].norm = rm.item->verts[i].norm;
-            tmp_norm_tan_uvs[i].tangent = rm.item->verts[i].tan;
-            tmp_norm_tan_uvs[i].uv = rm.item->verts[i].uv;
-            if (tmp_bone_weight_ids) {
-                tmp_bone_weight_ids[i].bone_weights = rm.item->skinned_verts_info[i].bone_weights;
-                tmp_bone_weight_ids[i].bone_ids = rm.item->skinned_verts_info[i].bone_ids;
-            }
-        }
-
-        for (u32 i = 0; i < cinf.ind_count; ++i) {
-            tmp_inds[i] = rm.item->inds[i];
-        }
-
-        cinf.sm_info = tmp_smeshes;
-        cinf.name = str_cstr(rm.item->name);
-        cinf.inds = tmp_inds;
-        cinf.pos_col = tmp_pos_cols;
-        cinf.norm_tan_uv = tmp_norm_tan_uvs;
-        cinf.weights_ids = tmp_bone_weight_ids;
-
-        cinf.topology = (rmesh_topology)rm.item->topology;
-
-        rm.item->rhndl = create_mesh(cinf, rndr);
-        if (!is_valid(rm.item->rhndl)) {
-            wlog("Could not create %s mesh render resource", ls(rm.item->name));
-        }
-
-        mem_free(tmp_inds, arena);
-        mem_free(tmp_bone_weight_ids, arena);
-        mem_free(tmp_norm_tan_uvs, arena);
-        mem_free(tmp_pos_cols, arena);
-        mem_free(tmp_smeshes, arena);
-    }
-}
-
 void create_meshes(mesh_pool *msh_pool, mesh **rect, mesh **cube)
 {
     auto cube_msh = create_asset(msh_pool, "rect");
@@ -224,39 +158,9 @@ void create_textures(texture_pool *tex_pool)
     }
 }
 
-rformat get_rformat_for_usage(texture_usage usage)
+void build_render_blueprint(render_blueprint *bp)
 {
-    switch (usage) {
-    case (texture_usage::ALBEDO):
-        return rformat::RGBA8_SRGB;
-    case (texture_usage::NORMAL):
-        return rformat::RG8_UNORM;
-    case (texture_usage::GRAYSCALE):
-        return rformat::R8_UNORM;
-    case (texture_usage::HDR):
-        return rformat::RGBA16_SFLOAT;
-    default:
-        asrt_break("Failed to handle texture usage case");
-        return rformat::INVALID;
-    }
-}
-
-void register_textures_with_renderer(texture_pool *tex_pool, renderer *rndr, mem_arena *arena)
-{
-    for (auto iter = pool_begin(tex_pool); is_valid(iter); iter = pool_next(tex_pool, iter)) {
-        rtexture_create_info ctinfo{};
-        ctinfo.name = ls(iter.item->name);
-        ctinfo.dims = iter.item->dims;
-        ctinfo.data = iter.item->pixels;
-        ctinfo.data_size = get_texture_memsize(iter.item);
-        ctinfo.format = get_rformat_for_usage(iter.item->usage);
-        create_texture(ctinfo, rndr);
-        ilog("Should create render texture %s", ls(iter.item->name));
-    }
-}
-
-void build_render_blueprint(render_blueprint *bp) {
-    //auto pass = create_pass(bp);
+    // auto pass = create_pass(bp);
 }
 
 int init(platform_ctxt *ctxt, void *user_data)
@@ -281,8 +185,10 @@ int init(platform_ctxt *ctxt, void *user_data)
         return ret;
     }
 
-    register_meshes_with_renderer(msh_pool, &app->rndr, &ctxt->arenas.stack);
-    register_textures_with_renderer(tex_pool, &app->rndr, &ctxt->arenas.stack);
+    runtime_id geom_stream_gp = setup_geometry_stream_group(&app->rndr);
+
+    upload_geometry(&app->rndr, geom_stream_gp, msh_pool, &ctxt->arenas.stack);
+    upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
 
     // Create our sim region aka scene
     init_sim_region(&app->rgn, get_global_arena());
@@ -366,8 +272,10 @@ int run_frame(platform_ctxt *ctxt, void *user_data)
 
     int res = begin_render_frame(&app->rndr, ctxt->finished_frames);
 
-    // Gather visible items and do stuff
+// Gather visible items and do stuff
+#ifdef USE_IMGUI
     ImGui::ShowDebugLogWindow();
+#endif
     // bool open{true};
     // ImGui::ShowDemoWindow();
 
