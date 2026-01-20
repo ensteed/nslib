@@ -906,7 +906,7 @@ intern void recreate_swapchain(renderer *rndr)
     init_swapchain_images_and_framebuffer(rndr);
 }
 
-intern void teardown_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
+intern void release_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
 {
     for (u32 i = 0; i < gp->layouts.size; ++i) {
         vmaDestroyVirtualBlock(gp->layouts[i].vert_block);
@@ -1102,10 +1102,12 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
     init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->geometry, MAX_MESH_COUNT, &rndr->persist_fl);
-    dlog("HERE");
+    
     // Render pass names
     hmap_init(&rndr->rpass_name_map, hash_type, &rndr->persist_fl);
     hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
+    hmap_init(&rndr->blueprint_id_map, hash_type, &rndr->persist_fl);
+    hmap_init(&rndr->geom_group_id_map, hash_type, &rndr->persist_fl);
 
     vkr_cfg vkii{.app_name = "rdev",
                  .vi{1, 0, 0},
@@ -1195,9 +1197,13 @@ void terminate_renderer(renderer *rndr)
 
     // Remove source geometry buffers
     for (int i = 0; i < rndr->geom_groups.size; ++i) {
-        teardown_geometry_stream_group(&rndr->geom_groups[i], &rndr->vk);
+        release_geometry_stream_group(&rndr->geom_groups[i], &rndr->vk);
     }
     rndr->geom_groups.size = 0;
+    hmap_terminate(&rndr->geom_group_id_map);
+
+    // Blueprints
+    hmap_terminate(&rndr->blueprint_id_map);
 
     // Terminate our default descriptor layout sets
     dlog("Should be terminating %d layouts", rndr->set_layouts.size);
@@ -1383,10 +1389,10 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
             cur_binding->stride += get_format_byte_size(cur_attrib_desc->fmt);
         }
 
-        strncpy(cur_buffer->dbg_name, cur_stream_desc->dbg_name, SMALL_STR_LEN - 1);
+        strncpy(cur_buffer->name, cur_stream_desc->dbg_name, SMALL_STR_LEN - 1);
 
         alloc_cfg.buffer_size = desc.max_vert_count * cur_binding->stride;
-        alloc_cfg.user_data = cur_buffer->dbg_name;
+        alloc_cfg.user_data = cur_buffer->name;
 
         if (stri == 0) {
             ci.size = alloc_cfg.buffer_size;
@@ -1409,7 +1415,7 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
     return !failed;
 }
 
-runtime_id create_geometry_stream_group(renderer *rndr, const geometry_group_desc &desc)
+geom_streams_group* push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
     asrt(desc.layouts.size > 0);
@@ -1432,7 +1438,7 @@ runtime_id create_geometry_stream_group(renderer *rndr, const geometry_group_des
     // Create the indice buffer and virtual block for the indice buffer
     if (!failed) {
         // Set debug name - ind buffer stores entry for whole geometry layout
-        strncpy(cur_group->indice_stream.dbg_name, desc.dbg_name, SMALL_STR_LEN - 1);
+        strncpy(cur_group->indice_stream.name, desc.name, SMALL_STR_LEN - 1);
 
         vkr_buffer_cfg alloc_cfg{};
         alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -1440,7 +1446,7 @@ runtime_id create_geometry_stream_group(renderer *rndr, const geometry_group_des
         alloc_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
         alloc_cfg.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         alloc_cfg.buffer_size = desc.max_ind_count * sizeof(ind_t);
-        alloc_cfg.user_data = cur_group->indice_stream.dbg_name;
+        alloc_cfg.user_data = cur_group->indice_stream.name;
         int result = vkr_init_buffer(&cur_group->indice_stream.buffer, alloc_cfg);
         failed = result != err_code::VKR_NO_ERROR;
         if (!failed) {
@@ -1457,11 +1463,14 @@ runtime_id create_geometry_stream_group(renderer *rndr, const geometry_group_des
     }
 
     if (failed) {
-        teardown_geometry_stream_group(cur_group, &rndr->vk);
+        release_geometry_stream_group(cur_group, &rndr->vk);
         --rndr->geom_groups.size;
-        geom_id = INVALID_ID;
+        return nullptr;
     }
-    return geom_id;
+    cur_group->ind = geom_id;
+    cur_group->id = hash_type(cur_group->indice_stream.name);
+    hmap_insert(&rndr->geom_group_id_map, cur_group->id, cur_group->ind);
+    return cur_group;
 }
 
 rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
@@ -1572,7 +1581,7 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
     return geom_hndl;
 }
 
-geometry_vert_layout_desc *push_geometry_layout(geometry_group_desc *desc, u32 layout_max_vert_count)
+geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count)
 {
     u32 ind = (u32)desc->layouts.size++;
     desc->layouts[ind].max_vert_count = layout_max_vert_count;

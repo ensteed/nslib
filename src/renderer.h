@@ -174,9 +174,9 @@ struct geometry_vert_layout_desc
     u32 max_vert_count;
 };
 
-struct geometry_group_desc
+struct geometry_stream_group_desc
 {
-    const char *dbg_name;
+    const char *name;
     static_array<geometry_vert_layout_desc, MAX_GEOMETRY_LAYOUT_COUNT> layouts;
     u32 max_ind_count;
 };
@@ -231,7 +231,7 @@ struct frame_context
 
 struct stream_buffer_entry
 {
-    small_str dbg_name;
+    small_str name;
     vkr_buffer buffer;
 };
 
@@ -245,6 +245,9 @@ struct geometry_buffer_layout_entry
 // Geometry stream groups all share the same indice buffer, so can all bound bound at the same time
 struct geom_streams_group
 {
+    // The name is stored in the stream buffer entry for indices - the id is generated from that name
+    resource_id id{INVALID_IND};
+    runtime_id ind{INVALID_ID};
     static_array<geometry_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
     stream_buffer_entry indice_stream;
@@ -318,6 +321,7 @@ struct renderer
     static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
 
     // Really a single
+    hmap<resource_id, runtime_id> geom_group_id_map{};
     static_array<geom_streams_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
     // global pipeline layout
@@ -344,17 +348,13 @@ struct renderer
     hmap<resource_id, runtime_id> blueprint_id_map{};
     static_array<render_blueprint, MAX_BP_COUNT> blueprints{};
 
-    // TEMP
-    rtechnique_handle default_technique{};
-    rmaterial_handle default_mat{};
-
     rtexture_handle swapchain_fb_depth_stencil{};
 };
 
-runtime_id create_geometry_stream_group(renderer *rndr, const geometry_group_desc &desc);
+geom_streams_group* push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 
 // Geometry group desc builder
-geometry_vert_layout_desc *push_geometry_layout(geometry_group_desc *desc, u32 layout_max_vert_count);
+geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count);
 vert_stream_desc *push_geometry_stream(geometry_vert_layout_desc *vert_layout, const char *dbg_name);
 void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &att_desc);
 

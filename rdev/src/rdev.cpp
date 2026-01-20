@@ -185,7 +185,7 @@ int init(platform_ctxt *ctxt, void *user_data)
         return ret;
     }
 
-    runtime_id geom_stream_gp = setup_geometry_stream_group(&app->rndr);
+    auto geom_stream_gp = setup_geometry_stream_group(&app->rndr);
 
     upload_geometry(&app->rndr, geom_stream_gp, msh_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);

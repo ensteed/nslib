@@ -5,8 +5,8 @@ namespace nslib
 {
 
 runtime_id setup_geometry_stream_group(renderer *rndr) {
-    geometry_group_desc desc{};
-    desc.dbg_name = "nslib";
+    geometry_stream_group_desc desc{};
+    desc.name = "nslib";
     desc.max_ind_count = MAX_TOTAL_MESH_IND_COUNT;
     
     geometry_vert_layout_desc* static_mesh_layout = push_geometry_layout(&desc, MAX_STATIC_MESH_VERT_COUNT);
@@ -37,7 +37,7 @@ runtime_id setup_geometry_stream_group(renderer *rndr) {
     push_geometry_attribute<vec3>(bone_weight_ids, shader_location++);
     push_geometry_attribute<vec2>(bone_weight_ids, shader_location++);
     
-    return create_geometry_stream_group(rndr, desc);
+    return push_geometry_stream_group(rndr, desc)->ind;
 }
 
 
