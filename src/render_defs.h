@@ -4,8 +4,8 @@
 namespace nslib
 {
 // Rendering resource id
-using runtime_id = u32;
-using resource_id = u64;
+using rres_handle = u32;
+using rres_id = u64;
 
 // Maximum number of techniques the renderer supports
 const u32 MAX_TECHNIQUE_COUNT = 1024;

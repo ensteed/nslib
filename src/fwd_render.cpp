@@ -4,7 +4,7 @@
 namespace nslib
 {
 
-runtime_id setup_geometry_stream_group(renderer *rndr)
+rres_handle setup_geometry_stream_group(renderer *rndr)
 {
     geometry_stream_group_desc desc{};
     desc.name = "nslib";
@@ -56,7 +56,7 @@ intern rformat get_rformat_for_usage(texture_usage usage)
     }
 }
 
-bool upload_geometry(renderer *rndr, runtime_id stream_gp, mesh *geom, mem_arena *arena)
+bool upload_geometry(renderer *rndr, rres_handle stream_gp, mesh *geom, mem_arena *arena)
 {
     ilog("Registering mesh id: %s  name: %s", ls(geom->name), str_cstr(geom->name));
     asrt(geom->verts.size > 0);
@@ -126,7 +126,7 @@ bool upload_geometry(renderer *rndr, runtime_id stream_gp, mesh *geom, mem_arena
 }
 
 // Great use for a stack arena - will work
-u32 upload_geometry(renderer *rndr, runtime_id stream_gp, asset_pool<mesh> *geometry, mem_arena *arena)
+u32 upload_geometry(renderer *rndr, rres_handle stream_gp, asset_pool<mesh> *geometry, mem_arena *arena)
 {
     u32 success_count{0};
     for (auto rm = pool_begin(geometry); is_valid(rm); rm = pool_next(geometry, rm)) {

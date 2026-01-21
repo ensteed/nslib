@@ -165,10 +165,10 @@ void build_render_blueprint(render_blueprint *bp)
 
 void build_and_compile_render_blueprint(renderer *rndr) {
     // First, create the needed target resources
-    auto rbp = push_render_blueprint("fwd-pbr", rndr);
-    push_rbp_target_texture(rbp, RTARGET_SWAPCHAIN_IMAGE);
+    auto rbp = create_render_blueprint("fwd-pbr", rndr);
+    create_rbp_target_texture(rbp, RTARGET_SWAPCHAIN_IMAGE);
     
-    auto depth = push_rbp_target_texture(rbp, "depth");
+    auto depth = create_rbp_target_texture(rbp, "depth");
     depth->tinfo.img_cfg.dims = {rndr->vk.inst.device.swapchain.extent.width, rndr->vk.inst.device.swapchain.extent.height, 1};
     depth->tinfo.img_cfg.format = vkr_find_best_depth_format(&rndr->vk.inst.pdev_info);
     depth->tinfo.img_cfg.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -176,16 +176,16 @@ void build_and_compile_render_blueprint(renderer *rndr) {
     depth->tinfo.img_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
     depth->tinfo.img_view_cfg.srange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
     
-    auto pass = push_rbp_pass(rbp, "main");
+    auto pass = add_rbp_pass(rbp, "main");
     pass->use_subpass_bookends = true;
 
-    auto req = push_rbp_pass_res_requirement(pass);
+    auto req = add_rbp_pass_res_requirement(pass);
     req->usage = rtarget_res_usage::COLOR_ATTACHMENT;
     req->visibility = VISIBILITY_FRAGMENT;
     req->access_mask = RES_REQUIREMENT_ACCESS_FLAG_WRITE | RES_REQUIREMENT_ACCESS_FLAG_CLEAR;
     req->resid = depth->id;
 
-    req = push_rbp_pass_res_requirement(pass);
+    req = add_rbp_pass_res_requirement(pass);
     req->usage = rtarget_res_usage::COLOR_ATTACHMENT;
     req->visibility = VISIBILITY_FRAGMENT;
     req->access_mask = RES_REQUIREMENT_ACCESS_FLAG_WRITE | RES_REQUIREMENT_ACCESS_FLAG_CLEAR;

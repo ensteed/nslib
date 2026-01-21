@@ -128,7 +128,7 @@ intern VkAttachmentStoreOp get_requirement_store_op(const rtarget_res_requiremen
     return VK_ATTACHMENT_STORE_OP_DONT_CARE;
 }
 
-intern u32 find_attachment_index(const static_array<runtime_id, MAX_BP_PASS_ATTACHMENT_COUNT> &att_ids, runtime_id id)
+intern u32 find_attachment_index(const static_array<rres_handle, MAX_BP_PASS_ATTACHMENT_COUNT> &att_ids, rres_handle id)
 {
     for (u32 i = 0; i < att_ids.size; ++i) {
         if (att_ids.data[i] == id) {
@@ -257,23 +257,23 @@ intern void fill_subpass_dependencies(vkr_rpass_cfg *rp_cfg, const rbp_pass *pas
     }
 }
 
-rtarget_res_requirement *push_rbp_pass_res_requirement(rbp_pass *rbp, runtime_id subpass)
+rtarget_res_requirement *add_rbp_pass_res_requirement(rbp_pass *rbp, rres_handle subpass)
 {
     auto ind = rbp->subpasses[subpass].resources.size++;
     asrt(ind < rbp->subpasses[subpass].resources.capacity);
     return &rbp->subpasses[subpass].resources[ind];
 }
 
-runtime_id push_rbp_subpass(rbp_pass *pass)
+rres_handle add_rbp_subpass(rbp_pass *pass)
 {
     auto ret = pass->subpasses.size++;
     asrt(ret < pass->subpasses.capacity);
     return ret;
 }
 
-rtarget_res_texture *push_rbp_target_texture(rtarget_res_registry *reg, const char *name)
+rtarget_res_texture *create_rbp_target_texture(rtarget_res_registry *reg, const char *name)
 {
-    runtime_id ind = (u32)reg->textures.size++;
+    rres_handle ind = (u32)reg->textures.size++;
     asrt(ind < reg->textures.capacity);
     rtarget_res_texture *tex = &reg->textures[ind];
     tex->ind = ind;
@@ -284,25 +284,25 @@ rtarget_res_texture *push_rbp_target_texture(rtarget_res_registry *reg, const ch
     return tex;
 }
 
-rtarget_res_texture *push_rbp_target_texture(render_blueprint *rbp, const char *name)
+rtarget_res_texture *create_rbp_target_texture(render_blueprint *rbp, const char *name)
 {
-    return push_rbp_target_texture(&rbp->targets, name);
+    return create_rbp_target_texture(&rbp->targets, name);
 }
 
-rtarget_res_texture *find_rbp_target_texture(rtarget_res_registry *reg, resource_id id)
+rtarget_res_texture *find_rbp_target_texture(rtarget_res_registry *reg, rres_id id)
 {
     auto fiter = hmap_find(&reg->texture_id_map, id);
     return fiter ? &reg->textures[fiter->val] : nullptr;
 }
 
-rtarget_res_texture *find_rbp_target_texture(render_blueprint *rbp, resource_id id)
+rtarget_res_texture *find_rbp_target_texture(render_blueprint *rbp, rres_id id)
 {
     return find_rbp_target_texture(&rbp->targets, id);
 }
 
-rtarget_res_buffer *push_rbp_target_buffer(rtarget_res_registry *reg, const char *name)
+rtarget_res_buffer *create_rbp_target_buffer(rtarget_res_registry *reg, const char *name)
 {
-    runtime_id ind = (u32)reg->buffers.size++;
+    rres_handle ind = (u32)reg->buffers.size++;
     asrt(ind < reg->buffers.capacity);
     rtarget_res_buffer *buf = &reg->buffers[ind];
     buf->ind = ind;
@@ -312,54 +312,67 @@ rtarget_res_buffer *push_rbp_target_buffer(rtarget_res_registry *reg, const char
     return buf;
 }
 
-rtarget_res_buffer *push_rbp_target_buffer(render_blueprint *rbp, const char *name)
+rtarget_res_buffer *create_rbp_target_buffer(render_blueprint *rbp, const char *name)
 {
-    return push_rbp_target_buffer(&rbp->targets, name);
+    return create_rbp_target_buffer(&rbp->targets, name);
 }
 
-rtarget_res_buffer *find_rbp_target_buffer(rtarget_res_registry *reg, resource_id id)
+rtarget_res_buffer *find_rbp_target_buffer(rtarget_res_registry *reg, rres_id id)
 {
     auto fiter = hmap_find(&reg->buffer_id_map, id);
     return fiter ? &reg->buffers[fiter->val] : nullptr;
 }
 
-rtarget_res_buffer *find_rbp_target_buffer(render_blueprint *rbp, resource_id id)
+rtarget_res_buffer *find_rbp_target_buffer(render_blueprint *rbp, rres_id id)
 {
     return find_rbp_target_buffer(&rbp->targets, id);
 }
 
-rbp_pass *push_rbp_pass(render_blueprint *rbp, const char *name)
+rbp_pass *add_rbp_pass(render_blueprint *rbp, const char *name)
 {
-    runtime_id ind = (u32)rbp->passes.size++;
+    rres_handle ind = (u32)rbp->passes.size++;
     asrt(ind < rbp->passes.capacity);
     rbp_pass *pass = &rbp->passes[ind];
-    pass->ind = ind;
     strncpy(pass->name, name, SMALL_STR_LEN - 1);
     pass->id = hash_type(pass->name);
-    hmap_insert(&rbp->pass_idmap, pass->id, pass->ind);
+    asrt(hmap_insert(&rbp->pass_idmap, pass->id, ind));
     return pass;
 }
 
-runtime_id find_rbp_pass(render_blueprint *rbp, resource_id resid)
+rres_handle find_rbp_pass(render_blueprint *rbp, rres_id resid)
 {
     auto fiter = hmap_find(&rbp->pass_idmap, resid);
     return fiter ? fiter->val : INVALID_ID;
 }
 
-render_blueprint *push_render_blueprint(const char *name, renderer *rndr)
+bool destroy_render_blueprint(const char *name, renderer *rndr)
 {
-    runtime_id ind = (u32)rndr->blueprints.size++;
-    asrt(ind < rndr->blueprints.capacity);
+    rres_handle ind = (u32)rndr->blueprints.size - 1;
+
     render_blueprint *bp = &rndr->blueprints[ind];
+
+    hmap_terminate(&bp->targets.texture_id_map);
+    hmap_terminate(&bp->targets.buffer_id_map);
+
+    arr_clear(&bp->passes);
+    hmap_terminate(&bp->pass_idmap);
+}
+
+render_blueprint *create_render_blueprint(const char *name, renderer *rndr)
+{
+    rres_handle hndl = (u32)rndr->blueprints.size++;
+    asrt(hndl < rndr->blueprints.capacity);
+    render_blueprint *bp = &rndr->blueprints[hndl];
+    hmap_init(&bp->targets.texture_id_map, hash_type, &rndr->persist_fl);
+    hmap_init(&bp->targets.buffer_id_map, hash_type, &rndr->persist_fl);
     hmap_init(&bp->pass_idmap, hash_type, &rndr->persist_fl);
-    bp->ind = ind;
     strncpy(bp->name, name, SMALL_STR_LEN - 1);
     bp->id = hash_type(bp->name);
-    hmap_insert(&rndr->blueprint_id_map, bp->id, bp->ind);
+    hmap_insert(&rndr->blueprint_id_map, bp->id, hndl);
     return bp;
 }
 
-runtime_id find_render_blueprint(resource_id bpid, renderer *rndr)
+rres_handle find_render_blueprint(rres_id bpid, renderer *rndr)
 {
     auto fiter = hmap_find(&rndr->blueprint_id_map, bpid);
     return fiter ? fiter->val : INVALID_ID;
@@ -433,7 +446,7 @@ bool compile_render_blueprint(render_blueprint *rbp, renderer *rndr)
         vkr_rpass_cfg rp_cfg{};
 
         // The config doesn't track our res ids as part of the attachment so we gotta do that
-        static_array<runtime_id, MAX_BP_PASS_ATTACHMENT_COUNT> attachment_ids{};
+        static_array<rres_handle, MAX_BP_PASS_ATTACHMENT_COUNT> attachment_ids{};
 
         for (u32 subpass_ind = 0; subpass_ind < pass->subpasses.size; ++subpass_ind) {
             auto *subpass = &pass->subpasses[subpass_ind];

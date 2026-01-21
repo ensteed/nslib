@@ -23,11 +23,11 @@ struct rtarget_res_buffer
 {
     // Set during build
     small_str name;
-    resource_id id;
+    rres_id id;
     vkr_buffer_cfg buf_cfg{};
 
     // Filled after load if loading from disk
-    runtime_id ind;
+    rres_handle ind;
 
     // Filled in during compile
     vkr_buffer buffers[MAX_FRAMES_IN_FLIGHT];
@@ -52,10 +52,10 @@ struct rtarget_res_texture
 {
     // Set during build
     small_str name;
-    resource_id id;
+    rres_id id;
 
     // Filled after load if loading from disk
-    runtime_id ind;
+    rres_handle ind;
 
     // Fille during compile
     bool is_swapchain;
@@ -69,9 +69,9 @@ struct rtarget_res_texture
 struct rtarget_res_registry
 {
     static_array<rtarget_res_buffer, MAX_BUFFER_RRESOURCE_COUNT> buffers;
-    hmap<resource_id, runtime_id> buffer_id_map;
+    hmap<rres_id, rres_handle> buffer_id_map;
     static_array<rtarget_res_texture, MAX_TEXTURE_RRESOURCE_COUNT> textures;
-    hmap<resource_id, runtime_id> texture_id_map;
+    hmap<rres_id, rres_handle> texture_id_map;
 };
 
 enum rshader_stage_visibility
@@ -110,13 +110,13 @@ enum rbp_pass_type
 struct rtarget_res_requirement
 {
     // Set while building
-    resource_id resid;
+    rres_id resid;
     rtarget_res_usage usage;
     u32 access_mask;
     u32 visibility;
 
     // Filled during compile
-    runtime_id id{INVALID_ID};
+    rres_handle id{INVALID_ID};
 };
 
 struct rbp_subpass
@@ -128,13 +128,10 @@ struct rbp_pass
 {
     // Set while building
     small_str name;
-    resource_id id;
+    rres_id id;
     rbp_pass_type type;
     bool use_subpass_bookends{false};
     static_array<rbp_subpass, MAX_BP_SUBPASS_COUNT> subpasses{};
-
-    // Populated after load (if loading from disk)
-    runtime_id ind;
 
     // Filld during compile
     VkRenderPass handle;
@@ -143,37 +140,37 @@ struct rbp_pass
 struct render_blueprint
 {
     small_str name;
-    resource_id id;
+    rres_id id;
     static_array<rbp_pass, MAX_BP_PASS_COUNT> passes{};
     rtarget_res_registry targets{};
 
     // Populated after load (if loading from disk)
-    runtime_id ind;
-    hmap<resource_id, runtime_id> pass_idmap{};
+    hmap<rres_id, rres_handle> pass_idmap{};
 };
 
-const runtime_id DEFAULT_SUBPASS_ID = 0;
+const rres_handle DEFAULT_SUBPASS_ID = 0;
 inline const char *RTARGET_SWAPCHAIN_IMAGE = "swapchain";
-const resource_id RTARGET_SWAPCHAIN_ID = hash_type(RTARGET_SWAPCHAIN_ID);
+const rres_id RTARGET_SWAPCHAIN_ID = hash_type(RTARGET_SWAPCHAIN_ID);
 
-rtarget_res_requirement *push_rbp_pass_res_requirement(rbp_pass *rbp, runtime_id subpass = DEFAULT_SUBPASS_ID);
-runtime_id push_rbp_subpass(rbp_pass *pass);
-rbp_pass *push_rbp_pass(render_blueprint *rbp, const char *name);
-runtime_id find_rbp_pass(render_blueprint *rbp, resource_id resid);
+rtarget_res_requirement *add_rbp_pass_res_requirement(rbp_pass *rbp, rres_handle subpass = DEFAULT_SUBPASS_ID);
+rres_handle add_rbp_subpass(rbp_pass *pass);
 
-rtarget_res_texture *push_rbp_target_texture(render_blueprint *rbp, const char *name);
-rtarget_res_texture *push_rbp_target_texture(rtarget_res_registry *reg, const char *name);
-rtarget_res_texture *find_rbp_target_texture(render_blueprint *rbp, resource_id id);
-rtarget_res_texture *find_rbp_target_texture(rtarget_res_registry *reg, resource_id id);
+rbp_pass *add_rbp_pass(render_blueprint *rbp, const char *name);
+rres_handle find_rbp_pass(render_blueprint *rbp, rres_id resid);
 
-rtarget_res_buffer *push_rbp_target_buffer(render_blueprint *rbp, const char *name);
-rtarget_res_buffer *push_rbp_target_buffer(rtarget_res_registry *reg, const char *name);
-rtarget_res_buffer *find_rbp_target_buffer(render_blueprint *rbp, resource_id id);
-rtarget_res_buffer *find_rbp_target_buffer(rtarget_res_registry *reg, resource_id id);
+rtarget_res_texture *create_rbp_target_texture(render_blueprint *rbp, const char *name);
+rtarget_res_texture *create_rbp_target_texture(rtarget_res_registry *reg, const char *name);
+rtarget_res_texture *find_rbp_target_texture(render_blueprint *rbp, rres_id id);
+rtarget_res_texture *find_rbp_target_texture(rtarget_res_registry *reg, rres_id id);
+
+rtarget_res_buffer *create_rbp_target_buffer(render_blueprint *rbp, const char *name);
+rtarget_res_buffer *create_rbp_target_buffer(rtarget_res_registry *reg, const char *name);
+rtarget_res_buffer *find_rbp_target_buffer(render_blueprint *rbp, rres_id id);
+rtarget_res_buffer *find_rbp_target_buffer(rtarget_res_registry *reg, rres_id id);
 
 // Renderer takes ownership of blueprint
-render_blueprint *push_render_blueprint(const char *name, renderer *rndr);
-runtime_id find_render_blueprint(resource_id bpid, renderer *rndr);
+render_blueprint *create_render_blueprint(const char *name, renderer *rndr);
+rres_handle find_render_blueprint(rres_id bpid, renderer *rndr);
 
 void clean_render_blueprint(render_blueprint *rbp, renderer *rndr);
 bool compile_render_blueprint(render_blueprint *rbp, renderer *rndr);

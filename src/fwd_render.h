@@ -56,10 +56,10 @@ struct rmesh_vert_bone_weights_ids
 };
 
 // Setup vert/index buffers (stream group) for this geometry type and get the runtime id for it
-runtime_id setup_geometry_stream_group(renderer *rndr);
+rres_handle setup_geometry_stream_group(renderer *rndr);
 
-bool upload_geometry(renderer *rndr, runtime_id stream_gp, mesh *mesh, mem_arena *arena);
-u32 upload_geometry(renderer *rndr, runtime_id stream_gp, asset_pool<mesh> *meshes, mem_arena *arena);
+bool upload_geometry(renderer *rndr, rres_handle stream_gp, mesh *mesh, mem_arena *arena);
+u32 upload_geometry(renderer *rndr, rres_handle stream_gp, asset_pool<mesh> *meshes, mem_arena *arena);
 
 void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena);
 

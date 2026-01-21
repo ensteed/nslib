@@ -246,8 +246,8 @@ struct geometry_buffer_layout_entry
 struct geom_streams_group
 {
     // The name is stored in the stream buffer entry for indices - the id is generated from that name
-    resource_id id{INVALID_IND};
-    runtime_id ind{INVALID_ID};
+    rres_id id{INVALID_IND};
+    rres_handle ind{INVALID_ID};
     static_array<geometry_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
     stream_buffer_entry indice_stream;
@@ -257,9 +257,9 @@ struct rgeom_create_info
 {
     const char *name{};
     // Which geometry streams group
-    runtime_id group{};
+    rres_handle group{};
     // The specific layout to use within the geometry streams group
-    runtime_id layout{};
+    rres_handle layout{};
     // Number of verts in this geometry. Each stream must have the same vert count
     u32 vert_count{};
     // Should be an array of void* mem pointers - the array size matching the number of vert streams specified in layout
@@ -321,7 +321,7 @@ struct renderer
     static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
 
     // Really a single
-    hmap<resource_id, runtime_id> geom_group_id_map{};
+    hmap<rres_id, rres_handle> geom_group_id_map{};
     static_array<geom_streams_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
     // global pipeline layout
@@ -345,7 +345,7 @@ struct renderer
     f64 no_resize_frames;
 
     // Render blueprints - last one is active one
-    hmap<resource_id, runtime_id> blueprint_id_map{};
+    hmap<rres_id, rres_handle> blueprint_id_map{};
     static_array<render_blueprint, MAX_BP_COUNT> blueprints{};
 
     rtexture_handle swapchain_fb_depth_stencil{};
