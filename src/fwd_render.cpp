@@ -4,12 +4,13 @@
 namespace nslib
 {
 
-runtime_id setup_geometry_stream_group(renderer *rndr) {
+runtime_id setup_geometry_stream_group(renderer *rndr)
+{
     geometry_stream_group_desc desc{};
     desc.name = "nslib";
     desc.max_ind_count = MAX_TOTAL_MESH_IND_COUNT;
-    
-    geometry_vert_layout_desc* static_mesh_layout = push_geometry_layout(&desc, MAX_STATIC_MESH_VERT_COUNT);
+
+    geometry_vert_layout_desc *static_mesh_layout = push_geometry_layout(&desc, MAX_STATIC_MESH_VERT_COUNT);
     vert_stream_desc *pos_col = push_geometry_stream(static_mesh_layout, "static-pos-col");
     u32 shader_location = 0;
     push_geometry_attribute<vec3>(pos_col, shader_location++);
@@ -19,10 +20,9 @@ runtime_id setup_geometry_stream_group(renderer *rndr) {
     push_geometry_attribute<vec3>(norm_tan_uv, shader_location++);
     push_geometry_attribute<vec3>(norm_tan_uv, shader_location++);
     push_geometry_attribute<vec2>(norm_tan_uv, shader_location++);
-    
-    
-    geometry_vert_layout_desc* skinned_mesh_layout = push_geometry_layout(&desc, MAX_SKINNED_MESH_VERT_COUNT);
-    pos_col = push_geometry_stream(skinned_mesh_layout, "skinned-pos-col");    
+
+    geometry_vert_layout_desc *skinned_mesh_layout = push_geometry_layout(&desc, MAX_SKINNED_MESH_VERT_COUNT);
+    pos_col = push_geometry_stream(skinned_mesh_layout, "skinned-pos-col");
     push_geometry_attribute<vec3>(pos_col, shader_location++);
     push_geometry_attribute<u8vec4>(pos_col, shader_location++, true);
 
@@ -30,16 +30,14 @@ runtime_id setup_geometry_stream_group(renderer *rndr) {
     push_geometry_attribute<vec3>(norm_tan_uv, shader_location++);
     push_geometry_attribute<vec3>(norm_tan_uv, shader_location++);
     push_geometry_attribute<vec2>(norm_tan_uv, shader_location++);
-    
 
     vert_stream_desc *bone_weight_ids = push_geometry_stream(skinned_mesh_layout, "skinned-bone-weight-ids");
     push_geometry_attribute<vec3>(bone_weight_ids, shader_location++);
     push_geometry_attribute<vec3>(bone_weight_ids, shader_location++);
     push_geometry_attribute<vec2>(bone_weight_ids, shader_location++);
-    
+
     return push_geometry_stream_group(rndr, desc)->ind;
 }
-
 
 intern rformat get_rformat_for_usage(texture_usage usage)
 {
@@ -57,7 +55,6 @@ intern rformat get_rformat_for_usage(texture_usage usage)
         return rformat::INVALID;
     }
 }
-
 
 bool upload_geometry(renderer *rndr, runtime_id stream_gp, mesh *geom, mem_arena *arena)
 {
@@ -147,7 +144,7 @@ void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena)
         ctinfo.data = iter.item->pixels;
         ctinfo.data_size = get_texture_memsize(iter.item);
         ctinfo.format = get_rformat_for_usage(iter.item->usage);
-        create_texture(ctinfo, rndr);
+        create_texture(rndr, ctinfo);
         ilog("Should create render texture %s", ls(iter.item->name));
     }
 }

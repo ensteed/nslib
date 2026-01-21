@@ -149,7 +149,7 @@ struct vkr_image_cfg
 
 struct vkr_image
 {
-    VkImage hndl{VK_NULL_HANDLE};
+    VkImage hndl;
     VkFormat format;
     uvec3 dims;
     VmaAllocation mem_hndl;

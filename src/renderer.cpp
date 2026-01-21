@@ -473,7 +473,7 @@ intern VkFormat get_vk_format(rformat fmt)
     }
 }
 
-rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rndr)
+rtexture_handle create_texture(renderer *rndr, const rtexture_create_info &ctinfo)
 {
     asrt(rndr);
     asrt(ctinfo.data);

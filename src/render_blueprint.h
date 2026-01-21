@@ -25,7 +25,7 @@ struct rtarget_res_buffer
     small_str name;
     resource_id id;
     vkr_buffer_cfg buf_cfg{};
-    
+
     // Filled after load if loading from disk
     runtime_id ind;
 
@@ -34,20 +34,36 @@ struct rtarget_res_buffer
     rbuffer_state states[MAX_FRAMES_IN_FLIGHT]; // Current state of each frame's image
 };
 
+struct rtarget_frame_texture
+{
+    vkr_image image;
+    VkImageView view;
+    rtexture_state state;
+};
+
+struct rtarget_textures_info
+{
+    vkr_image_cfg img_cfg{};
+    vkr_image_view_cfg img_view_cfg{};
+    rtarget_frame_texture frames[MAX_FRAMES_IN_FLIGHT];
+};
+
 struct rtarget_res_texture
 {
     // Set during build
     small_str name;
     resource_id id;
-    vkr_image_cfg img_cfg{};
 
     // Filled after load if loading from disk
     runtime_id ind;
 
     // Fille during compile
-    vkr_image images[MAX_FRAMES_IN_FLIGHT];
-    VkImageView views[MAX_FRAMES_IN_FLIGHT];
-    rtexture_state states[MAX_FRAMES_IN_FLIGHT]; // Current state of each frame's image
+    bool is_swapchain;
+    union
+    {
+        rtarget_textures_info tinfo;
+        rtarget_frame_texture swap_info;
+    };
 };
 
 struct rtarget_res_registry
@@ -78,11 +94,11 @@ enum struct rtarget_res_usage
     UNDEFINED
 };
 
-enum rtarget_res_requirement_flag
+enum rtarget_res_requirement_access_flag
 {
-    RESOURCE_REQUIREMENT_FLAG_READ,  // Resource read - load op is read if set
-    RESOURCE_REQUIREMENT_FLAG_CLEAR, // Resource cleared on load op - ignored if read is set - otherwise clear or dont care
-    RESOURCE_REQUIREMENT_FLAG_WRITE, // Resource overwritten - if set then store op write otherwise store op don't care
+    RES_REQUIREMENT_ACCESS_FLAG_READ,  // Resource read - load op is read if set
+    RES_REQUIREMENT_ACCESS_FLAG_CLEAR, // Resource cleared on load op - ignored if read is set - otherwise clear or dont care
+    RES_REQUIREMENT_ACCESS_FLAG_WRITE, // Resource overwritten - if set then store op write otherwise store op don't care
 };
 
 enum rbp_pass_type
@@ -96,7 +112,7 @@ struct rtarget_res_requirement
     // Set while building
     resource_id resid;
     rtarget_res_usage usage;
-    u32 access;
+    u32 access_mask;
     u32 visibility;
 
     // Filled during compile
@@ -137,17 +153,23 @@ struct render_blueprint
 };
 
 const runtime_id DEFAULT_SUBPASS_ID = 0;
+inline const char *RTARGET_SWAPCHAIN_IMAGE = "swapchain";
+const resource_id RTARGET_SWAPCHAIN_ID = hash_type(RTARGET_SWAPCHAIN_ID);
 
-rtarget_res_requirement *push_res_requirement(rbp_pass *rbp, const char *name, runtime_id subpass = DEFAULT_SUBPASS_ID);
+rtarget_res_requirement *push_rbp_pass_res_requirement(rbp_pass *rbp, runtime_id subpass = DEFAULT_SUBPASS_ID);
 runtime_id push_rbp_subpass(rbp_pass *pass);
 rbp_pass *push_rbp_pass(render_blueprint *rbp, const char *name);
 runtime_id find_rbp_pass(render_blueprint *rbp, resource_id resid);
 
-rtarget_res_texture *push_target_texture(render_blueprint *rbp, const char *name);
-rtarget_res_texture *push_target_texture(rtarget_res_registry *reg, const char *name);
-rtarget_res_buffer *push_target_buffer(render_blueprint *rbp, const char *name);
-rtarget_res_buffer *push_target_buffer(rtarget_res_registry *reg, const char *name);
+rtarget_res_texture *push_rbp_target_texture(render_blueprint *rbp, const char *name);
+rtarget_res_texture *push_rbp_target_texture(rtarget_res_registry *reg, const char *name);
+rtarget_res_texture *find_rbp_target_texture(render_blueprint *rbp, resource_id id);
+rtarget_res_texture *find_rbp_target_texture(rtarget_res_registry *reg, resource_id id);
 
+rtarget_res_buffer *push_rbp_target_buffer(render_blueprint *rbp, const char *name);
+rtarget_res_buffer *push_rbp_target_buffer(rtarget_res_registry *reg, const char *name);
+rtarget_res_buffer *find_rbp_target_buffer(render_blueprint *rbp, resource_id id);
+rtarget_res_buffer *find_rbp_target_buffer(rtarget_res_registry *reg, resource_id id);
 
 // Renderer takes ownership of blueprint
 render_blueprint *push_render_blueprint(const char *name, renderer *rndr);

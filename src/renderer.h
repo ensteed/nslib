@@ -369,10 +369,9 @@ void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool
 }
 
 rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci);
-
-rtexture_handle create_texture(const rtexture_create_info &ctinfo, renderer *rndr);
-rtexture_handle create_rtechnique(const rtechnique_create_info &ctinfo, renderer *rndr);
-rtexture_handle create_material(const rmaterial_create_info &ctinfo, renderer *rndr);
+rtexture_handle create_texture(renderer *rndr, const rtexture_create_info &ctinfo);
+rtexture_handle create_rtechnique(renderer *rndr, const rtechnique_create_info &ctinfo);
+rtexture_handle create_material(renderer *rndr, const rmaterial_create_info &ctinfo);
 
 int begin_render_frame(renderer *rndr, int finished_frames);
 int end_render_frame(renderer *rndr, camera *cam, f64 dt);
