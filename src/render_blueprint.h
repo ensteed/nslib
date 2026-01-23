@@ -2,6 +2,7 @@
 #include "vk_context.h"
 #include "containers/hmap.h"
 #include "render_defs.h"
+#include "rformat.h"
 
 namespace nslib
 {
@@ -107,16 +108,19 @@ enum rbp_pass_type
     PASS_TYPE_COMPUTE
 };
 
-struct rtarget_res_requirement
-{
-    // Set while building
-    rres_id resid;
+struct rtarget_res_requirement_info {
     rtarget_res_usage usage;
     u32 access_mask;
     u32 visibility;
+    rformat format;
+};
 
-    // Filled during compile
-    rres_handle id{INVALID_ID};
+struct rtarget_res_requirement
+{
+    // Set while building
+    small_str att_name;
+    rres_id att_id;
+    rtarget_res_requirement_info trri;
 };
 
 struct rbp_subpass
@@ -129,6 +133,7 @@ struct rbp_pass
     // Set while building
     small_str name;
     rres_id id;
+    
     rbp_pass_type type;
     bool use_subpass_bookends{false};
     static_array<rbp_subpass, MAX_BP_SUBPASS_COUNT> subpasses{};
@@ -152,7 +157,7 @@ const rres_handle DEFAULT_SUBPASS_ID = 0;
 inline const char *RTARGET_SWAPCHAIN_IMAGE = "swapchain";
 const rres_id RTARGET_SWAPCHAIN_ID = hash_type(RTARGET_SWAPCHAIN_ID);
 
-rtarget_res_requirement *add_rbp_pass_res_requirement(rbp_pass *rbp, rres_handle subpass = DEFAULT_SUBPASS_ID);
+rtarget_res_requirement *add_rbp_pass_res_requirement(rbp_pass *rbp, const char *att_name, rres_handle subpass = DEFAULT_SUBPASS_ID);
 rres_handle add_rbp_subpass(rbp_pass *pass);
 
 rbp_pass *add_rbp_pass(render_blueprint *rbp, const char *name);
@@ -169,10 +174,10 @@ rtarget_res_buffer *find_rbp_target_buffer(render_blueprint *rbp, rres_id id);
 rtarget_res_buffer *find_rbp_target_buffer(rtarget_res_registry *reg, rres_id id);
 
 // Renderer takes ownership of blueprint
-render_blueprint *create_render_blueprint(const char *name, renderer *rndr);
-rres_handle find_render_blueprint(rres_id bpid, renderer *rndr);
+render_blueprint *create_render_blueprint(renderer *rndr, const char *name);
+rres_handle find_render_blueprint(renderer *rndr, rres_id bpid);
 
-void clean_render_blueprint(render_blueprint *rbp, renderer *rndr);
-bool compile_render_blueprint(render_blueprint *rbp, renderer *rndr);
+void clean_render_blueprint(renderer *rndr, render_blueprint *rbp);
+bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp);
 
 } // namespace nslib

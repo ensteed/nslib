@@ -358,7 +358,7 @@ bool destroy_render_blueprint(const char *name, renderer *rndr)
     hmap_terminate(&bp->pass_idmap);
 }
 
-render_blueprint *create_render_blueprint(const char *name, renderer *rndr)
+render_blueprint *create_render_blueprint(renderer *rndr, const char *name)
 {
     rres_handle hndl = (u32)rndr->blueprints.size++;
     asrt(hndl < rndr->blueprints.capacity);
@@ -372,13 +372,13 @@ render_blueprint *create_render_blueprint(const char *name, renderer *rndr)
     return bp;
 }
 
-rres_handle find_render_blueprint(rres_id bpid, renderer *rndr)
+rres_handle find_render_blueprint(renderer *rndr, rres_id bpid)
 {
     auto fiter = hmap_find(&rndr->blueprint_id_map, bpid);
     return fiter ? fiter->val : INVALID_ID;
 }
 
-void clean_render_blueprint(render_blueprint *rbp, renderer *rndr)
+void clean_render_blueprint(renderer *rndr, render_blueprint *rbp)
 {
     asrt(rbp);
     auto vk = &rndr->vk;
@@ -390,9 +390,11 @@ void clean_render_blueprint(render_blueprint *rbp, renderer *rndr)
             rbp->targets.buffers[bufid].buffers[fif] = {};
         }
         for (u32 texid = 0; texid < rbp->targets.textures.size; ++texid) {
-            vkr_terminate_image(&rbp->targets.textures[texid].tinfo.frames[fif].image, vk);
-            vkr_terminate_image_view(rbp->targets.textures[texid].tinfo.frames[fif].view, vk);
-            rbp->targets.textures[texid].tinfo.frames[fif] = {};
+            if (!rbp->targets.textures[texid].is_swapchain) {
+                vkr_terminate_image(&rbp->targets.textures[texid].tinfo.frames[fif].image, vk);
+                vkr_terminate_image_view(rbp->targets.textures[texid].tinfo.frames[fif].view, vk);
+                rbp->targets.textures[texid].tinfo.frames[fif] = {};
+            }
         }
     }
     for (u32 rpi = 0; rpi < rbp->passes.size; ++rpi) {
@@ -401,7 +403,7 @@ void clean_render_blueprint(render_blueprint *rbp, renderer *rndr)
     }
 }
 
-bool compile_render_blueprint(render_blueprint *rbp, renderer *rndr)
+bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
 {
     asrt(rbp);
     auto vk = &rndr->vk;
