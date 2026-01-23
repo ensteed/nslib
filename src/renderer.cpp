@@ -1102,7 +1102,7 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
     init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->geometry, MAX_MESH_COUNT, &rndr->persist_fl);
-    
+
     // Render pass names
     hmap_init(&rndr->rpass_name_map, hash_type, &rndr->persist_fl);
     hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
@@ -1415,7 +1415,7 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
     return !failed;
 }
 
-geom_streams_group* push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
+geom_streams_group *push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
     asrt(desc.layouts.size > 0);
@@ -1599,6 +1599,78 @@ void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &a
 {
     u32 ind = (u32)stream->attribs.size++;
     stream->attribs[ind] = att_desc;
+}
+
+rtarget_res_texture *create_rtarget_texture(renderer *rndr, const char *name)
+{}
+rtarget_res_texture *find_rtarget_texture(renderer *rndr, rres_id id)
+{}
+
+rtarget_res_buffer *create_rtarget_buffer(renderer *rndr, const char *name)
+{}
+
+rtarget_res_buffer *find_rbp_target_buffer(renderer *rndr, rres_id id)
+{}
+
+rtarget_res_texture *create_rtarget_texture(rtarget_res_registry *reg, const create_rtarget_texture_info &ci)
+{
+    rres_handle ind = (u32)reg->textures.size++;
+    asrt(ind < reg->textures.capacity);
+    rtarget_res_texture *tex = &reg->textures[ind];
+    tex->ind = ind;
+    strncpy(tex->name, ci.name, SMALL_STR_LEN - 1);
+    tex->id = hash_type(tex->name);
+
+    vkr_image_cfg cfg{};
+    cfg.format = get_vk_format(ci.format);
+    cfg.dims = {ci.dims, 1u};
+    cfg.array_layers = ci.type > RTARGET_TEXTURE_TYPE_2D_DEPTH ? 6u : 1u;
+    cfg.im_create_flags = ci.type > RTARGET_TEXTURE_TYPE_2D_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+    cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    //cfg.usage
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        
+        int result = vkr_init_image(&tex->frames[i].image, ci.cfg);
+        asrt(result == err_code::VKR_NO_ERROR);
+        vkr_image_view_cfg ivcfg{};
+        ivcfg.image = &tex->frames[i].image;
+        ivcfg.view_type = ci.cfg.type
+    }
+    
+    hmap_insert(&reg->texture_id_map, tex->id, tex->ind);
+    tex->is_swapchain = tex->id == RTARGET_SWAPCHAIN_ID;
+    return tex;
+}
+
+rtarget_res_texture *find_rbp_target_texture(renderer *rndr, rres_id id)
+{
+    auto fiter = hmap_find(&rndr->rtargets.texture_id_map, id);
+    return fiter ? &rndr->rtargets.textures[fiter->val] : nullptr;
+}
+
+rtarget_res_buffer *create_rbp_target_buffer(rtarget_res_registry *reg, const create_rtarget_buffer_info &ci)
+{
+    rres_handle ind = (u32)reg->buffers.size++;
+    asrt(ind < reg->buffers.capacity);
+    rtarget_res_buffer *buf = &reg->buffers[ind];
+    buf->ind = ind;
+    strncpy(buf->name, ci.name, SMALL_STR_LEN - 1);
+    buf->id = hash_type(buf->name);
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        int result = vkr_init_buffer(&buf->buffers[i], ci.cfg);
+        asrt(result == err_code::VKR_NO_ERROR);
+    }
+    
+    hmap_insert(&reg->buffer_id_map, buf->id, buf->ind);
+    return buf;
+}
+
+rtarget_res_buffer *find_rtarget_buffer(renderer *rndr, rres_id id)
+{
+    auto fiter = hmap_find(&rndr->rtargets.buffer_id_map, id);
+    return fiter ? &rndr->rtargets.buffers[fiter->val] : nullptr;
 }
 
 } // namespace nslib

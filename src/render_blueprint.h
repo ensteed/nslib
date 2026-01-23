@@ -25,7 +25,6 @@ struct rtarget_res_buffer
     // Set during build
     small_str name;
     rres_id id;
-    vkr_buffer_cfg buf_cfg{};
 
     // Filled after load if loading from disk
     rres_handle ind;
@@ -42,13 +41,6 @@ struct rtarget_frame_texture
     rtexture_state state;
 };
 
-struct rtarget_textures_info
-{
-    vkr_image_cfg img_cfg{};
-    vkr_image_view_cfg img_view_cfg{};
-    rtarget_frame_texture frames[MAX_FRAMES_IN_FLIGHT];
-};
-
 struct rtarget_res_texture
 {
     // Set during build
@@ -62,7 +54,7 @@ struct rtarget_res_texture
     bool is_swapchain;
     union
     {
-        rtarget_textures_info tinfo;
+        rtarget_frame_texture frames[MAX_FRAMES_IN_FLIGHT];
         rtarget_frame_texture swap_info;
     };
 };
@@ -147,7 +139,6 @@ struct render_blueprint
     small_str name;
     rres_id id;
     static_array<rbp_pass, MAX_BP_PASS_COUNT> passes{};
-    rtarget_res_registry targets{};
 
     // Populated after load (if loading from disk)
     hmap<rres_id, rres_handle> pass_idmap{};
@@ -163,15 +154,6 @@ rres_handle add_rbp_subpass(rbp_pass *pass);
 rbp_pass *add_rbp_pass(render_blueprint *rbp, const char *name);
 rres_handle find_rbp_pass(render_blueprint *rbp, rres_id resid);
 
-rtarget_res_texture *create_rbp_target_texture(render_blueprint *rbp, const char *name);
-rtarget_res_texture *create_rbp_target_texture(rtarget_res_registry *reg, const char *name);
-rtarget_res_texture *find_rbp_target_texture(render_blueprint *rbp, rres_id id);
-rtarget_res_texture *find_rbp_target_texture(rtarget_res_registry *reg, rres_id id);
-
-rtarget_res_buffer *create_rbp_target_buffer(render_blueprint *rbp, const char *name);
-rtarget_res_buffer *create_rbp_target_buffer(rtarget_res_registry *reg, const char *name);
-rtarget_res_buffer *find_rbp_target_buffer(render_blueprint *rbp, rres_id id);
-rtarget_res_buffer *find_rbp_target_buffer(rtarget_res_registry *reg, rres_id id);
 
 // Renderer takes ownership of blueprint
 render_blueprint *create_render_blueprint(renderer *rndr, const char *name);

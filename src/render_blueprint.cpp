@@ -271,62 +271,6 @@ rres_handle add_rbp_subpass(rbp_pass *pass)
     return ret;
 }
 
-rtarget_res_texture *create_rbp_target_texture(rtarget_res_registry *reg, const char *name)
-{
-    rres_handle ind = (u32)reg->textures.size++;
-    asrt(ind < reg->textures.capacity);
-    rtarget_res_texture *tex = &reg->textures[ind];
-    tex->ind = ind;
-    strncpy(tex->name, name, SMALL_STR_LEN - 1);
-    tex->id = hash_type(tex->name);
-    hmap_insert(&reg->texture_id_map, tex->id, tex->ind);
-    tex->is_swapchain = tex->id == RTARGET_SWAPCHAIN_ID;
-    return tex;
-}
-
-rtarget_res_texture *create_rbp_target_texture(render_blueprint *rbp, const char *name)
-{
-    return create_rbp_target_texture(&rbp->targets, name);
-}
-
-rtarget_res_texture *find_rbp_target_texture(rtarget_res_registry *reg, rres_id id)
-{
-    auto fiter = hmap_find(&reg->texture_id_map, id);
-    return fiter ? &reg->textures[fiter->val] : nullptr;
-}
-
-rtarget_res_texture *find_rbp_target_texture(render_blueprint *rbp, rres_id id)
-{
-    return find_rbp_target_texture(&rbp->targets, id);
-}
-
-rtarget_res_buffer *create_rbp_target_buffer(rtarget_res_registry *reg, const char *name)
-{
-    rres_handle ind = (u32)reg->buffers.size++;
-    asrt(ind < reg->buffers.capacity);
-    rtarget_res_buffer *buf = &reg->buffers[ind];
-    buf->ind = ind;
-    strncpy(buf->name, name, SMALL_STR_LEN - 1);
-    buf->id = hash_type(buf->name);
-    hmap_insert(&reg->buffer_id_map, buf->id, buf->ind);
-    return buf;
-}
-
-rtarget_res_buffer *create_rbp_target_buffer(render_blueprint *rbp, const char *name)
-{
-    return create_rbp_target_buffer(&rbp->targets, name);
-}
-
-rtarget_res_buffer *find_rbp_target_buffer(rtarget_res_registry *reg, rres_id id)
-{
-    auto fiter = hmap_find(&reg->buffer_id_map, id);
-    return fiter ? &reg->buffers[fiter->val] : nullptr;
-}
-
-rtarget_res_buffer *find_rbp_target_buffer(render_blueprint *rbp, rres_id id)
-{
-    return find_rbp_target_buffer(&rbp->targets, id);
-}
 
 rbp_pass *add_rbp_pass(render_blueprint *rbp, const char *name)
 {

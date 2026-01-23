@@ -348,8 +348,32 @@ struct renderer
     hmap<rres_id, rres_handle> blueprint_id_map{};
     static_array<render_blueprint, MAX_BP_COUNT> blueprints{};
 
+    rtarget_res_registry rtargets{};
+
     rtexture_handle swapchain_fb_depth_stencil{};
 };
+
+struct create_rtarget_buffer_info {
+    const char*name;
+    vkr_buffer_cfg cfg{};
+};
+
+enum rtarget_texture_type {
+    RTARGET_TEXTURE_TYPE_2D_COLOR,
+    RTARGET_TEXTURE_TYPE_2D_DEPTH,
+    RTARGET_TEXTURE_TYPE_CUBE_COLOR,
+    RTARGET_TEXTURE_TYPE_CUBE_DEPTH
+};
+
+struct create_rtarget_texture_info {
+    // TODO: Turn these in to flags
+    const char *name;
+    rformat format;
+    rtarget_texture_type type;
+    bool resize_dynamically;
+    uvec2 dims;
+};
+
 
 geom_streams_group* push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 
@@ -372,6 +396,13 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci);
 rtexture_handle create_texture(renderer *rndr, const rtexture_create_info &ctinfo);
 rtexture_handle create_rtechnique(renderer *rndr, const rtechnique_create_info &ctinfo);
 rtexture_handle create_material(renderer *rndr, const rmaterial_create_info &ctinfo);
+
+rtarget_res_texture *create_rtarget_texture(renderer *rndr, const char *name, const );
+rtarget_res_texture *find_rtarget_texture(renderer *rndr, rres_id id);
+
+rtarget_res_buffer *create_rtarget_buffer(renderer *rndr, const create_rtarget_buffer_info &ci);
+rtarget_res_buffer *find_rbp_target_buffer(renderer *rndr, rres_id id);
+
 
 int begin_render_frame(renderer *rndr, int finished_frames);
 int end_render_frame(renderer *rndr, camera *cam, f64 dt);
