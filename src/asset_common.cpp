@@ -34,7 +34,7 @@ asset_id generate_asset_id()
     return {.id = generate_unique_id()};
 }
 
-void init_cache(asset_cache *cache, sizet overall_mem_budget, mem_arena *upstream, const char *cache_name)
+void init_asset_cache(asset_cache *cache, sizet overall_mem_budget, mem_arena *upstream, const char *cache_name)
 {
     asrt(cache);
     asrt(cache->arena.total_size == 0 && cache->pools.size == 0);
@@ -60,7 +60,7 @@ intern sizet get_default_cache_budget(const sizet* mem_budgets)
     return ret;
 }
 
-void init_cache_default_types(asset_cache *cache,
+void init_asset_cache_default_types(asset_cache *cache,
                               const char *name,
                               mem_arena *upstream,
                               const u32 *item_budgets,
@@ -72,25 +72,25 @@ void init_cache_default_types(asset_cache *cache,
         overall_mem_budget = get_default_cache_budget(mem_budgets);
     }
     
-    init_cache(cache, overall_mem_budget, upstream, name);
+    init_asset_cache(cache, overall_mem_budget, upstream, name);
     
     // NOTE: Manually update this on adding different asset types
-    create_pool<mesh>(cache, mem_budgets[mesh::type_id], item_budgets[mesh::type_id]);
-    create_pool<texture>(cache, mem_budgets[texture::type_id], item_budgets[texture::type_id]);
-    create_pool<material>(cache, mem_budgets[material::type_id], item_budgets[material::type_id]);
+    create_asset_pool<mesh>(cache, mem_budgets[mesh::type_id], item_budgets[mesh::type_id]);
+    create_asset_pool<texture>(cache, mem_budgets[texture::type_id], item_budgets[texture::type_id]);
+    create_asset_pool<material>(cache, mem_budgets[material::type_id], item_budgets[material::type_id]);
 }
 
-void terminate_cache_default_types(asset_cache *cache)
+void terminate_asset_cache_default_types(asset_cache *cache)
 {
     asrt(cache);
     // NOTE: Manually update this on adding different asset types
-    destroy_pool<mesh>(cache);
-    destroy_pool<texture>(cache);
-    destroy_pool<material>(cache);
-    terminate_cache(cache);
+    destroy_asset_pool<mesh>(cache);
+    destroy_asset_pool<texture>(cache);
+    destroy_asset_pool<material>(cache);
+    terminate_asset_cache(cache);
 }
 
-void terminate_cache(asset_cache *cache)
+void terminate_asset_cache(asset_cache *cache)
 {
     asrt(cache);
     for (int i = 0; i < cache->pools.size; ++i) {

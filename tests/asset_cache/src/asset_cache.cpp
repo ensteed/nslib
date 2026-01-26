@@ -31,9 +31,9 @@ void test_cache_init_terminate()
 {
     ilog("begin");
     asset_cache cache{};
-    init_cache(&cache, 128 * KB_SIZE, get_global_arena(), "asset_cache_test");
+    init_asset_cache(&cache, 128 * KB_SIZE, get_global_arena(), "asset_cache_test");
     asrt_log(cache.pools.size == 0);
-    terminate_cache(&cache);
+    terminate_asset_cache(&cache);
     ilog("end");
 }
 
@@ -73,11 +73,11 @@ void test_cache_pool_api()
 {
     ilog("begin");
     asset_cache cache{};
-    init_cache(&cache, 256 * KB_SIZE, get_global_arena(), "cache_pool_api");
+    init_asset_cache(&cache, 256 * KB_SIZE, get_global_arena(), "cache_pool_api");
 
-    auto mesh_pool = create_pool<mesh>(&cache, 64 * KB_SIZE, 4);
+    auto mesh_pool = create_asset_pool<mesh>(&cache, 64 * KB_SIZE, 4);
     asrt_log(mesh_pool);
-    asrt_log(get_pool<mesh>(&cache) == mesh_pool);
+    asrt_log(get_asset_pool<mesh>(&cache) == mesh_pool);
 
     auto mesh0 = create_asset(mesh_pool, "mesh_0");
     auto mesh1 = create_asset<mesh>(&cache, "mesh_1");
@@ -97,13 +97,13 @@ void test_cache_pool_api()
     asrt_log(mesh1_find.item == mesh1.item);
 
     u32 forward_count = 0;
-    for (auto iter = pool_begin(mesh_pool); is_valid(iter); iter = pool_next(mesh_pool, iter)) {
+    for (auto iter = asset_pool_begin(mesh_pool); is_valid(iter); iter = asset_pool_next(mesh_pool, iter)) {
         ++forward_count;
     }
     asrt_log(forward_count == 2);
 
     u32 reverse_count = 0;
-    for (auto iter = pool_rbegin(mesh_pool); is_valid(iter); iter = pool_prev(mesh_pool, iter)) {
+    for (auto iter = asset_pool_rbegin(mesh_pool); is_valid(iter); iter = asset_pool_prev(mesh_pool, iter)) {
         ++reverse_count;
     }
     asrt_log(reverse_count == 2);
@@ -111,10 +111,10 @@ void test_cache_pool_api()
     asrt_log(destroy_asset(mesh_pool, mesh0.hndl));
     asrt_log(destroy_asset(&cache, mesh1.hndl));
 
-    asrt_log(destroy_pool(mesh_pool, &cache));
-    asrt_log(create_pool<mesh>(&cache, 64 * KB_SIZE, 4));
-    asrt_log(destroy_pool<mesh>(&cache));
-    terminate_cache(&cache);
+    asrt_log(destroy_asset_pool(mesh_pool, &cache));
+    asrt_log(create_asset_pool<mesh>(&cache, 64 * KB_SIZE, 4));
+    asrt_log(destroy_asset_pool<mesh>(&cache));
+    terminate_asset_cache(&cache);
     ilog("end");
 }
 
@@ -126,9 +126,9 @@ void test_cache_default_types()
     sizet mem_budgets[ASSET_TYPE_USER]{};
     fill_small_budgets(item_budgets, mem_budgets);
 
-    init_cache_default_types(&cache, "default_cache", get_global_arena(), item_budgets, mem_budgets, 0);
+    init_asset_cache_default_types(&cache, "default_cache", get_global_arena(), item_budgets, mem_budgets, 0);
 
-    auto tex_pool = get_pool<texture>(&cache);
+    auto tex_pool = get_asset_pool<texture>(&cache);
     asrt_log(tex_pool);
 
     auto tex = create_asset<texture>(&cache, "texture_a");
@@ -149,7 +149,7 @@ void test_cache_default_types()
     asrt_log(destroy_asset(&cache, tex.hndl));
     asrt_log(destroy_asset(tex_pool, tex_copy.hndl));
 
-    terminate_cache_default_types(&cache);
+    terminate_asset_cache_default_types(&cache);
     ilog("end");
 }
 

@@ -2,7 +2,7 @@
 #include "asset_common.h"
 #include "math/vector4.h"
 #include "containers/array.h"
-#include "render_handles.h"
+#include "render_defs.h"
 
 namespace nslib
 {

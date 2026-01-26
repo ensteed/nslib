@@ -142,8 +142,11 @@ struct vkr_image_cfg
     VkSharingMode sharing_mode{VK_SHARING_MODE_EXCLUSIVE};
     int mip_levels{1};
     int array_layers{1};
+    // Only set these for specific edge cases - otherwise vma takes care of it
     VkMemoryPropertyFlags required_flags;
     VkMemoryPropertyFlags preferred_flags;
+    f32 priority{0.0f};
+    void *user_data;
     const vkr_gpu_allocator *vma_alloc;
 };
 

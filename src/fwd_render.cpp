@@ -4,7 +4,7 @@
 namespace nslib
 {
 
-rres_handle setup_geometry_stream_group(renderer *rndr)
+u32 setup_geometry_stream_group(renderer *rndr)
 {
     geometry_stream_group_desc desc{};
     desc.name = "nslib";
@@ -36,7 +36,7 @@ rres_handle setup_geometry_stream_group(renderer *rndr)
     push_geometry_attribute<vec3>(bone_weight_ids, shader_location++);
     push_geometry_attribute<vec2>(bone_weight_ids, shader_location++);
 
-    return push_geometry_stream_group(rndr, desc)->ind;
+    return push_geometry_stream_group(rndr, desc);
 }
 
 intern rformat get_rformat_for_usage(texture_usage usage)
@@ -56,11 +56,11 @@ intern rformat get_rformat_for_usage(texture_usage usage)
     }
 }
 
-bool upload_geometry(renderer *rndr, rres_handle stream_gp, mesh *geom, mem_arena *arena)
+bool upload_geometry(renderer *rndr, u32 stream_gp, mesh *geom, mem_arena *arena)
 {
     ilog("Registering mesh id: %s  name: %s", ls(geom->name), str_cstr(geom->name));
     asrt(geom->verts.size > 0);
-    rgeom_create_info cinf{};
+    rgeom_desc cinf{};
 
     // Vert/Ind counts
     cinf.vert_count = geom->verts.size;
@@ -126,10 +126,10 @@ bool upload_geometry(renderer *rndr, rres_handle stream_gp, mesh *geom, mem_aren
 }
 
 // Great use for a stack arena - will work
-u32 upload_geometry(renderer *rndr, rres_handle stream_gp, asset_pool<mesh> *geometry, mem_arena *arena)
+u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<mesh> *geometry, mem_arena *arena)
 {
     u32 success_count{0};
-    for (auto rm = pool_begin(geometry); is_valid(rm); rm = pool_next(geometry, rm)) {
+    for (auto rm = asset_pool_begin(geometry); is_valid(rm); rm = asset_pool_next(geometry, rm)) {
         success_count += (u32)upload_geometry(rndr, stream_gp, rm.item, arena);
     }
     return success_count;
@@ -137,8 +137,8 @@ u32 upload_geometry(renderer *rndr, rres_handle stream_gp, asset_pool<mesh> *geo
 
 void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena)
 {
-    for (auto iter = pool_begin(tex_pool); is_valid(iter); iter = pool_next(tex_pool, iter)) {
-        rtexture_create_info ctinfo{};
+    for (auto iter = asset_pool_begin(tex_pool); is_valid(iter); iter = asset_pool_next(tex_pool, iter)) {
+        rtexture_desc ctinfo{};
         ctinfo.name = ls(iter.item->name);
         ctinfo.dims = iter.item->dims;
         ctinfo.data = iter.item->pixels;

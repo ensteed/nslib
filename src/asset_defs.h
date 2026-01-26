@@ -7,6 +7,9 @@ namespace nslib
 template<typename T>
 struct slot_handle;
 
+template<typename T>
+struct slot_item_ref;
+
 enum asset_type : u32
 {
     ASSET_TYPE_MESH,
@@ -49,17 +52,7 @@ template<typename T>
 using asset_handle = slot_handle<T>;
 
 template<typename T>
-struct asset_item
-{
-    asset_handle<T> hndl;
-    T *item;
-};
-
-template<typename T>
-bool is_valid(const asset_item<T> &item)
-{
-    return is_valid(item.hndl) && item.item;
-}
+using asset_item = slot_item_ref<T>;
 
 template<typename T>
 struct asset_ref

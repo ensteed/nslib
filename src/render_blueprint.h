@@ -1,5 +1,4 @@
 #pragma once
-#include "vk_context.h"
 #include "containers/hmap.h"
 #include "render_defs.h"
 #include "rformat.h"
@@ -7,65 +6,6 @@
 namespace nslib
 {
 struct renderer;
-struct rtexture_state
-{
-    VkImageLayout layout;
-    VkAccessFlags access;
-    VkPipelineStageFlags stage;
-};
-
-struct rbuffer_state
-{
-    VkAccessFlags access;
-    VkPipelineStageFlags stage;
-};
-
-struct rtarget_res_buffer
-{
-    // Set during build
-    small_str name;
-    rres_id id;
-
-    // Filled after load if loading from disk
-    rres_handle ind;
-
-    // Filled in during compile
-    vkr_buffer buffers[MAX_FRAMES_IN_FLIGHT];
-    rbuffer_state states[MAX_FRAMES_IN_FLIGHT]; // Current state of each frame's image
-};
-
-struct rtarget_frame_texture
-{
-    vkr_image image;
-    VkImageView view;
-    rtexture_state state;
-};
-
-struct rtarget_res_texture
-{
-    // Set during build
-    small_str name;
-    rres_id id;
-
-    // Filled after load if loading from disk
-    rres_handle ind;
-
-    // Fille during compile
-    bool is_swapchain;
-    union
-    {
-        rtarget_frame_texture frames[MAX_FRAMES_IN_FLIGHT];
-        rtarget_frame_texture swap_info;
-    };
-};
-
-struct rtarget_res_registry
-{
-    static_array<rtarget_res_buffer, MAX_BUFFER_RRESOURCE_COUNT> buffers;
-    hmap<rres_id, rres_handle> buffer_id_map;
-    static_array<rtarget_res_texture, MAX_TEXTURE_RRESOURCE_COUNT> textures;
-    hmap<rres_id, rres_handle> texture_id_map;
-};
 
 enum rshader_stage_visibility
 {
@@ -75,7 +15,7 @@ enum rshader_stage_visibility
 };
 
 // The "Intent" of how a resource is used in a specific pass
-enum struct rtarget_res_usage
+enum struct rbp_resource_usage
 {
     COLOR_ATTACHMENT,         // Written to via Rasterizer
     DEPTH_ATTACHMENT,         // Depth/Stencil testing
@@ -87,11 +27,12 @@ enum struct rtarget_res_usage
     UNDEFINED
 };
 
-enum rtarget_res_requirement_access_flag
+enum resource_requirement_access_flag
 {
-    RES_REQUIREMENT_ACCESS_FLAG_READ,  // Resource read - load op is read if set
-    RES_REQUIREMENT_ACCESS_FLAG_CLEAR, // Resource cleared on load op - ignored if read is set - otherwise clear or dont care
-    RES_REQUIREMENT_ACCESS_FLAG_WRITE, // Resource overwritten - if set then store op write otherwise store op don't care
+    RESOURCE_REQUIREMENT_ACCESS_NONE = 0,
+    RESOURCE_REQUIREMENT_ACCESS_READ = (1 << 0),  // Resource read - load op is read if set
+    RESOURCE_REQUIREMENT_ACCESS_CLEAR = (1 << 1), // Resource cleared on load op - ignored if read is set - otherwise clear or dont care
+    RESOURCE_REQUIREMENT_ACCESS_WRITE = (1 << 2), // Resource overwritten - if set then store op write otherwise store op don't care
 };
 
 enum rbp_pass_type
@@ -100,24 +41,32 @@ enum rbp_pass_type
     PASS_TYPE_COMPUTE
 };
 
-struct rtarget_res_requirement_info {
-    rtarget_res_usage usage;
-    u32 access_mask;
-    u32 visibility;
-    rformat format;
+enum resource_requirement_option_flag : u32
+{
+    RESOURCE_REQUIREMENT_OPTION_NONE = 0,
+    RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR = (1 << 0),
 };
 
-struct rtarget_res_requirement
+struct rbp_resource_slot_info
 {
-    // Set while building
-    small_str att_name;
-    rres_id att_id;
-    rtarget_res_requirement_info trri;
+    small_str name;
+    rformat format{rformat::INVALID};
+    rbp_resource_usage usage{rbp_resource_usage::UNDEFINED};
+    // Only valid if slot corresponds with attachment (not necessarily true for sampled images and storage buffers)
+    u32 att_ind{INVALID_ID};
+};
+
+struct rbp_resource_requirement
+{
+    u32 slot_ind;
+    u32 access_mask;
+    u32 visibility;
+    u32 option_mask;
 };
 
 struct rbp_subpass
 {
-    static_array<rtarget_res_requirement, MAX_BP_PASS_ATTACHMENT_COUNT> resources;
+    static_array<rbp_resource_requirement, MAX_BP_RESOURCE_REQUIREMENT_COUNT> resources;
 };
 
 struct rbp_pass
@@ -125,13 +74,34 @@ struct rbp_pass
     // Set while building
     small_str name;
     rres_id id;
-    
+
     rbp_pass_type type;
     bool use_subpass_bookends{false};
+    static_array<rbp_resource_slot_info, MAX_BP_PASS_SLOT_COUNT> slots{};
     static_array<rbp_subpass, MAX_BP_SUBPASS_COUNT> subpasses{};
 
-    // Filld during compile
-    VkRenderPass handle;
+    // Filled during compile
+    sizet vk_handle;
+};
+
+struct rbp_pass_desc
+{
+    const char *name;
+    rbp_pass_type type;
+    bool use_subpass_bookends;
+};
+
+struct rbp_resouce_requirement_desc
+{
+    rbp_resource_requirement req;
+    u32 subpass_ind{INVALID_ID};
+};
+
+struct rbp_resource_slot_desc
+{
+    const char *name;
+    rformat format;
+    rbp_resource_usage usage;
 };
 
 struct render_blueprint
@@ -139,25 +109,27 @@ struct render_blueprint
     small_str name;
     rres_id id;
     static_array<rbp_pass, MAX_BP_PASS_COUNT> passes{};
-
-    // Populated after load (if loading from disk)
-    hmap<rres_id, rres_handle> pass_idmap{};
+    hmap<rres_id, rbp_pass_id> pass_idmap{};
 };
 
-const rres_handle DEFAULT_SUBPASS_ID = 0;
-inline const char *RTARGET_SWAPCHAIN_IMAGE = "swapchain";
-const rres_id RTARGET_SWAPCHAIN_ID = hash_type(RTARGET_SWAPCHAIN_ID);
+inline bool is_valid(const rbp_resource_slot_info &si)
+{
+    return (si.format != rformat::INVALID && si.usage != rbp_resource_usage::UNDEFINED);
+}
 
-rtarget_res_requirement *add_rbp_pass_res_requirement(rbp_pass *rbp, const char *att_name, rres_handle subpass = DEFAULT_SUBPASS_ID);
-rres_handle add_rbp_subpass(rbp_pass *pass);
+u32 get_rbp_attachment_count(rbp_pass *rbp);
 
-rbp_pass *add_rbp_pass(render_blueprint *rbp, const char *name);
-rres_handle find_rbp_pass(render_blueprint *rbp, rres_id resid);
+rbp_slot_id add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_slot_desc &desc);
+rbp_resource_req_id add_rbp_resource_requirement(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_requirement &req, rbp_subpass_id spid = 0);
+rbp_subpass_id add_rbp_subpass(render_blueprint *rbp, rbp_pass_id pid);
 
+rbp_pass_id add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc);
+rbp_pass_id find_rbp_pass(render_blueprint *rbp, rres_id id);
 
 // Renderer takes ownership of blueprint
-render_blueprint *create_render_blueprint(renderer *rndr, const char *name);
-rres_handle find_render_blueprint(renderer *rndr, rres_id bpid);
+render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name);
+bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl);
+render_blueprint_handle find_render_blueprint(renderer *rndr, rres_id bpid);
 
 void clean_render_blueprint(renderer *rndr, render_blueprint *rbp);
 bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp);

@@ -132,66 +132,66 @@ intern void terminate_imgui(renderer *rndr)
 }
 #endif
 
-intern int setup_render_passes(renderer *rndr)
-{
-    auto vk = &rndr->vk;
-    vkr_rpass_cfg rp_cfg{};
-    VkAttachmentDescription att{};
-    att.format = vk->inst.device.swapchain.format;
-    att.samples = VK_SAMPLE_COUNT_1_BIT;
-    att.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    att.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    att.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    att.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    arr_push_back(&rp_cfg.attachments, att);
+// intern int setup_render_passes(renderer *rndr)
+// {
+//     auto vk = &rndr->vk;
+//     vkr_rpass_cfg rp_cfg{};
+//     VkAttachmentDescription att{};
+//     att.format = vk->inst.device.swapchain.format;
+//     att.samples = VK_SAMPLE_COUNT_1_BIT;
+//     att.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+//     att.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+//     att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+//     att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+//     att.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+//     att.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+//     arr_push_back(&rp_cfg.attachments, att);
 
-    att.format = vkr_find_best_depth_format(&rndr->vk.inst.pdev_info);
-    att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    att.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    arr_push_back(&rp_cfg.attachments, att);
+//     att.format = vkr_find_best_depth_format(&rndr->vk.inst.pdev_info);
+//     att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+//     att.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+//     arr_push_back(&rp_cfg.attachments, att);
 
-    vkr_rpass_cfg_subpass subpass{};
+//     vkr_rpass_cfg_subpass subpass{};
 
-    VkAttachmentReference att_ref{};
-    att_ref.attachment = 0;
-    att_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    arr_push_back(&subpass.color_attachments, att_ref);
+//     VkAttachmentReference att_ref{};
+//     att_ref.attachment = 0;
+//     att_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+//     arr_push_back(&subpass.color_attachments, att_ref);
 
-    att_ref.attachment = 1;
-    att_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    subpass.depth_stencil_attachment = att_ref;
-    arr_push_back(&rp_cfg.subpasses, subpass);
+//     att_ref.attachment = 1;
+//     att_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+//     subpass.depth_stencil_attachment = att_ref;
+//     arr_push_back(&rp_cfg.subpasses, subpass);
 
-    // Because we use this render pass each frame, this dependency makes it so that we won't begin our first subpass
-    // until all color attachment and depth attachment (early fragment tests) operations are done for any subpass
-    // (pipeline) associated with this render pass.
-    // Since the depth image isn't 'presented', we don't have to have a separate depth image across each FIF.
-    VkSubpassDependency sp_dep{};
-    sp_dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    sp_dep.dstSubpass = 0;
-    sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    sp_dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    sp_dep.srcAccessMask = 0;
-    sp_dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
+//     // Because we use this render pass each frame, this dependency makes it so that we won't begin our first subpass
+//     // until all color attachment and depth attachment (early fragment tests) operations are done for any subpass
+//     // (pipeline) associated with this render pass.
+//     // Since the depth image isn't 'presented', we don't have to have a separate depth image across each FIF.
+//     VkSubpassDependency sp_dep{};
+//     sp_dep.srcSubpass = VK_SUBPASS_EXTERNAL;
+//     sp_dep.dstSubpass = 0;
+//     sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+//     sp_dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+//     sp_dep.srcAccessMask = 0;
+//     sp_dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+//     arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
 
-    sp_dep.srcSubpass = 0;
-    sp_dep.dstSubpass = VK_SUBPASS_EXTERNAL;
-    sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    sp_dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    sp_dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    sp_dep.dstAccessMask = 0;
-    arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
+//     sp_dep.srcSubpass = 0;
+//     sp_dep.dstSubpass = VK_SUBPASS_EXTERNAL;
+//     sp_dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+//     sp_dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+//     sp_dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+//     sp_dep.dstAccessMask = 0;
+//     arr_push_back(&rp_cfg.subpass_dependencies, sp_dep);
 
-    rpass_info rpi{};
-    int geom_hndl = vkr_init_render_pass(&rpi.vk_hndl, rp_cfg, vk);
-    if (geom_hndl == err_code::VKR_NO_ERROR) {
-        arr_push_back(&rndr->rpasses, rpi);
-    }
-    return geom_hndl;
-}
+//     rpass_info rpi{};
+//     int geom_hndl = vkr_init_render_pass(&rpi.vk_hndl, rp_cfg, vk);
+//     if (geom_hndl == err_code::VKR_NO_ERROR) {
+//         arr_push_back(&rndr->rpasses, rpi);
+//     }
+//     return geom_hndl;
+// }
 
 intern void fill_default_pipeline_config(vkr_pipeline_cfg *cfg, renderer *rndr)
 {
@@ -284,13 +284,12 @@ intern int setup_diffuse_technique(renderer *rndr)
     return err_code::RENDER_NO_ERROR;
 }
 
-intern bool destroy_geometry(rgeom_handle hndl, renderer *rndr)
+intern bool destroy_geometry(rgeom_ref gref, renderer *rndr)
 {
-    auto sl_item = get_slot_item(&rndr->geometry, hndl);
-    vmaVirtualFree(sl_item->vert_block, sl_item->vert_mem);
-    vmaVirtualFree(sl_item->ind_block, sl_item->ind_mem);
-    *sl_item = {};
-    return release_slot(&rndr->geometry, hndl);
+    vmaVirtualFree(gref.item->vert_block, gref.item->vert_mem);
+    vmaVirtualFree(gref.item->ind_block, gref.item->ind_mem);
+    *gref.item = {};
+    return release_slot(&rndr->geometry, gref.hndl);
 }
 
 intern int setup_global_samplers(renderer *rndr)
@@ -321,7 +320,7 @@ intern int setup_global_samplers(renderer *rndr)
     return err_code::RENDER_NO_ERROR;
 }
 
-intern VkFormat get_vk_format(rformat fmt)
+VkFormat get_vk_format(rformat fmt)
 {
     switch (fmt) {
     case (rformat::RGBA8_SRGB):
@@ -468,12 +467,22 @@ intern VkFormat get_vk_format(rformat fmt)
         return VK_FORMAT_R64_UINT;
     case (rformat::R64_SINT):
         return VK_FORMAT_R64_SINT;
+    case (rformat::D16_UNORM):
+        return VK_FORMAT_D16_UNORM;
+    case (rformat::D16_UNORM_S8_UINT):
+        return VK_FORMAT_D16_UNORM_S8_UINT;
+    case (rformat::D32_SFLOAT):
+        return VK_FORMAT_D32_SFLOAT;
+    case (rformat::D24_UNORM_S8_UINT):
+        return VK_FORMAT_D24_UNORM_S8_UINT;
+    case (rformat::D32_SFLOAT_S8_UINT):
+        return VK_FORMAT_D32_SFLOAT_S8_UINT;
     default:
         return VK_FORMAT_UNDEFINED;
     }
 }
 
-rtexture_handle create_texture(renderer *rndr, const rtexture_create_info &ctinfo)
+rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo)
 {
     asrt(rndr);
     asrt(ctinfo.data);
@@ -527,16 +536,15 @@ rtexture_handle create_texture(renderer *rndr, const rtexture_create_info &ctinf
         return {};
     }
 
-    rtexture_handle thndl = acquire_slot(&rndr->textures);
-    if (!is_valid(thndl)) {
+    rtexture_ref tref = acquire_slot(&rndr->textures);
+    if (!is_valid(tref)) {
         vkr_terminate_image(&ti.im, &rndr->vk);
         vkr_terminate_image_view(ti.im_view, &rndr->vk);
-        return thndl;
+        return {};
     }
-    rtexture_info *tex_item = get_slot_item(&rndr->textures, thndl);
-    asrt(tex_item);
-    *tex_item = ti;
-    return thndl;
+    asrt(tref.item);
+    *tref.item = ti;
+    return tref.hndl;
 }
 
 intern int init_swapchain_images_and_framebuffer(renderer *rndr)
@@ -551,10 +559,12 @@ intern int init_swapchain_images_and_framebuffer(renderer *rndr)
     im_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     im_cfg.vma_alloc = &dev->vma_alloc;
 
-    if (!is_valid(rndr->swapchain_fb_depth_stencil)) {
-        rndr->swapchain_fb_depth_stencil = acquire_slot(&rndr->textures);
+    rtexture_info *sl_item = get_slot_item(&rndr->textures, rndr->swapchain_fb_depth_stencil);
+    if (!sl_item) {
+        auto sl_ref = acquire_slot(&rndr->textures);
+        rndr->swapchain_fb_depth_stencil = sl_ref.hndl;
+        sl_item = sl_ref.item;
     }
-    auto sl_item = get_slot_item(&rndr->textures, rndr->swapchain_fb_depth_stencil);
     int err = vkr_init_image(&sl_item->im, im_cfg);
     if (err != err_code::VKR_NO_ERROR) {
         return err;
@@ -632,34 +642,34 @@ intern int setup_rendering(renderer *rndr)
     auto vk = &rndr->vk;
     auto dev = &rndr->vk.inst.device;
 
-    int err = setup_render_passes(rndr);
-    if (err != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup render pass");
-        return err;
-    }
+    // int err = setup_render_passes(rndr);
+    // if (err != err_code::VKR_NO_ERROR) {
+    //     elog("Failed to setup render pass");
+    //     return err;
+    // }
 
-    err = setup_global_descriptor_set_layouts(rndr);
-    if (err != err_code::VKR_NO_ERROR) {
+    int result = setup_global_descriptor_set_layouts(rndr);
+    if (result != err_code::VKR_NO_ERROR) {
         elog("Failed to setup global descriptor set layouts");
-        return err;
+        return result;
     }
 
-    err = setup_global_pipeline_layout(rndr);
-    if (err != err_code::VKR_NO_ERROR) {
+    result = setup_global_pipeline_layout(rndr);
+    if (result != err_code::VKR_NO_ERROR) {
         elog("Failed to setup global pipeline layout");
-        return err;
+        return result;
     }
 
-    err = setup_diffuse_technique(rndr);
-    if (err != err_code::VKR_NO_ERROR) {
+    result = setup_diffuse_technique(rndr);
+    if (result != err_code::VKR_NO_ERROR) {
         elog("Failed to setup pipeline");
-        return err;
+        return result;
     }
 
-    err = init_swapchain_images_and_framebuffer(rndr);
-    if (err != err_code::VKR_NO_ERROR) {
+    result = init_swapchain_images_and_framebuffer(rndr);
+    if (result != err_code::VKR_NO_ERROR) {
         elog("Failed to setup swapchain images/framebuffers");
-        return err;
+        return result;
     }
 
     // err = setup_geometry_buffers(rndr);
@@ -742,23 +752,23 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
 
     // TODO: This really can't go in any order we want for render passes.. We might have dependency ordered between
     // them.. for now we just have the one.. I'm not sure if we need to do a
-    for (int rpind = 0; rpind < rndr->rpasses.size; ++rpind) {
-        auto rpass = &rndr->rpasses[rpind];
-        vkr_cmd_begin_rpass(cur_frame->cmd_buffer, rpass->vk_hndl, fb, att_clear_vals, 2);
+    // for (int rpind = 0; rpind < rndr->rpasses.size; ++rpind) {
+    //     auto rpass = &rndr->rpasses[rpind];
+    //     vkr_cmd_begin_rpass(cur_frame->cmd_buffer, rpass->vk_hndl, fb, att_clear_vals, 2);
 
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = (float)fb->size.w;
-        viewport.height = (float)fb->size.h;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(cur_frame->cmd_buffer, 0, 1, &viewport);
+    //     VkViewport viewport{};
+    //     viewport.x = 0.0f;
+    //     viewport.y = 0.0f;
+    //     viewport.width = (float)fb->size.w;
+    //     viewport.height = (float)fb->size.h;
+    //     viewport.minDepth = 0.0f;
+    //     viewport.maxDepth = 1.0f;
+    //     vkCmdSetViewport(cur_frame->cmd_buffer, 0, 1, &viewport);
 
-        VkRect2D scissor{};
-        scissor.offset = {0, 0};
-        scissor.extent = {fb->size.w, fb->size.h};
-        vkCmdSetScissor(cur_frame->cmd_buffer, 0, 1, &scissor);
+    //     VkRect2D scissor{};
+    //     scissor.offset = {0, 0};
+    //     scissor.extent = {fb->size.w, fb->size.h};
+    //     vkCmdSetScissor(cur_frame->cmd_buffer, 0, 1, &scissor);
 
 // Bind frame rpass descriptor set
 // auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->frame_set_layouti].hndl;
@@ -823,8 +833,8 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
         }
 #endif
 
-        vkr_cmd_end_rpass(cur_frame->cmd_buffer);
-    }
+    //     vkr_cmd_end_rpass(cur_frame->cmd_buffer);
+    // }
 
     return vkr_end_cmd_buf(cur_frame->cmd_buffer);
 }
@@ -1088,6 +1098,36 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     return err_code::RENDER_NO_ERROR;
 }
 
+intern void init_resource_target_registry(renderer *rndr)
+{
+    init_slot_pool(&rndr->rtargets.textures, MAX_TEXTURE_TARGET_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->rtargets.buffers, MAX_BUFFER_TARGET_COUNT, &rndr->persist_fl);
+    // Load factor is .75 so two times capacity should make so table is never rehashed and still performant
+    hmap_init(&rndr->rtargets.texture_id_map, hash_type, &rndr->persist_fl, MAX_TEXTURE_TARGET_COUNT*2);
+    hmap_init(&rndr->rtargets.buffer_id_map, hash_type, &rndr->persist_fl, MAX_BUFFER_TARGET_COUNT*2);
+}
+
+// We assume device has already been waited here
+intern void terminate_resource_target_registry(renderer *rndr)
+{
+    auto vk = &rndr->vk;
+    for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
+        for (auto iter = slot_pool_begin(&rndr->rtargets.textures); is_valid(iter); iter = slot_pool_next(&rndr->rtargets.textures, iter)) {
+            vkr_terminate_image_view(iter.item->frames[fif].view, vk);
+            vkr_terminate_image(&iter.item->frames[fif].image, vk);
+            iter.item->frames[fif] = {};
+        }
+        for (auto iter = slot_pool_begin(&rndr->rtargets.buffers); is_valid(iter); iter = slot_pool_next(&rndr->rtargets.buffers, iter)) {
+            vkr_terminate_buffer(&iter.item->frames[fif].buffer, vk);
+            iter.item->frames[fif] = {};
+        }
+    }
+    terminate_slot_pool(&rndr->rtargets.textures);
+    hmap_terminate(&rndr->rtargets.texture_id_map);
+    terminate_slot_pool(&rndr->rtargets.buffers);
+    hmap_terminate(&rndr->rtargets.buffer_id_map);
+}
+
 int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
 {
     asrt(fl_arena->alloc_type == mem_alloc_type::FREE_LIST);
@@ -1097,16 +1137,21 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
     init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "rndr-frame-linear");
     init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "rndr-frame-stack");
 
+    // Pipelines
+    hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
+    arr_init(&rndr->pipelines, &rndr->persist_fl);
+
     // Slot pools
     init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->geometry, MAX_MESH_COUNT, &rndr->persist_fl);
 
-    // Render pass names
-    hmap_init(&rndr->rpass_name_map, hash_type, &rndr->persist_fl);
-    hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
+    // Blueprints
     hmap_init(&rndr->blueprint_id_map, hash_type, &rndr->persist_fl);
+    init_slot_pool(&rndr->blueprints, MAX_BP_COUNT, &rndr->persist_fl);
+
+    // Geometry index/vertex buffers
     hmap_init(&rndr->geom_group_id_map, hash_type, &rndr->persist_fl);
 
     vkr_cfg vkii{.app_name = "rdev",
@@ -1152,8 +1197,6 @@ int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
 void terminate_renderer(renderer *rndr)
 {
     ilog("Terminating");
-    hmap_terminate(&rndr->rpass_name_map);
-
     reset_arena(&rndr->vk_frame_linear);
     reset_arena(&rndr->frame_linear);
     reset_arena(&rndr->frame_stack);
@@ -1167,36 +1210,38 @@ void terminate_renderer(renderer *rndr)
 #endif
 
     // Terminate all meshes
-    for (int i = 0; i < rndr->geometry.slots.size; ++i) {
-        destroy_geometry(get_slot_current_handle(&rndr->geometry, i), rndr);
+    for (auto iter = slot_pool_begin(&rndr->geometry); is_valid(iter); iter = slot_pool_next(&rndr->geometry, iter)) {
+        destroy_geometry(iter, rndr);
     }
     terminate_slot_pool(&rndr->geometry);
 
     // Terminate all images and image views
-    for (int i = 0; i < rndr->textures.slots.size; ++i) {
+    for (u32 i = 0; i < rndr->textures.slots.size; ++i) {
         vkr_terminate_image(&rndr->textures.slots[i].item.im, &rndr->vk);
         vkr_terminate_image_view(rndr->textures.slots[i].item.im_view, &rndr->vk);
     }
     terminate_slot_pool(&rndr->textures);
 
-    for (int i = 0; i < rndr->materials.slots.size; ++i) {
+    // Materials
+    for (u32 i = 0; i < rndr->materials.slots.size; ++i) {
         // Do something
     }
     terminate_slot_pool(&rndr->materials);
 
-    for (int i = 0; i < rndr->techniques.slots.size; ++i) {
+    // Techniques
+    for (u32 i = 0; i < rndr->techniques.slots.size; ++i) {
         // Do something
     }
     terminate_slot_pool(&rndr->techniques);
 
     // Terminate all texture samplers
-    for (int i = 0; i < rndr->samplers.size; ++i) {
+    for (u32 i = 0; i < rndr->samplers.size; ++i) {
         vkr_terminate_sampler(rndr->samplers[i].vk_hndl, &rndr->vk);
     }
     arr_clear(&rndr->samplers);
 
     // Remove source geometry buffers
-    for (int i = 0; i < rndr->geom_groups.size; ++i) {
+    for (u32 i = 0; i < rndr->geom_groups.size; ++i) {
         release_geometry_stream_group(&rndr->geom_groups[i], &rndr->vk);
     }
     rndr->geom_groups.size = 0;
@@ -1204,6 +1249,7 @@ void terminate_renderer(renderer *rndr)
 
     // Blueprints
     hmap_terminate(&rndr->blueprint_id_map);
+
 
     // Terminate our default descriptor layout sets
     dlog("Should be terminating %d layouts", rndr->set_layouts.size);
@@ -1214,16 +1260,11 @@ void terminate_renderer(renderer *rndr)
     vkr_terminate_pipeline_layout(rndr->g_layout, &rndr->vk);
 
     // Terminate all pipelines
-    for (auto iter = hmap_begin(&rndr->pline_cache); iter; iter = hmap_next(&rndr->pline_cache, iter)) {
-        vkr_terminate_pipeline(iter->val, &rndr->vk);
+    for (u32 i = 0; i < rndr->pipelines.size; ++i) {
+        vkr_terminate_pipeline(rndr->pipelines[i], &rndr->vk);
     }
+    arr_terminate(&rndr->pipelines);
     hmap_terminate(&rndr->pline_cache);
-
-    // Terminate all render passes
-    for (int i = 0; i < rndr->rpasses.size; ++i) {
-        vkr_terminate_render_pass(rndr->rpasses[i].vk_hndl, &rndr->vk);
-        rndr->rpasses.size = 0;
-    }
 
     // Transient pool
     vkr_terminate_cmd_pool(rndr->transient_pool, &rndr->vk);
@@ -1415,15 +1456,14 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
     return !failed;
 }
 
-geom_streams_group *push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
+u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
     asrt(desc.layouts.size > 0);
     asrt(desc.layouts[0].streams.size > 0);
     asrt(desc.layouts[0].streams[0].attribs.size > 0);
     asrt(rndr->geom_groups.size < rndr->geom_groups.capacity);
-
-    auto geom_id = rndr->geom_groups.size++;
+    u32 geom_id = (u32)rndr->geom_groups.size++;
     auto cur_group = &rndr->geom_groups[geom_id];
 
     // Create all vert layout groups
@@ -1465,15 +1505,14 @@ geom_streams_group *push_geometry_stream_group(renderer *rndr, const geometry_st
     if (failed) {
         release_geometry_stream_group(cur_group, &rndr->vk);
         --rndr->geom_groups.size;
-        return nullptr;
+        return INVALID_ID;
     }
-    cur_group->ind = geom_id;
     cur_group->id = hash_type(cur_group->indice_stream.name);
-    hmap_insert(&rndr->geom_group_id_map, cur_group->id, cur_group->ind);
-    return cur_group;
+    hmap_insert(&rndr->geom_group_id_map, cur_group->id, geom_id);
+    return geom_id;
 }
 
-rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
+rgeom_handle create_geometry(renderer *rndr, const rgeom_desc &ci)
 {
     // Make sure we have valid data
     asrt(ci.vert_count > 0);
@@ -1489,68 +1528,62 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
     asrt(ci.layout < gp->layouts.size);
     auto layout = &gp->layouts[ci.layout];
 
-    rgeom_handle geom_hndl = acquire_slot(&rndr->geometry);
-    if (!is_valid(geom_hndl)) {
+    rgeom_ref geom_ref = acquire_slot(&rndr->geometry);
+    if (!is_valid(geom_ref)) {
         wlog("Out of geometry slots");
         return {};
     }
-    rgeom_info *geom_item = get_slot_item(&rndr->geometry, geom_hndl);
-    asrt(geom_item);
 
     // Set the vert/ind blocks
-    geom_item->vert_block = layout->vert_block;
-    geom_item->ind_block = gp->indices_block;
+    geom_ref.item->vert_block = layout->vert_block;
+    geom_ref.item->ind_block = gp->indices_block;
 
     // Set the name if it was filled in
-    strncpy(geom_item->name, ci.name ? ci.name : "unnamed", SMALL_STR_LEN - 1);
+    strncpy(geom_ref.item->name, ci.name ? ci.name : "unnamed", SMALL_STR_LEN - 1);
 
     // Copy subgeom data
-    geom_item->subgeom_vert_ind_counts.size = ci.subgeom_cnt;
+    geom_ref.item->subgeom_vert_ind_counts.size = ci.subgeom_cnt;
     for (u32 i = 0; i < ci.subgeom_cnt; ++i) {
-        geom_item->subgeom_vert_ind_counts[i] = ci.subgeoms[i];
+        geom_ref.item->subgeom_vert_ind_counts[i] = ci.subgeoms[i];
     }
 
     // This info is shared between the vert stream and ind stream virtual alloc
     VmaVirtualAllocationCreateInfo alloc_ci{};
     alloc_ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
-    alloc_ci.pUserData = geom_item->name;
+    alloc_ci.pUserData = geom_ref.item->name;
 
     // Create the virtual allocation using vert stream 0 which dictates the vert offset in to each stream
     alloc_ci.alignment = layout->vert_layout.bindings[0].stride;
     alloc_ci.size = ci.vert_count * alloc_ci.alignment;
     VkDeviceSize vert_stream_byte_offset{};
-    s32 result = vmaVirtualAllocate(geom_item->vert_block, &alloc_ci, &geom_item->vert_mem, &vert_stream_byte_offset);
+    s32 result = vmaVirtualAllocate(geom_ref.item->vert_block, &alloc_ci, &geom_ref.item->vert_mem, &vert_stream_byte_offset);
     if (result != err_code::VKR_NO_ERROR) {
         wlog("Vma virtual allocate for vert stream failed with code %d", result);
-        release_slot(&rndr->geometry, geom_hndl);
+        asrt(destroy_geometry(geom_ref, rndr));
         return {};
     }
     asrt(vert_stream_byte_offset % alloc_ci.alignment == 0);
-    geom_item->vert_offset = vert_stream_byte_offset / alloc_ci.alignment;
+    geom_ref.item->vert_offset = vert_stream_byte_offset / alloc_ci.alignment;
 
     // Create the virtual allocation for indices
     alloc_ci.alignment = sizeof(ind_t);
     alloc_ci.size = ci.ind_count * alloc_ci.alignment;
     VkDeviceSize ind_stream_byte_offset{};
-    result = vmaVirtualAllocate(geom_item->ind_block, &alloc_ci, &geom_item->ind_mem, &ind_stream_byte_offset);
+    result = vmaVirtualAllocate(geom_ref.item->ind_block, &alloc_ci, &geom_ref.item->ind_mem, &ind_stream_byte_offset);
     if (result != err_code::VKR_NO_ERROR) {
         wlog("Vma virtual allocate indices stream failed with code %d", result);
-        vmaVirtualFree(geom_item->vert_block, geom_item->vert_mem);
-        release_slot(&rndr->geometry, geom_hndl);
+        asrt(destroy_geometry(geom_ref, rndr));
         return {};
     }
     asrt(ind_stream_byte_offset % alloc_ci.alignment == 0);
-    geom_item->ind_offset = ind_stream_byte_offset / alloc_ci.alignment;
+    geom_ref.item->ind_offset = ind_stream_byte_offset / alloc_ci.alignment;
 
     // Create staging buffer and get the queue we will use
     VkCommandBuffer tmp_cmd_buf{};
     result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
         wlog("Failed to create command buffer - error code: %d", result);
-        vmaVirtualFree(geom_item->vert_block, geom_item->vert_mem);
-        vmaVirtualFree(geom_item->ind_block, geom_item->ind_mem);
-        release_slot(&rndr->geometry, geom_hndl);
-        asrt(destroy_geometry(geom_hndl, rndr));
+        asrt(destroy_geometry(geom_ref, rndr));
         return {};
     }
     VkQueue tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
@@ -1559,11 +1592,11 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
     for (u32 streami = 0; streami < layout->vert_streams.size; ++streami) {
         VkBufferCopy region{};
         region.size = ci.vert_count * layout->vert_layout.bindings[streami].stride;
-        region.dstOffset = geom_item->vert_offset * layout->vert_layout.bindings[streami].stride;
+        region.dstOffset = geom_ref.item->vert_offset * layout->vert_layout.bindings[streami].stride;
         result = vkr_stage_and_upload_buffer_data(
             &layout->vert_streams[streami].buffer, ci.vert_data[streami], &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
-            asrt(destroy_geometry(geom_hndl, rndr));
+            asrt(destroy_geometry(geom_ref, rndr));
             vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
             return {};
         }
@@ -1571,14 +1604,14 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci)
 
     VkBufferCopy region{};
     region.size = ci.ind_count * sizeof(ind_t);
-    region.dstOffset = geom_item->ind_offset * sizeof(ind_t);
+    region.dstOffset = geom_ref.item->ind_offset * sizeof(ind_t);
     result = vkr_stage_and_upload_buffer_data(&gp->indice_stream.buffer, ci.ind_data, &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
-        asrt(destroy_geometry(geom_hndl, rndr));
+        asrt(destroy_geometry(geom_ref, rndr));
         vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
-        geom_hndl = {};
+        geom_ref = {};
     }
-    return geom_hndl;
+    return geom_ref.hndl;
 }
 
 geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count)
@@ -1601,76 +1634,74 @@ void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &a
     stream->attribs[ind] = att_desc;
 }
 
-rtarget_res_texture *create_rtarget_texture(renderer *rndr, const char *name)
-{}
-rtarget_res_texture *find_rtarget_texture(renderer *rndr, rres_id id)
-{}
-
-rtarget_res_buffer *create_rtarget_buffer(renderer *rndr, const char *name)
-{}
-
-rtarget_res_buffer *find_rbp_target_buffer(renderer *rndr, rres_id id)
-{}
-
-rtarget_res_texture *create_rtarget_texture(rtarget_res_registry *reg, const create_rtarget_texture_info &ci)
+rtexture_target_handle create_rtarget_texture(renderer *rndr, const rtexture_target_desc &ci)
 {
-    rres_handle ind = (u32)reg->textures.size++;
-    asrt(ind < reg->textures.capacity);
-    rtarget_res_texture *tex = &reg->textures[ind];
-    tex->ind = ind;
-    strncpy(tex->name, ci.name, SMALL_STR_LEN - 1);
-    tex->id = hash_type(tex->name);
+    rtexture_target_ref tref = acquire_slot(&rndr->rtargets.textures);
+    if (!is_valid(tref)) {
+        return {};
+    }
 
+    strncpy(tref.item->name, ci.name, SMALL_STR_LEN - 1);
+    tref.item->id = hash_type(tref.item->name);
+
+    // If parameter not here its cause I want to leave at default on purpose
     vkr_image_cfg cfg{};
     cfg.format = get_vk_format(ci.format);
+    bool is_color = (ci.type == RTARGET_TEXTURE_TYPE_COLOR || ci.type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
+    cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+    cfg.im_create_flags = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     cfg.dims = {ci.dims, 1u};
-    cfg.array_layers = ci.type > RTARGET_TEXTURE_TYPE_2D_DEPTH ? 6u : 1u;
-    cfg.im_create_flags = ci.type > RTARGET_TEXTURE_TYPE_2D_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    //cfg.usage
+    cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    cfg.array_layers = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? 6u : 1u;
+    cfg.priority = 1.0f;
+    cfg.user_data = tref.item->name;
+    cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+
+    vkr_image_view_cfg iv_cfg{};
+    iv_cfg.view_type = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        
-        int result = vkr_init_image(&tex->frames[i].image, ci.cfg);
+        int result = vkr_init_image(&tref.item->frames[i].image, cfg);
         asrt(result == err_code::VKR_NO_ERROR);
         vkr_image_view_cfg ivcfg{};
-        ivcfg.image = &tex->frames[i].image;
-        ivcfg.view_type = ci.cfg.type
+        iv_cfg.image = &tref.item->frames[i].image;
     }
-    
-    hmap_insert(&reg->texture_id_map, tex->id, tex->ind);
-    tex->is_swapchain = tex->id == RTARGET_SWAPCHAIN_ID;
-    return tex;
+
+    hmap_insert(&rndr->rtargets.texture_id_map, tref.item->id, tref.hndl);
+    return tref.hndl;
 }
 
-rtarget_res_texture *find_rbp_target_texture(renderer *rndr, rres_id id)
+rtexture_target_handle find_rtexture_target(renderer *rndr, rres_id id)
 {
     auto fiter = hmap_find(&rndr->rtargets.texture_id_map, id);
-    return fiter ? &rndr->rtargets.textures[fiter->val] : nullptr;
+    return fiter ? fiter->val : rtexture_target_handle{};
 }
 
-rtarget_res_buffer *create_rbp_target_buffer(rtarget_res_registry *reg, const create_rtarget_buffer_info &ci)
+rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci)
 {
-    rres_handle ind = (u32)reg->buffers.size++;
-    asrt(ind < reg->buffers.capacity);
-    rtarget_res_buffer *buf = &reg->buffers[ind];
-    buf->ind = ind;
-    strncpy(buf->name, ci.name, SMALL_STR_LEN - 1);
-    buf->id = hash_type(buf->name);
-
+    rbuffer_target_ref btref = acquire_slot(&rndr->rtargets.buffers);
+    if (!is_valid(btref)) {
+        return {};
+    }
+    strncpy(btref.item->name, ci.name, SMALL_STR_LEN - 1);
+    btref.item->id = hash_type(btref.item->name);
+    // TODO: Don't actually just have cfg in the ci - edit this to only include actual needed things - for now we just
+    // use it
+    auto cfg = ci.cfg;
+    cfg.user_data = btref.item->name;
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        int result = vkr_init_buffer(&buf->buffers[i], ci.cfg);
+        int result = vkr_init_buffer(&btref.item->frames[i].buffer, cfg);
         asrt(result == err_code::VKR_NO_ERROR);
     }
-    
-    hmap_insert(&reg->buffer_id_map, buf->id, buf->ind);
-    return buf;
+    hmap_insert(&rndr->rtargets.buffer_id_map, btref.item->id, btref.hndl);
+    return btref.hndl;
 }
 
-rtarget_res_buffer *find_rtarget_buffer(renderer *rndr, rres_id id)
+rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
 {
     auto fiter = hmap_find(&rndr->rtargets.buffer_id_map, id);
-    return fiter ? &rndr->rtargets.buffers[fiter->val] : nullptr;
+    return fiter ? fiter->val : rbuffer_target_handle{};
 }
 
 } // namespace nslib

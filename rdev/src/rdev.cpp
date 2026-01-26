@@ -163,35 +163,32 @@ void build_render_blueprint(render_blueprint *bp)
     // auto pass = create_pass(bp);
 }
 
-void build_and_compile_render_blueprint(renderer *rndr) {
+void build_and_compile_render_blueprint(renderer *rndr)
+{
     // First, create the needed target resources
-    auto rbp = create_render_blueprint("fwd-pbr", rndr);
-    create_rbp_target_texture(rbp, RTARGET_SWAPCHAIN_IMAGE);
-    
-    auto depth = create_rbp_target_texture(rbp, "depth");
-    depth->tinfo.img_cfg.dims = {rndr->vk.inst.device.swapchain.extent.width, rndr->vk.inst.device.swapchain.extent.height, 1};
-    depth->tinfo.img_cfg.format = vkr_find_best_depth_format(&rndr->vk.inst.pdev_info);
-    depth->tinfo.img_cfg.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    depth->tinfo.img_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    depth->tinfo.img_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
-    depth->tinfo.img_view_cfg.srange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-    
-    auto pass = add_rbp_pass(rbp, "main");
-    pass->use_subpass_bookends = true;
+    auto rbp = create_render_blueprint(rndr, "fwd-pbr");
 
-    auto req = add_rbp_pass_res_requirement(pass);
-    req->usage = rtarget_res_usage::COLOR_ATTACHMENT;
-    req->visibility = VISIBILITY_FRAGMENT;
-    req->access_mask = RES_REQUIREMENT_ACCESS_FLAG_WRITE | RES_REQUIREMENT_ACCESS_FLAG_CLEAR;
-    req->resid = depth->id;
+    auto pass_id = add_rbp_pass(rbp.item, {.name = "main-pass", .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
 
-    req = add_rbp_pass_res_requirement(pass);
-    req->usage = rtarget_res_usage::COLOR_ATTACHMENT;
-    req->visibility = VISIBILITY_FRAGMENT;
-    req->access_mask = RES_REQUIREMENT_ACCESS_FLAG_WRITE | RES_REQUIREMENT_ACCESS_FLAG_CLEAR;
-    req->resid = RTARGET_SWAPCHAIN_ID;
+    rbp_slot_id col_slot_ind = add_rbp_resource_slot(
+        rbp.item, pass_id, {.name = "color", .format = rformat::RGBA8_SRGB, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
+    rbp_slot_id depth_slot_ind = add_rbp_resource_slot(
+        rbp.item, pass_id, {.name = "depth", .format = rformat::D32_SFLOAT, .usage = rbp_resource_usage::DEPTH_ATTACHMENT});
 
-    compile_render_blueprint(rbp, rndr);
+    add_rbp_resource_requirement(rbp.item,
+                                 pass_id,
+                                 {.slot_ind = col_slot_ind,
+                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
+                                  .visibility = VISIBILITY_FRAGMENT,
+                                  .option_mask = RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR});
+
+    add_rbp_resource_requirement(rbp.item,
+                                 pass_id,
+                                 {.slot_ind = depth_slot_ind,
+                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
+                                  .visibility = VISIBILITY_FRAGMENT});
+
+    compile_render_blueprint(rndr, rbp.item);
 }
 
 int init(platform_ctxt *ctxt, void *user_data)
@@ -199,11 +196,11 @@ int init(platform_ctxt *ctxt, void *user_data)
     auto app = (app_data *)user_data;
     render_blueprint bp{};
 
-    init_cache_default_types(&app->cg, "asset-cache", get_global_arena());
+    init_asset_cache_default_types(&app->cg, "asset-cache", get_global_arena());
 
     // Create meshes
-    auto msh_pool = get_pool<mesh>(&app->cg);
-    auto tex_pool = get_pool<texture>(&app->cg);
+    auto msh_pool = get_asset_pool<mesh>(&app->cg);
+    auto tex_pool = get_asset_pool<texture>(&app->cg);
     mesh *rect, *cube;
     create_meshes(msh_pool, &rect, &cube);
     create_textures(tex_pool);
@@ -255,8 +252,8 @@ void simulate(platform_ctxt *ctxt, app_data *app, f64 dt)
     static double render_tm = 0.0;
 
     auto tform_tbl = get_comp_tbl<transform>(&app->rgn.cdb);
-    auto mat_cache = get_pool<material>(&app->cg);
-    auto msh_cache = get_pool<mesh>(&app->cg);
+    auto mat_cache = get_asset_pool<material>(&app->cg);
+    auto msh_cache = get_asset_pool<mesh>(&app->cg);
     for (sizet i = 0; i < tform_tbl->entries.size; ++i) {
         auto curtf = &tform_tbl->entries[i];
         if (curtf->ent_id != app->cam_id) {
@@ -343,7 +340,7 @@ int terminate(platform_ctxt *ctxt, void *user_data)
     terminate_keymap(&app->movement_km);
     terminate_keymap_stack(&app->stack);
     terminate_sim_region(&app->rgn);
-    terminate_cache_default_types(&app->cg);
+    terminate_asset_cache_default_types(&app->cg);
     return err_code::PLATFORM_NO_ERROR;
 }
 

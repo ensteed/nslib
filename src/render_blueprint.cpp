@@ -5,26 +5,26 @@
 namespace nslib
 {
 
-intern VkPipelineStageFlags get_stage_from_requirement(rbp_pass_type pass_type, const rtarget_res_requirement &req)
+intern VkPipelineStageFlags get_stage_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &req)
 {
     // 1. If it's a Compute pass, everything happens in the Compute Shader stage.
-    if (pass_type == rbp_pass_type::PASS_TYPE_COMPUTE) {
+    if (pass.type == rbp_pass_type::PASS_TYPE_COMPUTE) {
         return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
     }
 
     // 2. If it's a Graphics pass, determine stage by usage.
-    switch (req.usage) {
-    case rtarget_res_usage::COLOR_ATTACHMENT:
+    switch (pass.slots[req.slot_ind].usage) {
+    case rbp_resource_usage::COLOR_ATTACHMENT:
         return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    case rtarget_res_usage::DEPTH_ATTACHMENT:
-    case rtarget_res_usage::STENCIL_ATTACHMENT:
-    case rtarget_res_usage::DEPTH_STENCIL_ATTACHMENT:
+    case rbp_resource_usage::DEPTH_ATTACHMENT:
+    case rbp_resource_usage::STENCIL_ATTACHMENT:
+    case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
         // Combine both test stages to be safe
         return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    case rtarget_res_usage::INPUT_ATTACHMENT:
+    case rbp_resource_usage::INPUT_ATTACHMENT:
         return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    case rtarget_res_usage::SAMPLED_IMAGE:
-    case rtarget_res_usage::STORAGE_BUFFER: {
+    case rbp_resource_usage::SAMPLED_IMAGE:
+    case rbp_resource_usage::STORAGE_BUFFER: {
         // Use the visibility flags to determine the specific shader stages
         VkPipelineStageFlags stages = 0;
         if (req.visibility & VISIBILITY_VERTEX) stages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
@@ -37,119 +37,107 @@ intern VkPipelineStageFlags get_stage_from_requirement(rbp_pass_type pass_type, 
     }
 }
 
-intern VkAccessFlags get_access_from_requirement(const rtarget_res_requirement &r)
+intern VkAccessFlags get_access_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r)
 {
     VkAccessFlags access = 0;
-    bool is_read = (r.access_mask & RES_REQUIREMENT_ACCESS_FLAG_READ);
-    bool is_write = (r.access_mask & RES_REQUIREMENT_ACCESS_FLAG_WRITE);
+    bool is_read = (r.access_mask & RESOURCE_REQUIREMENT_ACCESS_READ);
+    bool is_write = (r.access_mask & RESOURCE_REQUIREMENT_ACCESS_WRITE);
 
-    switch (r.usage) {
-    case rtarget_res_usage::COLOR_ATTACHMENT:
+    switch (pass.slots[r.slot_ind].usage) {
+    case rbp_resource_usage::COLOR_ATTACHMENT:
         if (is_read) access |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
         if (is_write) access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    case rtarget_res_usage::DEPTH_ATTACHMENT:
-    case rtarget_res_usage::STENCIL_ATTACHMENT:
-    case rtarget_res_usage::DEPTH_STENCIL_ATTACHMENT:
+    case rbp_resource_usage::DEPTH_ATTACHMENT:
+    case rbp_resource_usage::STENCIL_ATTACHMENT:
+    case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
         if (is_read) access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         if (is_write) access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    case rtarget_res_usage::INPUT_ATTACHMENT:
+    case rbp_resource_usage::INPUT_ATTACHMENT:
         asrt(is_read);
         if (is_read) access |= VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
         break;
-    case rtarget_res_usage::SAMPLED_IMAGE:
+    case rbp_resource_usage::SAMPLED_IMAGE:
         asrt(is_read);
         // Sampled images are effectively read-only in the shader
         if (is_read) access |= VK_ACCESS_SHADER_READ_BIT;
         break;
-    case rtarget_res_usage::STORAGE_BUFFER:
+    case rbp_resource_usage::STORAGE_BUFFER:
         // Storage buffers/images can be both
         if (is_read) access |= VK_ACCESS_SHADER_READ_BIT;
         if (is_write) access |= VK_ACCESS_SHADER_WRITE_BIT;
         break;
-    case rtarget_res_usage::UNDEFINED:
+    case rbp_resource_usage::UNDEFINED:
         // Do nothing - leave at 0
         break;
     }
     return access;
 }
 
-intern VkImageLayout get_layout_from_requirement(const rtarget_res_requirement &r)
+intern VkImageLayout get_layout_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r)
 {
-    bool is_write = test_flags(r.access_mask, RES_REQUIREMENT_ACCESS_FLAG_WRITE);
-    switch (r.usage) {
-    case rtarget_res_usage::COLOR_ATTACHMENT:
+    bool is_write = test_flags(r.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE);
+    bool is_present_khr = test_flags(r.option_mask, RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR);
+    rbp_resource_usage usage = pass.slots[r.slot_ind].usage;
+    assert(!is_present_khr || usage == rbp_resource_usage::COLOR_ATTACHMENT);
+    switch (usage) {
+    case rbp_resource_usage::COLOR_ATTACHMENT:
         // There isn't really a common "Read Only" color attachment layout
         // used during a render pass (usually it's sampled instead).
-        return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    case rtarget_res_usage::DEPTH_ATTACHMENT:
+        return is_present_khr ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    case rbp_resource_usage::DEPTH_ATTACHMENT:
         return is_write ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
-    case rtarget_res_usage::STENCIL_ATTACHMENT:
+    case rbp_resource_usage::STENCIL_ATTACHMENT:
         return is_write ? VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL;
-    case rtarget_res_usage::DEPTH_STENCIL_ATTACHMENT:
+    case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
         return is_write ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    case rtarget_res_usage::SAMPLED_IMAGE:
+    case rbp_resource_usage::SAMPLED_IMAGE:
         asrt(!is_write);
         return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    case rtarget_res_usage::INPUT_ATTACHMENT:
+    case rbp_resource_usage::INPUT_ATTACHMENT:
         return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    case rtarget_res_usage::STORAGE_BUFFER:
+    case rbp_resource_usage::STORAGE_BUFFER:
         return VK_IMAGE_LAYOUT_GENERAL;
     default:
         return VK_IMAGE_LAYOUT_UNDEFINED;
     }
 }
 
-intern VkImageLayout get_baked_initial_layout(rtarget_res_requirement req)
+intern VkImageLayout get_baked_initial_layout(const rbp_pass &pass, const rbp_resource_requirement &req)
 {
     // Make sure we can't have both CLEAR and READ set
-    asrt(!test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_CLEAR) || !test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_READ));
+    asrt(!test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) || !test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_READ));
 
     // Optimization: If we are clearing and don't care about previous contents,
     // we tell the render pass to ignore the current layout and just treat it as undefined.
-    return test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_CLEAR) ? VK_IMAGE_LAYOUT_UNDEFINED : get_layout_from_requirement(req);
+    return test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) ? VK_IMAGE_LAYOUT_UNDEFINED
+                                                                          : get_layout_from_requirement(pass, req);
 }
 
-intern VkAttachmentLoadOp get_requirement_load_op(const rtarget_res_requirement &req)
+intern VkAttachmentLoadOp get_requirement_load_op(const rbp_resource_requirement &req)
 {
-    if (test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_READ)) {
+    if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_READ)) {
         return VK_ATTACHMENT_LOAD_OP_LOAD;
     }
-    if (test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_CLEAR)) {
+    if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR)) {
         return VK_ATTACHMENT_LOAD_OP_CLEAR;
     }
     return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 }
 
-intern VkAttachmentStoreOp get_requirement_store_op(const rtarget_res_requirement &req)
+intern VkAttachmentStoreOp get_requirement_store_op(const rbp_resource_requirement &req)
 {
-    if (test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_WRITE)) {
+    if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE)) {
         return VK_ATTACHMENT_STORE_OP_STORE;
     }
     return VK_ATTACHMENT_STORE_OP_DONT_CARE;
 }
 
-intern u32 find_attachment_index(const static_array<rres_handle, MAX_BP_PASS_ATTACHMENT_COUNT> &att_ids, rres_handle id)
-{
-    for (u32 i = 0; i < att_ids.size; ++i) {
-        if (att_ids.data[i] == id) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-intern VkFormat get_requirement_format(const rtarget_res_requirement &req, const rtarget_res_registry &render_resources)
-{
-    asrt(req.id < render_resources.textures.size);
-    return render_resources.textures[req.id].tinfo.img_cfg.format;
-}
-
 // Assumes subpass dependency is zeroed out on passing in
-intern VkSubpassDependency get_bookend_dependency(u32 subpass_ind, const rbp_pass *pass)
+intern VkSubpassDependency get_bookend_dependency(const rbp_pass &pass, u32 subpass_ind)
 {
     VkSubpassDependency dep{};
     bool is_front_bookend = (subpass_ind == 0);
-    bool is_back_bookend = (subpass_ind == pass->subpasses.size - 1);
+    bool is_back_bookend = (subpass_ind == pass.subpasses.size - 1);
     asrt(is_front_bookend || is_back_bookend);
 
     dep.srcSubpass = is_front_bookend ? VK_SUBPASS_EXTERNAL : subpass_ind;
@@ -159,19 +147,19 @@ intern VkSubpassDependency get_bookend_dependency(u32 subpass_ind, const rbp_pas
         dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
         dep.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
     }
-    for (u32 resi = 0; resi < pass->subpasses[subpass_ind].resources.size; ++resi) {
-        const rtarget_res_requirement &req = pass->subpasses[subpass_ind].resources[resi];
-        asrt(is_valid(req.id));
+    for (u32 resi = 0; resi < pass.subpasses[subpass_ind].resources.size; ++resi) {
+        const rbp_resource_requirement &req = pass.subpasses[subpass_ind].resources[resi];
+        asrt(subpass_ind < pass.slots.size);
 
         if (is_front_bookend) {
-            dep.dstStageMask |= get_stage_from_requirement(pass->type, req);
-            dep.dstAccessMask |= get_access_from_requirement(req);
+            dep.dstStageMask |= get_stage_from_requirement(pass, req);
+            dep.dstAccessMask |= get_access_from_requirement(pass, req);
 
             // Can't have read and clear set - assert both are
-            asrt(!test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_CLEAR) || !(req.access_mask & RES_REQUIREMENT_ACCESS_FLAG_READ));
+            asrt(!test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) || !(req.access_mask & RESOURCE_REQUIREMENT_ACCESS_READ));
 
             // If this is the front bookend, our src mask/access actually depends on our requirments
-            if (test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_CLEAR)) {
+            if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR)) {
                 dep.srcStageMask |= VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             }
             else {
@@ -181,19 +169,19 @@ intern VkSubpassDependency get_bookend_dependency(u32 subpass_ind, const rbp_pas
             }
         }
         else {
-            dep.srcStageMask |= get_stage_from_requirement(pass->type, req);
-            dep.srcAccessMask |= get_access_from_requirement(req);
+            dep.srcStageMask |= get_stage_from_requirement(pass, req);
+            dep.srcAccessMask |= get_access_from_requirement(pass, req);
         }
     }
     return dep;
 }
 
-intern void add_dependencies_for_subpass(vkr_rpass_cfg *rp_cfg, u32 subpass_ind, const rbp_pass *pass)
+intern void add_dependencies_for_subpass(vkr_rpass_cfg *rp_cfg, const rbp_pass &pass, u32 subpass_ind)
 {
     u32 dst = subpass_ind;
     // Iterate backwards through all previous subpasses
     // Note: u32 wrap-around check (src < pass->subpasses.size) handles the 0-1 case
-    for (u32 src = subpass_ind - 1; src < pass->subpasses.size; --src) {
+    for (u32 src = subpass_ind - 1; src < pass.subpasses.size; --src) {
         bool needs_dependency = false;
         VkSubpassDependency dep{};
         dep.dstSubpass = dst;
@@ -201,19 +189,19 @@ intern void add_dependencies_for_subpass(vkr_rpass_cfg *rp_cfg, u32 subpass_ind,
         dep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
         // Compare every resource in current subpass against this specific previous subpass
-        for (u32 dst_resi = 0; dst_resi < pass->subpasses[dst].resources.size; ++dst_resi) {
-            const rtarget_res_requirement &req_dst = pass->subpasses[dst].resources[dst_resi];
-            asrt(is_valid(req_dst.id));
-            bool dst_write = test_flags(req_dst.access_mask, RES_REQUIREMENT_ACCESS_FLAG_WRITE);
-            bool dst_read = test_flags(req_dst.access_mask, RES_REQUIREMENT_ACCESS_FLAG_READ);
+        for (u32 dst_resi = 0; dst_resi < pass.subpasses[dst].resources.size; ++dst_resi) {
+            const rbp_resource_requirement &req_dst = pass.subpasses[dst].resources[dst_resi];
+            asrt(req_dst.slot_ind < pass.slots.size);
+            bool dst_write = test_flags(req_dst.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE);
+            bool dst_read = test_flags(req_dst.access_mask, RESOURCE_REQUIREMENT_ACCESS_READ);
 
-            for (u32 src_resi = 0; src_resi < pass->subpasses[src].resources.size; ++src_resi) {
-                const rtarget_res_requirement &req_src = pass->subpasses[src].resources[src_resi];
-                asrt(is_valid(req_src.id));
-                if (req_src.id != req_dst.id) continue;
+            for (u32 src_resi = 0; src_resi < pass.subpasses[src].resources.size; ++src_resi) {
+                const rbp_resource_requirement &req_src = pass.subpasses[src].resources[src_resi];
+                asrt(req_src.slot_ind < pass.slots.size);
+                if (req_src.slot_ind != req_dst.slot_ind) continue;
 
-                bool src_write = test_flags(req_src.access_mask, RES_REQUIREMENT_ACCESS_FLAG_WRITE);
-                bool src_read = test_flags(req_src.access_mask, RES_REQUIREMENT_ACCESS_FLAG_READ);
+                bool src_write = test_flags(req_src.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE);
+                bool src_read = test_flags(req_src.access_mask, RESOURCE_REQUIREMENT_ACCESS_READ);
 
                 // Hazard Check:
                 // 1. Write-After-Write (WAW)
@@ -224,11 +212,11 @@ intern void add_dependencies_for_subpass(vkr_rpass_cfg *rp_cfg, u32 subpass_ind,
                     needs_dependency = true;
 
                     // Accumulate masks for ALL resources involved in the transition
-                    dep.srcStageMask |= get_stage_from_requirement(pass->type, req_src);
-                    dep.srcAccessMask |= get_access_from_requirement(req_src);
+                    dep.srcStageMask |= get_stage_from_requirement(pass, req_src);
+                    dep.srcAccessMask |= get_access_from_requirement(pass, req_src);
 
-                    dep.dstStageMask |= get_stage_from_requirement(pass->type, req_dst);
-                    dep.dstAccessMask |= get_access_from_requirement(req_dst);
+                    dep.dstStageMask |= get_stage_from_requirement(pass, req_dst);
+                    dep.dstAccessMask |= get_access_from_requirement(pass, req_dst);
                 }
             }
         }
@@ -238,88 +226,127 @@ intern void add_dependencies_for_subpass(vkr_rpass_cfg *rp_cfg, u32 subpass_ind,
     }
 }
 
-intern void fill_subpass_dependencies(vkr_rpass_cfg *rp_cfg, const rbp_pass *pass)
+intern void fill_subpass_dependencies(vkr_rpass_cfg *rp_cfg, const rbp_pass &pass)
 {
     // Calculate the stage/access from requirements - i == 0 will treat this as the front bookend
-    if (pass->use_subpass_bookends) {
-        VkSubpassDependency front_bookend = get_bookend_dependency(0, pass);
+    if (pass.use_subpass_bookends) {
+        VkSubpassDependency front_bookend = get_bookend_dependency(pass, 0);
         arr_push_back(&rp_cfg->subpass_dependencies, front_bookend);
     }
 
     // Do all of the inter-dependencies
     for (u32 subpass_ind = 1; subpass_ind < rp_cfg->subpasses.size; ++subpass_ind) {
-        add_dependencies_for_subpass(rp_cfg, subpass_ind, pass);
+        add_dependencies_for_subpass(rp_cfg, pass, subpass_ind);
     }
 
-    if (pass->use_subpass_bookends) {
-        VkSubpassDependency back_bookend = get_bookend_dependency(pass->subpasses.size - 1, pass);
+    if (pass.use_subpass_bookends) {
+        VkSubpassDependency back_bookend = get_bookend_dependency(pass, pass.subpasses.size - 1);
         arr_push_back(&rp_cfg->subpass_dependencies, back_bookend);
     }
 }
 
-rtarget_res_requirement *add_rbp_pass_res_requirement(rbp_pass *rbp, rres_handle subpass)
+intern u32 get_next_att_ind(const rbp_pass &pass, sizet slot_size)
 {
-    auto ind = rbp->subpasses[subpass].resources.size++;
-    asrt(ind < rbp->subpasses[subpass].resources.capacity);
-    return &rbp->subpasses[subpass].resources[ind];
+    u32 ind{};
+    for (u32 i = 0; i < slot_size; ++i) {
+        if (pass.slots[i].att_ind != INVALID_ID) {
+            ind = pass.slots[i].att_ind;
+        }
+    }
+    return ind++;
 }
 
-rres_handle add_rbp_subpass(rbp_pass *pass)
+intern bool is_usage_attachment(rbp_resource_usage usage)
 {
+    return (usage < rbp_resource_usage::SAMPLED_IMAGE);
+}
+
+u32 get_rbp_attachment_count(rbp_pass *rbp)
+{
+    u32 cnt{};
+    for (u32 i = 0; i < rbp->slots.size; ++i) {
+        if (is_valid(rbp->slots[i].att_ind)) {
+            ++cnt;
+        }
+    }
+    return cnt;
+}
+
+rbp_slot_id add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_slot_desc &desc)
+{
+    auto pass = &rbp->passes[pid];
+    auto ind = pass->slots.size++;
+    asrt(ind < pass->slots.capacity);
+    auto slot = &pass->slots[ind];
+    memcpy(slot->name, desc.name, SMALL_STR_LEN - 1);
+    slot->format = desc.format;
+    slot->usage = desc.usage;
+    // don't include the current slot we just made
+    slot->att_ind = is_usage_attachment(slot->usage) ? get_next_att_ind(*pass, pass->slots.size - 1) : INVALID_ID;
+    return ind;
+}
+
+rbp_resource_req_id add_rbp_resource_requirement(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_requirement &req, rbp_subpass_id spid)
+{
+    auto ind = rbp->passes[pid].subpasses[spid].resources.size++;
+    asrt(ind < rbp->passes[pid].subpasses[spid].resources.capacity);
+    rbp->passes[pid].subpasses[spid].resources[ind] = req;
+    asrt(req.slot_ind < rbp->passes[pid].slots.size);
+    return ind;
+}
+
+rbp_subpass_id add_rbp_subpass(render_blueprint *rbp, rbp_pass_id pid)
+{
+    auto pass = &rbp->passes[pid];
     auto ret = pass->subpasses.size++;
     asrt(ret < pass->subpasses.capacity);
     return ret;
 }
 
-
-rbp_pass *add_rbp_pass(render_blueprint *rbp, const char *name)
+rbp_pass_id add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
 {
-    rres_handle ind = (u32)rbp->passes.size++;
+    rbp_pass_id ind = (u32)rbp->passes.size++;
     asrt(ind < rbp->passes.capacity);
     rbp_pass *pass = &rbp->passes[ind];
-    strncpy(pass->name, name, SMALL_STR_LEN - 1);
+    strncpy(pass->name, pdesc.name, SMALL_STR_LEN - 1);
     pass->id = hash_type(pass->name);
+    pass->use_subpass_bookends = pdesc.use_subpass_bookends;
+    pass->type = pdesc.type;
     asrt(hmap_insert(&rbp->pass_idmap, pass->id, ind));
-    return pass;
+    return ind;
 }
 
-rres_handle find_rbp_pass(render_blueprint *rbp, rres_id resid)
+rbp_pass_id find_rbp_pass(render_blueprint *rbp, rres_id id)
 {
-    auto fiter = hmap_find(&rbp->pass_idmap, resid);
+    auto fiter = hmap_find(&rbp->pass_idmap, id);
     return fiter ? fiter->val : INVALID_ID;
 }
 
-bool destroy_render_blueprint(const char *name, renderer *rndr)
+render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name)
 {
-    rres_handle ind = (u32)rndr->blueprints.size - 1;
-
-    render_blueprint *bp = &rndr->blueprints[ind];
-
-    hmap_terminate(&bp->targets.texture_id_map);
-    hmap_terminate(&bp->targets.buffer_id_map);
-
-    arr_clear(&bp->passes);
-    hmap_terminate(&bp->pass_idmap);
+    render_blueprint_ref ref = acquire_slot(&rndr->blueprints);
+    if (!is_valid(ref)) {
+        return ref;
+    }
+    hmap_init(&ref.item->pass_idmap, hash_type, &rndr->persist_fl);
+    strncpy(ref.item->name, name, SMALL_STR_LEN - 1);
+    ref.item->id = hash_type(ref.item->name);
+    hmap_insert(&rndr->blueprint_id_map, ref.item->id, ref.hndl);
+    return ref;
 }
 
-render_blueprint *create_render_blueprint(renderer *rndr, const char *name)
+bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
 {
-    rres_handle hndl = (u32)rndr->blueprints.size++;
-    asrt(hndl < rndr->blueprints.capacity);
-    render_blueprint *bp = &rndr->blueprints[hndl];
-    hmap_init(&bp->targets.texture_id_map, hash_type, &rndr->persist_fl);
-    hmap_init(&bp->targets.buffer_id_map, hash_type, &rndr->persist_fl);
-    hmap_init(&bp->pass_idmap, hash_type, &rndr->persist_fl);
-    strncpy(bp->name, name, SMALL_STR_LEN - 1);
-    bp->id = hash_type(bp->name);
-    hmap_insert(&rndr->blueprint_id_map, bp->id, hndl);
-    return bp;
+    auto item = get_slot_item(&rndr->blueprints, hndl);
+    clean_render_blueprint(rndr, item);
+    hmap_terminate(&item->pass_idmap);
+    return hmap_remove(&rndr->blueprint_id_map, item->id) && release_slot(&rndr->blueprints, hndl);
 }
 
-rres_handle find_render_blueprint(renderer *rndr, rres_id bpid)
+render_blueprint_handle find_render_blueprint(renderer *rndr, rres_id bpid)
 {
     auto fiter = hmap_find(&rndr->blueprint_id_map, bpid);
-    return fiter ? fiter->val : INVALID_ID;
+    return fiter ? fiter->val : render_blueprint_handle{};
 }
 
 void clean_render_blueprint(renderer *rndr, render_blueprint *rbp)
@@ -328,158 +355,110 @@ void clean_render_blueprint(renderer *rndr, render_blueprint *rbp)
     auto vk = &rndr->vk;
     asrt(vk);
     ilog("Cleaning render blueprint %s", rbp->name);
-    for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
-        for (u32 bufid = 0; bufid < rbp->targets.textures.size; ++bufid) {
-            vkr_terminate_buffer(&rbp->targets.buffers[bufid].buffers[fif], vk);
-            rbp->targets.buffers[bufid].buffers[fif] = {};
-        }
-        for (u32 texid = 0; texid < rbp->targets.textures.size; ++texid) {
-            if (!rbp->targets.textures[texid].is_swapchain) {
-                vkr_terminate_image(&rbp->targets.textures[texid].tinfo.frames[fif].image, vk);
-                vkr_terminate_image_view(rbp->targets.textures[texid].tinfo.frames[fif].view, vk);
-                rbp->targets.textures[texid].tinfo.frames[fif] = {};
-            }
-        }
-    }
     for (u32 rpi = 0; rpi < rbp->passes.size; ++rpi) {
-        vkr_terminate_render_pass(rbp->passes[rpi].handle, vk);
-        rbp->passes[rpi].handle = {};
+        vkr_terminate_render_pass((VkRenderPass)rbp->passes[rpi].vk_handle, vk);
+        rbp->passes[rpi].vk_handle = {};
     }
 }
 
 bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
 {
+    asrt(rndr);
     asrt(rbp);
     auto vk = &rndr->vk;
     asrt(vk);
-    ilog("Compiling render blueprint %s", rbp->name);
-    // Create all resource images/buffers
-    for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
-        for (u32 texid = 0; texid < rbp->targets.textures.size; ++texid) {
-            auto cur_rt = &rbp->targets.textures[texid];
-            if (!cur_rt->is_swapchain) {
-                s32 result = vkr_init_image(&cur_rt->tinfo.frames[fif].image, cur_rt->tinfo.img_cfg);
-                if (result != err_code::VKR_NO_ERROR) {
-                    clean_render_blueprint(rbp, rndr);
-                    return false;
-                }
-                vkr_image_view_cfg cfg = cur_rt->tinfo.img_view_cfg;
-                cfg.image = &cur_rt->tinfo.frames[fif].image;
-                result = vkr_init_image_view(&cur_rt->tinfo.frames[fif].view, cfg, vk);
-                if (result != err_code::VKR_NO_ERROR) {
-                    clean_render_blueprint(rbp, rndr);
-                    return false;
-                }
-                cur_rt->tinfo.frames[texid].state.layout = cur_rt->tinfo.img_cfg.initial_layout;
-                cur_rt->tinfo.frames[texid].state.access = VK_ACCESS_NONE;
-                cur_rt->tinfo.frames[texid].state.stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-            }
-        }
-        for (u32 bufid = 0; bufid < rbp->targets.buffers.size; ++bufid) {
-            auto cur_rt = &rbp->targets.buffers[bufid];
-            s32 result = vkr_init_buffer(&cur_rt->buffers[fif], cur_rt->buf_cfg);
-            if (result != err_code::VKR_NO_ERROR) {
-                clean_render_blueprint(rbp, rndr);
-                return false;
-            }
-            cur_rt->states[fif].access = VK_ACCESS_NONE;
-            cur_rt->states[fif].stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        }
-    }
-
     for (u32 pass_ind = 0; pass_ind < rbp->passes.size; ++pass_ind) {
-        auto *pass = &rbp->passes[pass_ind];
+        rbp_pass *pass = &rbp->passes[pass_ind];
+        asrt(pass->subpasses.size > 0);
+        if (pass->type != rbp_pass_type::PASS_TYPE_GRAPHICS) {
+            wlog("Render blueprint pass %s is not graphics; skipping render pass creation", pass->name);
+            pass->vk_handle = {};
+            continue;
+        }
+
+        // This should zero initialize everything
         vkr_rpass_cfg rp_cfg{};
+        u32 attachment_count = get_rbp_attachment_count(pass);
+        asrt(attachment_count <= rp_cfg.attachments.capacity);
+        rp_cfg.attachments.size = attachment_count;
 
-        // The config doesn't track our res ids as part of the attachment so we gotta do that
-        static_array<rres_handle, MAX_BP_PASS_ATTACHMENT_COUNT> attachment_ids{};
+        for (u32 subi = 0; subi < pass->subpasses.size; ++subi) {
+            vkr_rpass_cfg_subpass subpass{};
+            subpass.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
 
-        for (u32 subpass_ind = 0; subpass_ind < pass->subpasses.size; ++subpass_ind) {
-            auto *subpass = &pass->subpasses[subpass_ind];
+            for (u32 resi = 0; resi < pass->subpasses[subi].resources.size; ++resi) {
+                const rbp_resource_requirement &req = pass->subpasses[subi].resources[resi];
+                asrt(req.slot_ind < pass->slots.size);
 
-            vkr_rpass_cfg_subpass subpass_cfg{};
-            subpass_cfg.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
-
-            for (u32 att_ind = 0; att_ind < subpass->resources.size; ++att_ind) {
-                const rtarget_res_requirement &req = subpass->resources[att_ind];
-
-                // Skip any non attachments
-                if (req.usage == rtarget_res_usage::SAMPLED_IMAGE || req.usage == rtarget_res_usage::STORAGE_BUFFER ||
-                    req.usage == rtarget_res_usage::UNDEFINED) {
+                const rbp_resource_slot_info &slot = pass->slots[req.slot_ind];
+                if (!is_valid(slot.att_ind)) {
                     continue;
                 }
+                asrt(is_usage_attachment(slot.usage));
+                asrt(slot.att_ind < rp_cfg.attachments.size);
 
-                // If there already is an attachment entry, use that, otherwise create one
-                // Attachments use the loadOp from the earliest subpass reference, and the storeOp from the latest
-                // We also update the finalLayout with the last subpass image layout
-                u32 rpass_att_ind = find_attachment_index(attachment_ids, req.id);
-                if (rpass_att_ind > attachment_ids.size) {
-
-                    // For a newly created attachment we take both the loadOp and storeOps of the subpass resource, then
-                    // we will update the store ops if we encounter the attachment again in a later subpass
-                    VkAttachmentDescription att_desc{};
-                    att_desc.format = get_requirement_format(req, rbp->targets);
-                    att_desc.samples = VK_SAMPLE_COUNT_1_BIT;
-                    att_desc.loadOp = get_requirement_load_op(req);
-                    att_desc.storeOp = get_requirement_store_op(req);
-                    att_desc.initialLayout = get_baked_initial_layout(req);
-                    att_desc.finalLayout = get_layout_from_requirement(req);
-
-                    // Set stencil load ops only if our attachment has stencil component
-                    if (req.usage == rtarget_res_usage::STENCIL_ATTACHMENT || req.usage == rtarget_res_usage::DEPTH_STENCIL_ATTACHMENT) {
-                        att_desc.stencilLoadOp = att_desc.loadOp;
-                        att_desc.stencilStoreOp = att_desc.storeOp;
-                    }
-                    else {
-                        att_desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-                        att_desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-                    }
-
-                    rpass_att_ind = (u32)rp_cfg.attachments.size;
-                    arr_push_back(&rp_cfg.attachments, att_desc);
-                    arr_push_back(&attachment_ids, req.id);
+                bool use_stencil =
+                    (slot.usage == rbp_resource_usage::STENCIL_ATTACHMENT || slot.usage == rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT);
+                VkAttachmentDescription *att = &rp_cfg.attachments.data[slot.att_ind];
+                // Use format to tell if attachment hasn't been set yet - if it hasn't we set it as this is the first
+                // resource using that attachment
+                if (att->format == VK_FORMAT_UNDEFINED) {
+                    att->format = get_vk_format(slot.format);
+                    asrt(att->format != VK_FORMAT_UNDEFINED);
+                    att->samples = VK_SAMPLE_COUNT_1_BIT;
+                    att->loadOp = use_stencil ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : get_requirement_load_op(req);
+                    att->stencilLoadOp = use_stencil ? get_requirement_load_op(req) : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                    att->initialLayout = get_baked_initial_layout(*pass, req);
                 }
                 else {
-                    // So now we have encountered a later subpass and will update our store ops in the attachment
-                    auto *att_desc = &rp_cfg.attachments[rpass_att_ind];
-                    if (test_flags(req.access_mask, RES_REQUIREMENT_ACCESS_FLAG_WRITE)) {
-                        att_desc->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                        if (req.usage == rtarget_res_usage::STENCIL_ATTACHMENT || req.usage == rtarget_res_usage::DEPTH_STENCIL_ATTACHMENT) {
-                            att_desc->stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-                        }
-                    }
-                    att_desc->finalLayout = get_layout_from_requirement(req);
+                    // If an subpass has already referenced this attachment, we should make sure it's final layout is
+                    // NOT presenet KHR - only the last subpass to reference a color attachment can have that layout
+                    asrt(att->finalLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
                 }
 
-                // Create
+                // Set this every time
+                att->storeOp = use_stencil ? VK_ATTACHMENT_STORE_OP_DONT_CARE : get_requirement_store_op(req);
+                att->stencilStoreOp = use_stencil ? get_requirement_store_op(req) : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+                att->finalLayout = get_layout_from_requirement(*pass, req);
+
                 VkAttachmentReference att_ref{};
-                att_ref.attachment = rpass_att_ind;
-                att_ref.layout = get_layout_from_requirement(req);
-
-                if (req.usage == rtarget_res_usage::COLOR_ATTACHMENT) {
-                    arr_push_back(&subpass_cfg.color_attachments, att_ref);
-                }
-                else if (req.usage == rtarget_res_usage::INPUT_ATTACHMENT) {
-                    arr_push_back(&subpass_cfg.input_attachments, att_ref);
-                }
-                else if (req.usage == rtarget_res_usage::DEPTH_ATTACHMENT || req.usage == rtarget_res_usage::STENCIL_ATTACHMENT ||
-                         req.usage == rtarget_res_usage::DEPTH_STENCIL_ATTACHMENT) {
-                    asrt(subpass_cfg.depth_stencil_attachment.attachment == VK_ATTACHMENT_UNUSED);
-                    subpass_cfg.depth_stencil_attachment = att_ref;
+                att_ref.attachment = slot.att_ind;
+                att_ref.layout = att->finalLayout;
+                switch (slot.usage) {
+                case rbp_resource_usage::COLOR_ATTACHMENT:
+                    arr_push_back(&subpass.color_attachments, att_ref);
+                    break;
+                case rbp_resource_usage::INPUT_ATTACHMENT:
+                    arr_push_back(&subpass.input_attachments, att_ref);
+                    break;
+                case rbp_resource_usage::DEPTH_ATTACHMENT:
+                case rbp_resource_usage::STENCIL_ATTACHMENT:
+                case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
+                    subpass.depth_stencil_attachment = att_ref;
+                    break;
+                default:
+                    break;
                 }
             }
-
-            arr_push_back(&rp_cfg.subpasses, subpass_cfg);
+            arr_push_back(&rp_cfg.subpasses, subpass);
         }
 
-        if (rp_cfg.subpasses.size > 0) {
-            fill_subpass_dependencies(&rp_cfg, pass);
+        // Some basic validation on attachments..
+        for (u32 i = 0; i < rp_cfg.attachments.size; ++i) {
+            auto cur = &rp_cfg.attachments[i];
+            asrt(cur->format != VK_FORMAT_UNDEFINED);
+            asrt(cur->initialLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
         }
 
-        s32 result = vkr_init_render_pass(&pass->handle, rp_cfg, vk);
+        fill_subpass_dependencies(&rp_cfg, *pass);
+
+        VkRenderPass rpass{};
+        int result = vkr_init_render_pass(&rpass, rp_cfg, vk);
         if (result != err_code::VKR_NO_ERROR) {
-            elog("Failed to create render pass for blueprint %s with code %d", rbp->name, result);
+            elog("Failed to create render pass for %s", pass->name);
+            return false;
         }
+        pass->vk_handle = (sizet)rpass;
     }
     return true;
 }

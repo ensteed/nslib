@@ -94,7 +94,12 @@ enum struct rformat
     R64_SFLOAT,
     R64_UINT,
     R64_SINT,
-
+    // Depth/Stencil formats
+    D16_UNORM, // 2 bytes
+    D16_UNORM_S8_UINT, // 3 bytes
+    D32_SFLOAT, // 4 bytes
+    D24_UNORM_S8_UINT, // 4 bytes
+    D32_SFLOAT_S8_UINT, // 8 bytes
     INVALID,
 };
 

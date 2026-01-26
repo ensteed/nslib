@@ -1,11 +1,9 @@
 #pragma once
 
-#include "asset_id.h"
 #include "math/matrix4.h"
 #include "containers/slot_pool.h"
-#include "containers/hmap.h"
+#include "vk_context.h"
 #include "render_blueprint.h"
-#include "render_handles.h"
 #include "rformat.h"
 
 struct ImGuiContext;
@@ -15,12 +13,6 @@ namespace nslib
 struct camera;
 struct transform;
 
-enum rsampler_type : u32
-{
-    RSAMPLER_TYPE_LINEAR_REPEAT,
-    RSAMPLER_TYPE_COUNT
-};
-
 struct rsubgeom_range
 {
     // Indice offset
@@ -29,21 +21,7 @@ struct rsubgeom_range
     sizet count;
 };
 
-using ind_t = u16;
-
-enum struct rgeom_topology : u8
-{
-    RMESH_TOPOLOGY_TRIANGLE_STRIP,
-};
-
-
-enum rtexture_create_flag : u32
-{
-    RTEXTURE_CREATE_FLAG_NONE,
-    RTEXTURE_CREATE_FLAG_CUBE_MAP
-};
-
-struct rtexture_create_info
+struct rtexture_desc
 {
     const char *name;
     // Pixel data
@@ -58,37 +36,14 @@ struct rtexture_create_info
     u32 flags;
 };
 
-struct rtechnique_create_info
+struct rtechnique_desc
 {};
 
-enum rmaterial_texture_slot
-{
-    RMATERIAL_TEXTURE0,
-    RMATERIAL_TEXTURE1,
-    RMATERIAL_TEXTURE2,
-    RMATERIAL_TEXTURE3,
-    RMATERIAL_TEXTURE4,
-    RMATERIAL_TEXTURE5,
-    RMATERIAL_TEXTURE6,
-    RMATERIAL_TEXTURE7,
-    RMATERIAL_TEXTURE_COUNT,
-};
-
-struct rmaterial_create_info
+struct rmaterial_desc
 {
     const char *name;
     rtechnique_handle thndl;
     rtexture_handle slots[RMATERIAL_TEXTURE_COUNT];
-};
-
-enum rdesc_set_layout : u32
-{
-    // Bound once per frame.
-    RDESC_SET_LAYOUT_FRAME,
-    // Bound per material change.
-    RDESC_SET_LAYOUT_MATERIAL,
-    // Count
-    RDESC_SET_LAYOUT_COUNT,
 };
 
 namespace err_code
@@ -247,19 +202,18 @@ struct geom_streams_group
 {
     // The name is stored in the stream buffer entry for indices - the id is generated from that name
     rres_id id{INVALID_IND};
-    rres_handle ind{INVALID_ID};
     static_array<geometry_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
     stream_buffer_entry indice_stream;
 };
 
-struct rgeom_create_info
+struct rgeom_desc
 {
     const char *name{};
     // Which geometry streams group
-    rres_handle group{};
+    u32 group{};
     // The specific layout to use within the geometry streams group
-    rres_handle layout{};
+    u32 layout{};
     // Number of verts in this geometry. Each stream must have the same vert count
     u32 vert_count{};
     // Should be an array of void* mem pointers - the array size matching the number of vert streams specified in layout
@@ -283,11 +237,114 @@ struct rview
     mat4 proj_cam;
 };
 
+// This will cause targets to resize dynamically with the swapchain as well
+const uvec2 SWAPCHAIN_SIZE = {};
+const uvec2 DEFAULT_SHADOW_MAP_SIZE = {2048, 2048};
+
+struct rtexture_state
+{
+    VkImageLayout layout;
+    VkAccessFlags access;
+    VkPipelineStageFlags stage;
+};
+
+struct rbuffer_state
+{
+    VkAccessFlags access;
+    VkPipelineStageFlags stage;
+};
+
+struct rbuffer_target_fif
+{
+    vkr_buffer buffer;
+    rbuffer_state state;
+};
+
+struct rbuffer_target
+{
+    // Set during build
+    small_str name;
+    rres_id id;
+
+    // Filled in during compile
+    rbuffer_target_fif frames[MAX_FRAMES_IN_FLIGHT];
+};
+
+struct rtexture_target_frame_fif
+{
+    vkr_image image;
+    VkImageView view;
+    rtexture_state state;
+};
+
+struct rtexture_target
+{
+    // Set during build
+    small_str name;
+    rres_id id;
+    rtexture_target_frame_fif frames[MAX_FRAMES_IN_FLIGHT];
+};
+
+struct rresource_target_registry
+{
+    slot_pool<rbuffer_target> buffers;
+    hmap<rres_id, rbuffer_target_handle> buffer_id_map;
+    slot_pool<rtexture_target> textures;
+    hmap<rres_id, rtexture_target_handle> texture_id_map;
+};
+
+struct rbuffer_target_desc
+{
+    const char *name;
+    vkr_buffer_cfg cfg{};
+};
+
+enum rtarget_texture_type
+{
+    RTARGET_TEXTURE_TYPE_COLOR,
+    RTARGET_TEXTURE_TYPE_DEPTH,
+    RTARGET_TEXTURE_TYPE_CUBE_COLOR,
+    RTARGET_TEXTURE_TYPE_CUBE_DEPTH
+};
+
+struct rtexture_target_desc
+{
+    const char *name;
+    rformat format;
+    rtarget_texture_type type;
+    uvec2 dims;
+};
+
+#define TEXTURE_TARGET_COLOR_HDR(name)                                                                                                     \
+    {                                                                                                                                      \
+        .name = name,                                                                                                                      \
+        .format = rformat::RGBA16_SFLOAT,                                                                                                  \
+        .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
+        .dims = SWAPCHAIN_SIZE,                                                                                                            \
+    }
+
+#define TEXTURE_TARGET_COLOR(name)                                                                                                         \
+    {                                                                                                                                      \
+        .name = name,                                                                                                                      \
+        .format = rformat::RGBA8_SFLOAT,                                                                                                   \
+        .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
+        .dims = SWAPCHAIN_SIZE,                                                                                                            \
+    }
+
+#define TEXTURE_TARGET_SHADOW_MAP(name)                                                                                                    \
+    {                                                                                                                                      \
+        .name = name,                                                                                                                      \
+        .format = rformat::D32_SFLOAT,                                                                                                     \
+        .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
+        .dims = DEFAULT_SHADOW_MAP_SIZE,                                                                                                   \
+    }
+
 // int init_render_blueprint(render_blueprint *bp);
 // void terminate_render_blueprint(render_blueprint *bp);
 
 // rbp_pass *create_pass(render_blueprint *bp, const char *pass_t);
 // void add_subpass(rbp_pass *pass);
+
 
 struct renderer
 {
@@ -300,15 +357,11 @@ struct renderer
     mem_arena frame_stack;
     mem_arena frame_linear;
 
-    // Render pass indices referenced by ids which are just pass names - map a pass name to a static array indice
-    hmap<asset_id, sizet> rpass_name_map;
-    static_array<rpass_info, MAX_BP_PASS_COUNT> rpasses{};
-
-    // Created pipelines cached on pipeline state
-
     // Renderer resources
     // TODO: Implement this for smarter pipeline creation
-    hmap<u64, VkPipeline> pline_cache;
+    hmap<pipeline_key, pipeline_id> pline_cache;
+    array<VkPipeline> pipelines;
+    
     slot_pool<rtechnique_info> techniques{};
     slot_pool<rmaterial_info> materials{};
     slot_pool<rtexture_info> textures{};
@@ -321,7 +374,7 @@ struct renderer
     static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
 
     // Really a single
-    hmap<rres_id, rres_handle> geom_group_id_map{};
+    hmap<rres_id, u32> geom_group_id_map{};
     static_array<geom_streams_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
     // global pipeline layout
@@ -333,10 +386,10 @@ struct renderer
     // Global texture samplers
     static_array<rsampler_info, RSAMPLER_TYPE_COUNT> samplers{};
 
-    // ImGUI context
-    #ifdef USE_IMGUI
+// ImGUI context
+#ifdef USE_IMGUI
     imgui_ctxt imgui{};
-    #endif
+#endif
 
     // Stored on reset render frame - used in subsequent frame calls to get the current frame
     s32 finished_frames;
@@ -344,38 +397,18 @@ struct renderer
     // This is incremented every frame there are no resize events
     f64 no_resize_frames;
 
-    // Render blueprints - last one is active one
-    hmap<rres_id, rres_handle> blueprint_id_map{};
-    static_array<render_blueprint, MAX_BP_COUNT> blueprints{};
+    // Render blueprints
+    hmap<rres_id, render_blueprint_handle> blueprint_id_map{};
+    slot_pool<render_blueprint> blueprints{};
 
-    rtarget_res_registry rtargets{};
+    rresource_target_registry rtargets{};
 
     rtexture_handle swapchain_fb_depth_stencil{};
 };
 
-struct create_rtarget_buffer_info {
-    const char*name;
-    vkr_buffer_cfg cfg{};
-};
+VkFormat get_vk_format(rformat fmt);
 
-enum rtarget_texture_type {
-    RTARGET_TEXTURE_TYPE_2D_COLOR,
-    RTARGET_TEXTURE_TYPE_2D_DEPTH,
-    RTARGET_TEXTURE_TYPE_CUBE_COLOR,
-    RTARGET_TEXTURE_TYPE_CUBE_DEPTH
-};
-
-struct create_rtarget_texture_info {
-    // TODO: Turn these in to flags
-    const char *name;
-    rformat format;
-    rtarget_texture_type type;
-    bool resize_dynamically;
-    uvec2 dims;
-};
-
-
-geom_streams_group* push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
+u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 
 // Geometry group desc builder
 geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count);
@@ -383,26 +416,29 @@ vert_stream_desc *push_geometry_stream(geometry_vert_layout_desc *vert_layout, c
 void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &att_desc);
 
 template<typename T>
-void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location) {
-    push_geometry_attribute(stream, {.shader_location=shader_location, .fmt = get_rformat_for_type<T>()});
+void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location)
+{
+    push_geometry_attribute(stream, {.shader_location = shader_location, .fmt = get_rformat_for_type<T>()});
 }
 
 template<typename T>
-void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool normalize_in_shader) {
-    push_geometry_attribute(stream, {.shader_location=shader_location, .fmt = get_rformat_for_type<T>(normalize_in_shader)});
+void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool normalize_in_shader)
+{
+    push_geometry_attribute(stream, {.shader_location = shader_location, .fmt = get_rformat_for_type<T>(normalize_in_shader)});
 }
 
-rgeom_handle create_geometry(renderer *rndr, const rgeom_create_info &ci);
-rtexture_handle create_texture(renderer *rndr, const rtexture_create_info &ctinfo);
-rtexture_handle create_rtechnique(renderer *rndr, const rtechnique_create_info &ctinfo);
-rtexture_handle create_material(renderer *rndr, const rmaterial_create_info &ctinfo);
+rgeom_handle create_geometry(renderer *rndr, const rgeom_desc &ci);
+rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo);
+rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo);
+rmaterial_handle create_material(renderer *rndr, const rmaterial_desc &ctinfo);
 
-rtarget_res_texture *create_rtarget_texture(renderer *rndr, const char *name, const );
-rtarget_res_texture *find_rtarget_texture(renderer *rndr, rres_id id);
+rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
+rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);
+rtexture_target_handle find_rtexture_target(renderer *rndr, rres_id id);
 
-rtarget_res_buffer *create_rtarget_buffer(renderer *rndr, const create_rtarget_buffer_info &ci);
-rtarget_res_buffer *find_rbp_target_buffer(renderer *rndr, rres_id id);
-
+rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci);
+rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
+rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
 
 int begin_render_frame(renderer *rndr, int finished_frames);
 int end_render_frame(renderer *rndr, camera *cam, f64 dt);
