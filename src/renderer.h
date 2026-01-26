@@ -406,6 +406,9 @@ struct renderer
     rtexture_handle swapchain_fb_depth_stencil{};
 };
 
+int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena);
+void terminate_renderer(renderer *rndr);
+
 VkFormat get_vk_format(rformat fmt);
 
 u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
@@ -443,7 +446,5 @@ rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
 int begin_render_frame(renderer *rndr, int finished_frames);
 int end_render_frame(renderer *rndr, camera *cam, f64 dt);
 
-int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena);
-void terminate_renderer(renderer *rndr);
 
 } // namespace nslib
