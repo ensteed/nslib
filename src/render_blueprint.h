@@ -56,6 +56,14 @@ struct rbp_resource_slot_info
     u32 att_ind{INVALID_ID};
 };
 
+pup_func(rbp_resource_slot_info)
+{
+    pup_member(name);
+    pup_enum_member(rformat, u32, format);
+    pup_enum_member(rbp_resource_usage, u32, usage);
+    pup_member(att_ind);
+}
+
 struct rbp_resource_requirement
 {
     u32 slot_ind;
@@ -64,10 +72,23 @@ struct rbp_resource_requirement
     u32 option_mask;
 };
 
+pup_func(rbp_resource_requirement)
+{
+    pup_member(slot_ind);
+    pup_member(access_mask);
+    pup_member(visibility);
+    pup_member(option_mask);
+}
+
 struct rbp_subpass
 {
     static_array<rbp_resource_requirement, MAX_BP_RESOURCE_REQUIREMENT_COUNT> resources;
 };
+
+pup_func(rbp_subpass)
+{
+    pup_member(resources);
+}
 
 struct rbp_pass
 {
@@ -83,6 +104,16 @@ struct rbp_pass
     // Filled during compile
     sizet vk_handle;
 };
+
+pup_func(rbp_pass)
+{
+    pup_member(name);
+    pup_member(id);
+    pup_enum_member(rbp_pass_type, u32, type);
+    pup_member(use_subpass_bookends);
+    pup_member(slots);
+    pup_member(subpasses);
+}
 
 struct rbp_pass_desc
 {
@@ -112,6 +143,14 @@ struct render_blueprint
     hmap<rres_id, rbp_pass_id> pass_idmap{};
 };
 
+pup_func(render_blueprint)
+{
+    pup_member(name);
+    pup_member(id);
+    pup_member(passes);
+    pup_member(pass_idmap);
+}
+
 inline bool is_valid(const rbp_resource_slot_info &si)
 {
     return (si.format != rformat::INVALID && si.usage != rbp_resource_usage::UNDEFINED);
@@ -120,7 +159,10 @@ inline bool is_valid(const rbp_resource_slot_info &si)
 u32 get_rbp_attachment_count(rbp_pass *rbp);
 
 rbp_slot_id add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_slot_desc &desc);
-rbp_resource_req_id add_rbp_resource_requirement(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_requirement &req, rbp_subpass_id spid = 0);
+rbp_resource_req_id add_rbp_resource_requirement(render_blueprint *rbp,
+                                                 rbp_pass_id pid,
+                                                 const rbp_resource_requirement &req,
+                                                 rbp_subpass_id spid = 0);
 rbp_subpass_id add_rbp_subpass(render_blueprint *rbp, rbp_pass_id pid);
 
 rbp_pass_id add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc);

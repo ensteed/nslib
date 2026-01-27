@@ -1,3 +1,4 @@
+#include "json_archive.h"
 #include "renderer.h"
 #include "render_blueprint.h"
 #include "logging.h"
@@ -312,6 +313,7 @@ rbp_pass_id add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
     pass->id = hash_type(pass->name);
     pass->use_subpass_bookends = pdesc.use_subpass_bookends;
     pass->type = pdesc.type;
+    pass->subpasses.size = 1;
     asrt(hmap_insert(&rbp->pass_idmap, pass->id, ind));
     return ind;
 }
@@ -385,10 +387,14 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
         for (u32 subi = 0; subi < pass->subpasses.size; ++subi) {
             vkr_rpass_cfg_subpass subpass{};
             subpass.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
+            dlog("Looking at subpass %d", subi);
 
             for (u32 resi = 0; resi < pass->subpasses[subi].resources.size; ++resi) {
+
+                
                 const rbp_resource_requirement &req = pass->subpasses[subi].resources[resi];
                 asrt(req.slot_ind < pass->slots.size);
+                dlog("Looking at resi %d: %s", resi, ls(to_json(req)));
 
                 const rbp_resource_slot_info &slot = pass->slots[req.slot_ind];
                 if (!is_valid(slot.att_ind)) {

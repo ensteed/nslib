@@ -1,4 +1,5 @@
 #include "asset_common.h"
+#include "json_archive.h"
 #include "platform.h"
 #include "renderer.h"
 #include "input_mapping.h"
@@ -188,7 +189,9 @@ void build_and_compile_render_blueprint(renderer *rndr)
                                   .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
                                   .visibility = VISIBILITY_FRAGMENT});
 
+    dlog("Blueprint: %s", ls(to_json(*rbp.item)));
     compile_render_blueprint(rndr, rbp.item);
+
 }
 
 int init(platform_ctxt *ctxt, void *user_data)
