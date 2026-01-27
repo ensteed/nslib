@@ -48,11 +48,13 @@ intern VkAccessFlags get_access_from_requirement(const rbp_pass &pass, const rbp
     case rbp_resource_usage::COLOR_ATTACHMENT:
         if (is_read) access |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
         if (is_write) access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        break;
     case rbp_resource_usage::DEPTH_ATTACHMENT:
     case rbp_resource_usage::STENCIL_ATTACHMENT:
     case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
         if (is_read) access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         if (is_write) access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        break;
     case rbp_resource_usage::INPUT_ATTACHMENT:
         asrt(is_read);
         if (is_read) access |= VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
@@ -74,7 +76,7 @@ intern VkAccessFlags get_access_from_requirement(const rbp_pass &pass, const rbp
     return access;
 }
 
-intern VkImageLayout get_layout_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r)
+intern VkImageLayout get_layout_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r, bool is_final)
 {
     bool is_write = test_flags(r.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE);
     bool is_present_khr = test_flags(r.option_mask, RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR);
@@ -84,11 +86,9 @@ intern VkImageLayout get_layout_from_requirement(const rbp_pass &pass, const rbp
     case rbp_resource_usage::COLOR_ATTACHMENT:
         // There isn't really a common "Read Only" color attachment layout
         // used during a render pass (usually it's sampled instead).
-        return is_present_khr ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        return (is_final && is_present_khr) ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     case rbp_resource_usage::DEPTH_ATTACHMENT:
-        return is_write ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
     case rbp_resource_usage::STENCIL_ATTACHMENT:
-        return is_write ? VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL;
     case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
         return is_write ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     case rbp_resource_usage::SAMPLED_IMAGE:
@@ -111,7 +111,7 @@ intern VkImageLayout get_baked_initial_layout(const rbp_pass &pass, const rbp_re
     // Optimization: If we are clearing and don't care about previous contents,
     // we tell the render pass to ignore the current layout and just treat it as undefined.
     return test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) ? VK_IMAGE_LAYOUT_UNDEFINED
-                                                                          : get_layout_from_requirement(pass, req);
+        : get_layout_from_requirement(pass, req, false);
 }
 
 intern VkAttachmentLoadOp get_requirement_load_op(const rbp_resource_requirement &req)
@@ -251,10 +251,10 @@ intern u32 get_next_att_ind(const rbp_pass &pass, sizet slot_size)
     u32 ind{};
     for (u32 i = 0; i < slot_size; ++i) {
         if (pass.slots[i].att_ind != INVALID_ID) {
-            ind = pass.slots[i].att_ind;
+            ind = pass.slots[i].att_ind + 1;
         }
     }
-    return ind++;
+    return ind;
 }
 
 intern bool is_usage_attachment(rbp_resource_usage usage)
@@ -391,7 +391,6 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
 
             for (u32 resi = 0; resi < pass->subpasses[subi].resources.size; ++resi) {
 
-                
                 const rbp_resource_requirement &req = pass->subpasses[subi].resources[resi];
                 asrt(req.slot_ind < pass->slots.size);
                 dlog("Looking at resi %d: %s", resi, ls(to_json(req)));
@@ -425,11 +424,11 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
                 // Set this every time
                 att->storeOp = use_stencil ? VK_ATTACHMENT_STORE_OP_DONT_CARE : get_requirement_store_op(req);
                 att->stencilStoreOp = use_stencil ? get_requirement_store_op(req) : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-                att->finalLayout = get_layout_from_requirement(*pass, req);
+                att->finalLayout = get_layout_from_requirement(*pass, req, true);
 
                 VkAttachmentReference att_ref{};
                 att_ref.attachment = slot.att_ind;
-                att_ref.layout = att->finalLayout;
+                att_ref.layout = get_layout_from_requirement(*pass, req, false);
                 switch (slot.usage) {
                 case rbp_resource_usage::COLOR_ATTACHMENT:
                     arr_push_back(&subpass.color_attachments, att_ref);

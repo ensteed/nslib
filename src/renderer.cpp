@@ -1553,7 +1553,7 @@ rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
     return fiter ? fiter->val : rbuffer_target_handle{};
 }
 
-int begin_render_frame(renderer *rndr, int finished_frames)
+rmanifest* begin_render_frame(renderer *rndr)
 {
     auto dev = &rndr->vk.inst.device;
 
@@ -1569,7 +1569,6 @@ int begin_render_frame(renderer *rndr, int finished_frames)
 #endif
 
     // Update finished frames which is used to get the current frame
-    rndr->finished_frames = finished_frames;
     int current_frame_ind = rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
     auto *cur_frame = &rndr->fifs[current_frame_ind];
 
@@ -1580,13 +1579,12 @@ int begin_render_frame(renderer *rndr, int finished_frames)
     int vk_res = vkWaitForFences(dev->hndl, 1, &cur_frame->in_flight, VK_TRUE, UINT64_MAX);
     if (vk_res != VK_SUCCESS) {
         elog("Failed to wait for fence");
-        return err_code::RENDER_WAIT_FENCE_FAIL;
+        return nullptr;
     }
 
     // Clear all prev desc sets
     // vkr_reset_descriptor_pool(&cur_frame->desc_pool, &rndr->vk);
-
-    return err_code::RENDER_NO_ERROR;
+    return nullptr;
 }
 
 int end_render_frame(renderer *rndr, camera *cam, f64 dt)
@@ -1718,7 +1716,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
         elog("Failed to presenet KHR");
         return err_code::RENDER_PRESENT_KHR_FAIL;
     }
-
+    ++rndr->finished_frames;
     return err_code::RENDER_NO_ERROR;
 }
 

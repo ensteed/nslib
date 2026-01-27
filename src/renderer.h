@@ -12,6 +12,7 @@ namespace nslib
 {
 struct camera;
 struct transform;
+struct rmanifest;
 
 struct rsubgeom_range
 {
@@ -392,7 +393,7 @@ struct renderer
 #endif
 
     // Stored on reset render frame - used in subsequent frame calls to get the current frame
-    s32 finished_frames;
+    s32 finished_frames{0};
 
     // This is incremented every frame there are no resize events
     f64 no_resize_frames;
@@ -443,7 +444,7 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
 rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
 
-int begin_render_frame(renderer *rndr, int finished_frames);
+rmanifest *begin_render_frame(renderer *rndr);
 int end_render_frame(renderer *rndr, camera *cam, f64 dt);
 
 

@@ -302,7 +302,7 @@ int run_frame(platform_ctxt *ctxt, void *user_data)
     ptimer_split(&pt);
     update_tm += pt.dt;
 
-    int res = begin_render_frame(&app->rndr, ctxt->finished_frames);
+    auto m = begin_render_frame(&app->rndr);
 
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
@@ -311,7 +311,7 @@ int run_frame(platform_ctxt *ctxt, void *user_data)
     // bool open{true};
     // ImGui::ShowDemoWindow();
 
-    res = end_render_frame(&app->rndr, cam, ctxt->time_pts.dt);
+    int res = end_render_frame(&app->rndr, cam, ctxt->time_pts.dt);
 
     ptimer_split(&pt);
     render_tm += pt.dt;

@@ -264,6 +264,32 @@ void pack_unpack(json_archive *ar, T (&val)[N], const pack_var_info &vinfo)
     }
 }
 
+
+template<sizet N>
+void pack_unpack_begin(json_archive *ar, char (&val)[N], const pack_var_info &vinfo)
+{
+}
+
+template<sizet N>
+void pack_unpack_end(json_archive *ar, char (&val)[N], const pack_var_info &vinfo)
+{
+}
+
+template<sizet N>
+void pack_unpack(json_archive *ar, char (&val)[N], const pack_var_info &vinfo)
+{
+    auto create_func = [](const void *val) -> json_obj * { return json_create_string((const char*)val); };
+    auto check_func = [](void *val, json_obj *item) -> bool {
+        if (item && json_is_string(item)) {
+            strcpy((char*)val, item->valuestring);
+            return true;
+        }
+        return false;
+    };
+    pack_unpack_helper(ar, val, vinfo, check_func, create_func);
+}
+
+
 // Static arrays
 template<class T, sizet N>
 void pack_unpack_begin(json_archive *ar, static_array<T, N> &val, const pack_var_info &vinfo)
