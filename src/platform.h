@@ -1,6 +1,6 @@
 #pragma once
 #include "memory.h"
-#include "profile_timer.h"
+#include "profiling.h"
 #include "math/vector2.h"
 #include "containers/array.h"
 #include "util.h"
@@ -309,6 +309,7 @@ struct platform_ctxt
 
     profile_timepoints time_pts{};
     platform_frame_event_queue feventq{};
+    profiling_context profiling_contexts[PROFILE_CONTEXT_COUNT];
 
     platform_memory arenas{};
     int finished_frames{0};
@@ -346,7 +347,8 @@ struct platform_user_hooks
     platform_user_hook *terminate;
 };
 
-enum platform_init_flag {
+enum platform_init_flag
+{
     PLATFORM_INIT_FLAG_AUDIO,
     PLATFORM_INIT_FLAG_WINDOW
 };
@@ -369,7 +371,7 @@ void *platform_alloc(sizet byte_size);
 void *platform_realloc(void *ptr, sizet byte_size);
 void platform_free(void *block);
 
-void start_platform_frame(platform_ctxt *ctxt);
+void begin_platform_frame(platform_ctxt *ctxt);
 void end_platform_frame(platform_ctxt *ctxt);
 
 void set_platform_sdl_event_hook(void *window, const platform_sdl_event_hook &hook);
@@ -470,7 +472,7 @@ sizet write_file(const char *fname, const byte_array *data, sizet byte_offset = 
     }                                                                                                                                      \
     ptimer_restart(&ctxt.time_pts);                                                                                                        \
     while (run_loop && ctxt.running) {                                                                                                     \
-        start_platform_frame(&ctxt);                                                                                                       \
+        begin_platform_frame(&ctxt);                                                                                                       \
         if (pf_config.user_hooks.run_frame && pf_config.user_hooks.run_frame(&ctxt, &user_data) != err_code::PLATFORM_NO_ERROR) {          \
             run_loop = false;                                                                                                              \
         }                                                                                                                                  \

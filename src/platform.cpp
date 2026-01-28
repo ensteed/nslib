@@ -1,4 +1,5 @@
 #include "basic_types.h"
+#include "profiling.h"
 #include "imgui/imgui_impl_vulkan.h"
 #include "osdef.h"
 #ifdef PLATFORM_UNIX
@@ -387,10 +388,21 @@ void *platform_realloc(void *ptr, sizet byte_size)
     return realloc(ptr, byte_size);
 }
 
+profiling_context *GLOBAL_PROFILING_CONTEXT[PROFILE_CONTEXT_COUNT]{};
+
 int init_platform(const platform_init_info *settings, platform_ctxt *ctxt)
 {
+    ctxt->argc = settings->argc;
+    ctxt->argv = settings->argv;
     set_logging_level(GLOBAL_LOGGER, settings->default_log_level);
     init_mem_arenas(&settings->mem, &ctxt->arenas);
+
+    // Setup profiling
+    for (int i = 0; i < PROFILE_CONTEXT_COUNT; ++i) {
+        profiling_init(&ctxt->profiling_contexts[i], 128, 64, &ctxt->arenas.free_list);
+        //profiling_set_avg_window(&ctxt->profiling_contexts[i], 10000, &ctxt->arenas.free_list);
+        GLOBAL_PROFILING_CONTEXT[i] = &ctxt->profiling_contexts[i];
+    }
 
     ctxt->init_flags = settings->flags;
     bool init_audio = test_flags(settings->flags, PLATFORM_INIT_FLAG_AUDIO);
@@ -430,6 +442,7 @@ int init_platform(const platform_init_info *settings, platform_ctxt *ctxt)
     // Seed random number generator
     srand((u32)time(NULL));
 
+    ptimer_restart(&ctxt->time_pts);
     ctxt->running = true;
     return err_code::PLATFORM_NO_ERROR;
 }
@@ -447,6 +460,9 @@ int terminate_platform(platform_ctxt *ctxt)
         SDL_QuitSubSystem(sdl_init_flag);
         SDL_Quit();
         ilog("Terminated SDL");
+    }
+    for (int i = 0; i < PROFILE_CONTEXT_COUNT; ++i) {
+        profiling_terminate(&ctxt->profiling_contexts[i]);
     }
     terminate_mem_arenas(&ctxt->arenas);
     return err_code::PLATFORM_NO_ERROR;
@@ -663,7 +679,7 @@ bool window_resized_this_frame(void *win_hndl)
     return false;
 }
 
-void start_platform_frame(platform_ctxt *ctxt)
+void begin_platform_frame(platform_ctxt *ctxt)
 {
     ptimer_split(&ctxt->time_pts);
     if (ctxt->win_hndl) {

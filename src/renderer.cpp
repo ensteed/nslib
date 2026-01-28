@@ -294,6 +294,7 @@ intern bool destroy_geometry(rgeom_ref gref, renderer *rndr)
 
 intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_context *cur_frame)
 {
+    PROFILE_SCOPE("record_command_buffer");
     auto dev = &rndr->vk.inst.device;
 
     int err = vkr_begin_cmd_buf(cur_frame->cmd_buffer, {});
@@ -301,7 +302,7 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
         return err;
     }
 
-    VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
+    //VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
 
     // // Bind the global vertex/index buffer/s
     // VkBuffer vert_bufs[RVERT_STREAM_COUNT]{};
@@ -916,6 +917,7 @@ intern void terminate_blueprints(renderer *rndr)
     while (!slot_pool_empty(&rndr->blueprints)) {
         destroy_render_blueprint(rndr, slot_pool_begin(&rndr->blueprints).hndl);
     }
+    terminate_slot_pool(&rndr->blueprints);
     hmap_terminate(&rndr->blueprint_id_map);
 }
 
@@ -1648,7 +1650,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
     // ind to the command pool
     auto fb = &dev->swapchain.fbs[im_ind];
-    asrt(fb && "Invalid framebuffer");
+    //asrt(fb && "Invalid framebuffer");
 
     ///////////////////////////
     // Record Command Buffer //

@@ -6,6 +6,7 @@
 #include "sim_region.h"
 #include "basic_types.h"
 #include "fwd_render.h"
+#include "profiling.h"
 using namespace nslib;
 
 #ifdef USE_IMGUI
@@ -30,6 +31,9 @@ struct app_data
     u32 cube_1;
     u32 plane_1;
 };
+
+app_data app{};
+nslib::platform_ctxt ctxt{};
 
 intern void setup_camera_controller(platform_ctxt *ctxt, app_data *app)
 {
@@ -191,12 +195,10 @@ void build_and_compile_render_blueprint(renderer *rndr)
 
     dlog("Blueprint: %s", ls(to_json(*rbp.item)));
     compile_render_blueprint(rndr, rbp.item);
-
 }
 
-int init(platform_ctxt *ctxt, void *user_data)
+int init_rdev(platform_ctxt *ctxt, app_data *app)
 {
-    auto app = (app_data *)user_data;
     render_blueprint bp{};
 
     init_asset_cache_default_types(&app->cg, "asset-cache", get_global_arena());
@@ -274,35 +276,33 @@ void simulate(platform_ctxt *ctxt, app_data *app, f64 dt)
     }
 }
 
-int run_frame(platform_ctxt *ctxt, void *user_data)
+bool run_frame(platform_ctxt *ctxt, app_data *app)
 {
-    auto app = (app_data *)user_data;
+    PROFILE_BEGIN_FRAME();
+    begin_platform_frame(ctxt);
+    
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
-    profile_timepoints pt;
-
     static int ticks = 0;
 
-    // Spin some entities
-    ptimer_restart(&pt);
-    static double update_tm{};
-    static double render_tm{};
-
     app->accumulater += ctxt->time_pts.dt;
-
+    PROFILE_BEGIN("map_input_frame");
     map_input_frame(&app->stack, &ctxt->feventq);
-
+    PROFILE_END();
+    
+    PROFILE_BEGIN("simulate");
     while (app->accumulater >= 0.01666) {
         ++ticks;
         simulate(ctxt, app, 0.01666);
         app->accumulater -= 0.01666;
     }
-
     f64 alpha = app->accumulater / 0.010;
+    PROFILE_END();
 
-    ptimer_split(&pt);
-    update_tm += pt.dt;
 
+    PROFILE_BEGIN("begin_render_frame");
     auto m = begin_render_frame(&app->rndr);
+    PROFILE_END();
+    
 
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
@@ -310,55 +310,63 @@ int run_frame(platform_ctxt *ctxt, void *user_data)
 #endif
     // bool open{true};
     // ImGui::ShowDemoWindow();
-
+    PROFILE_BEGIN("end_render_frame");
     int res = end_render_frame(&app->rndr, cam, ctxt->time_pts.dt);
+    PROFILE_END();
+    
+    bool ret = res == err_code::RENDER_NO_ERROR;
+    
+    end_platform_frame(ctxt);
 
-    ptimer_split(&pt);
-    render_tm += pt.dt;
+    PROFILE_END_FRAME();
 
-    static double counter = 2.0;
-    double elapsed = nanos_to_sec(ptimer_elapsed_dt(&ctxt->time_pts));
-    if (elapsed > counter) {
-        double tot_factor = 100 / (update_tm + render_tm);
-        double render_factor = 100 / render_tm;
-        double ticks_fps = (double)ticks / elapsed;
-        ilog("Average FPS: %.02f  Update:%.02f%%  Render:%.02f%%",
-             ctxt->finished_frames / elapsed,
-             update_tm * tot_factor,
-             render_tm * tot_factor);
-        ilog("Simulation FPS: %.02f  Ticks: %d", ticks_fps, ticks);
-        counter += 2.0;
-        update_tm = 0.0;
-        render_tm = 0.0;
+    static u32 frame_count_goal = ctxt->finished_frames + GLOBAL_PROFILING_CONTEXT[0]->avg_window;
+    if (ctxt->finished_frames > frame_count_goal) {
+        PROFILE_PRINT_REPORT();
+        frame_count_goal += GLOBAL_PROFILING_CONTEXT[0]->avg_window;
     }
-
-    return res;
+    return ret;
 }
 
-int terminate(platform_ctxt *ctxt, void *user_data)
+void terminate_rdev(platform_ctxt *ctxt, app_data *app)
 {
-    auto app = (app_data *)user_data;
     terminate_renderer(&app->rndr);
     terminate_keymap(&app->global_km);
     terminate_keymap(&app->movement_km);
     terminate_keymap_stack(&app->stack);
     terminate_sim_region(&app->rgn);
     terminate_asset_cache_default_types(&app->cg);
-    return err_code::PLATFORM_NO_ERROR;
 }
 
-int configure_platform(platform_init_info *settings, app_data *app)
+int main(int argc, char **argv)
 {
-    settings->flags = PLATFORM_INIT_FLAG_AUDIO | PLATFORM_INIT_FLAG_WINDOW;
-    settings->wind.resolution = {1000, 800};
-    settings->wind.title = "RDev";
-    settings->wind.win_flags = WINDOW_RESIZABLE | WINDOW_INPUT_FOCUS | WINDOW_VULKAN | WINDOW_SHOWN | WINDOW_ALLOW_HIGHDPI;
-    settings->default_log_level = LOG_DEBUG;
-    settings->user_hooks.init = init;
-    settings->user_hooks.run_frame = run_frame;
-    settings->user_hooks.terminate = terminate;
-    settings->mem.free_list_size = 4 * 1024 * MB_SIZE;
-    return err_code::PLATFORM_NO_ERROR;
+    using namespace nslib;
+    bool run_loop{true};
+    
+    platform_init_info pf_config{argc, argv};
+    pf_config.flags = PLATFORM_INIT_FLAG_AUDIO | PLATFORM_INIT_FLAG_WINDOW;
+    pf_config.wind.resolution = {1000, 800};
+    pf_config.wind.title = "RDev";
+    pf_config.wind.win_flags = WINDOW_RESIZABLE | WINDOW_INPUT_FOCUS | WINDOW_VULKAN | WINDOW_SHOWN | WINDOW_ALLOW_HIGHDPI;
+    pf_config.default_log_level = LOG_DEBUG;
+    pf_config.mem.free_list_size = 4 * 1024 * MB_SIZE;
+
+    int result = init_platform(&pf_config, &ctxt);
+    if (result != err_code::PLATFORM_NO_ERROR) {
+        return result;
+    }
+
+    result = init_rdev(&ctxt, &app);
+    if (result != err_code::RENDER_NO_ERROR) {
+        elog("User init failed with code %d", result);
+        return terminate_platform(&ctxt);
+    }
+
+    while (ctxt.running && run_frame(&ctxt, &app));
+    
+    terminate_rdev(&ctxt, &app);
+    
+    return terminate_platform(&ctxt);
 }
 
-DEFINE_APPLICATION_MAIN_STATIC(app_data, configure_platform);
+
