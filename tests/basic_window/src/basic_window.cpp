@@ -1,18 +1,22 @@
 #include "platform.h"
-#include "logging.h"
 
 using namespace nslib;
-
-struct app_data
-{};
-
-int configure_platform(platform_init_info *settings, app_data *app)
+int main(int argc, char **argv)
 {
-    settings->flags = PLATFORM_INIT_FLAG_WINDOW;
-    settings->wind.resolution = {800,600};
-    settings->wind.title = "Basic Window";
-    settings->wind.win_flags = WINDOW_RESIZABLE | WINDOW_VULKAN;
-    return err_code::PLATFORM_NO_ERROR;
-}
+    platform_ctxt ctxt{};
+    platform_init_info pf_config{argc, argv};
+    pf_config.flags = PLATFORM_INIT_FLAG_WINDOW;
+    pf_config.wind.resolution = {800, 600};
+    pf_config.wind.title = "Basic Window";
+    pf_config.wind.win_flags = WINDOW_RESIZABLE | WINDOW_VULKAN;
 
-DEFINE_APPLICATION_MAIN(app_data, configure_platform);
+    int result = init_platform(&pf_config, &ctxt);
+    if (result != err_code::PLATFORM_NO_ERROR) {
+        return result;
+    }
+
+    while (ctxt.running)
+        ;
+
+    return terminate_platform(&ctxt);
+}

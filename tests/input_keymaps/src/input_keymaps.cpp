@@ -4,7 +4,7 @@
 
 using namespace nslib;
 
-struct app_data
+struct input_keymap_app
 {
     input_keymap km1{};
     input_keymap km2{};
@@ -19,14 +19,13 @@ static void log_trigger(const input_trigger &ev, void *user)
     ilog("Input trigger: keymap=%s entry=%s ev_type=%u", map_name ? map_name : "unknown", entry_name, ev.ev_type);
 }
 
-static void add_keymap_entry_with_trigger(
-    input_keymap_stack *stack,
-    input_keymap *km,
-    input_kmcode kmcode,
-    u16 keymods,
-    u8 mbutton_mask,
-    const char *entry_name,
-    const char *map_name)
+static void add_keymap_entry_with_trigger(input_keymap_stack *stack,
+                                          input_keymap *km,
+                                          input_kmcode kmcode,
+                                          u16 keymods,
+                                          u8 mbutton_mask,
+                                          const char *entry_name,
+                                          const char *map_name)
 {
     input_keymap_entry entry{};
     entry.name = entry_name;
@@ -44,9 +43,8 @@ static void add_keymap_entry_with_trigger(
     asrt(trig_added);
 }
 
-int app_init(platform_ctxt *ctxt, void *user_data)
+void input_keymaps_init(input_keymap_app *app)
 {
-    auto app = (app_data *)user_data;
     ilog("App init");
     init_keymap_stack(&app->stack, get_global_arena());
     init_keymap(&app->km1, "km1", get_global_arena());
@@ -61,7 +59,8 @@ int app_init(platform_ctxt *ctxt, void *user_data)
     add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_K, KEYMOD_LCTRL, MBUTTON_MASK_NONE, "km2_ctrl_k", "km2");
     add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_M, KEYMOD_LSHIFT, MBUTTON_MASK_NONE, "km2_shift_m", "km2");
     add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_L, KEYMOD_LALT, MBUTTON_MASK_NONE, "km2_alt_l", "km2");
-    add_keymap_entry_with_trigger(&app->stack, &app->km2, KMCODE_KEY_Q, (u16)(KEYMOD_LCTRL | KEYMOD_LSHIFT), MBUTTON_MASK_NONE, "km2_ctrl_shift_q", "km2");
+    add_keymap_entry_with_trigger(
+        &app->stack, &app->km2, KMCODE_KEY_Q, (u16)(KEYMOD_LCTRL | KEYMOD_LSHIFT), MBUTTON_MASK_NONE, "km2_ctrl_shift_q", "km2");
 
     add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_K, KEYMOD_LCTRL, MBUTTON_MASK_NONE, "km3_ctrl_k", "km3");
     add_keymap_entry_with_trigger(&app->stack, &app->km3, KMCODE_KEY_M, KEYMOD_LSHIFT, MBUTTON_MASK_NONE, "km3_shift_m", "km3");
@@ -75,38 +74,45 @@ int app_init(platform_ctxt *ctxt, void *user_data)
     ilog("Keymap stack order: km1 -> km2 -> km3 (top)");
     ilog("Overlap combos (top should win): CTRL+K, SHIFT+M, ALT+J");
     ilog("Unique combos: km1=F1, km2=CTRL+SHIFT+Q, km3=CTRL+U");
-    return err_code::PLATFORM_NO_ERROR;
 }
 
-int app_terminate(platform_ctxt *ctxt, void *user_data)
+void input_keymaps_terminate(input_keymap_app *app)
 {
-    auto app = (app_data *)user_data;
     ilog("App terminate");
     terminate_keymap(&app->km1);
     terminate_keymap(&app->km2);
     terminate_keymap(&app->km3);
     terminate_keymap_stack(&app->stack);
-    return err_code::PLATFORM_NO_ERROR;
 }
 
-int app_run_frame(platform_ctxt *ctxt, void *user_data)
+void input_keymaps_run_frame(platform_ctxt *ctxt, input_keymap_app *app)
 {
-    auto app = (app_data *)user_data;
-    // Use our context stack to map the platform input to callback functions
+    begin_platform_frame(ctxt);
     map_input_frame(&app->stack, &ctxt->feventq);
-    return err_code::PLATFORM_NO_ERROR;
+    end_platform_frame(ctxt);
 }
 
-int configure_platform(platform_init_info *settings, app_data *app)
+int main(int argc, char **argv)
 {
-    settings->flags = PLATFORM_INIT_FLAG_WINDOW;
-    settings->wind.title = "Input Mapping";
-    settings->wind.win_flags = WINDOW_RESIZABLE;
-    settings->wind.resolution = {800,600};
-    settings->user_hooks.init = app_init;
-    settings->user_hooks.terminate = app_terminate;
-    settings->user_hooks.run_frame = app_run_frame;
-    return err_code::PLATFORM_NO_ERROR;
-}
+    input_keymap_app app{};
+    platform_ctxt ctxt{};
 
-DEFINE_APPLICATION_MAIN(app_data, configure_platform)
+    platform_init_info settings{argc, argv};
+    settings.flags = PLATFORM_INIT_FLAG_WINDOW;
+    settings.wind.title = "Input Mapping";
+    settings.wind.win_flags = WINDOW_RESIZABLE;
+    settings.wind.resolution = {800, 600};
+
+    int result = init_platform(&settings, &ctxt);
+    if (result != err_code::PLATFORM_NO_ERROR) {
+        return result;
+    }
+
+    input_keymaps_init(&app);
+    while (ctxt.running) {
+        input_keymaps_run_frame(&ctxt, &app);
+    }
+    input_keymaps_terminate(&app);
+
+    return terminate_platform(&ctxt);
+}

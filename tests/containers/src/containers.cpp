@@ -9,9 +9,6 @@
 
 using namespace nslib;
 
-struct app_data
-{};
-
 struct custom_type_0
 {
     int val1;
@@ -904,7 +901,7 @@ void test_hset_string_keys()
     ilog("Hashset string key test succeeded");
 }
 
-int app_init(platform_ctxt *ctxt, void *)
+void run_container_tests()
 {
     test_strings();
     test_arrays();
@@ -916,18 +913,16 @@ int app_init(platform_ctxt *ctxt, void *)
     test_hset_basic_api();
     test_hashsets();
     test_hset_string_keys();
-    return err_code::PLATFORM_NO_ERROR;
-    ctxt->running = false;
 }
 
-int configure_platform(platform_init_info *config, app_data *app)
+int main(int argc, char **argv)
 {
-    config->user_hooks.init = app_init;
-    config->user_hooks.run_frame = [](platform_ctxt *ctxt, void *) -> int {
-        ctxt->running = false;
-        return 0;
-    };
-    return err_code::PLATFORM_NO_ERROR;
+    platform_ctxt ctxt{};
+    platform_init_info pf_config{argc, argv};
+    int result = init_platform(&pf_config, &ctxt);
+    if (result != err_code::PLATFORM_NO_ERROR) {
+        return result;
+    }
+    run_container_tests();
+    return terminate_platform(&ctxt);
 }
-
-DEFINE_APPLICATION_MAIN(app_data, configure_platform)

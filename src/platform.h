@@ -1,10 +1,11 @@
 #pragma once
 #include "memory.h"
-#include "profiling.h"
+#include "profile_timer.h"
 #include "math/vector2.h"
 #include "containers/array.h"
 #include "util.h"
 #include "logging.h"
+#include "profiling.h"
 
 namespace nslib
 {
@@ -309,7 +310,10 @@ struct platform_ctxt
 
     profile_timepoints time_pts{};
     platform_frame_event_queue feventq{};
+
+#if defined(PROFILING_ENABLED)
     profiling_context profiling_contexts[PROFILE_CONTEXT_COUNT];
+#endif
 
     platform_memory arenas{};
     int finished_frames{0};
@@ -340,13 +344,6 @@ struct platform_memory_init_info
     sizet frame_linear_size{100 * MB_SIZE};
 };
 
-struct platform_user_hooks
-{
-    platform_user_hook *init;
-    platform_user_hook *run_frame;
-    platform_user_hook *terminate;
-};
-
 enum platform_init_flag
 {
     PLATFORM_INIT_FLAG_AUDIO,
@@ -358,7 +355,6 @@ struct platform_init_info
     int argc;
     char **argv;
     u32 flags;
-    platform_user_hooks user_hooks;
     platform_window_init_info wind;
     platform_memory_init_info mem;
     int default_log_level{LOG_TRACE};
@@ -449,55 +445,3 @@ sizet write_file(const char *fname, const char *mode, const byte_array *data, si
 sizet write_file(const char *fname, const byte_array *data, sizet byte_offset = 0, platform_file_err_desc *err = nullptr);
 
 } // namespace nslib
-
-// int config_platform_func(nslib::platform_cfg *config, client_app_data_type *user_data);
-#define __MAIN_BLOCK__(config_platform_func)                                                                                               \
-    using namespace nslib;                                                                                                                 \
-    bool run_loop{true};                                                                                                                   \
-    platform_init_info pf_config{argc, argv};                                                                                              \
-    if (config_platform_func(&pf_config, &user_data) != err_code::PLATFORM_NO_ERROR) {                                                     \
-        return err_code::PLATFORM_INIT_FAIL;                                                                                               \
-    }                                                                                                                                      \
-    ctxt.argc = pf_config.argc;                                                                                                            \
-    ctxt.argv = pf_config.argv;                                                                                                            \
-    if (init_platform(&pf_config, &ctxt) != err_code::PLATFORM_NO_ERROR) {                                                                 \
-        return err_code::PLATFORM_INIT_FAIL;                                                                                               \
-    }                                                                                                                                      \
-    if (pf_config.user_hooks.init) {                                                                                                       \
-        int err = pf_config.user_hooks.init(&ctxt, &user_data);                                                                            \
-        if (err != err_code::PLATFORM_NO_ERROR) {                                                                                          \
-            elog("User init failed with code %d", err);                                                                                    \
-            return terminate_platform(&ctxt);                                                                                              \
-        }                                                                                                                                  \
-    }                                                                                                                                      \
-    ptimer_restart(&ctxt.time_pts);                                                                                                        \
-    while (run_loop && ctxt.running) {                                                                                                     \
-        begin_platform_frame(&ctxt);                                                                                                       \
-        if (pf_config.user_hooks.run_frame && pf_config.user_hooks.run_frame(&ctxt, &user_data) != err_code::PLATFORM_NO_ERROR) {          \
-            run_loop = false;                                                                                                              \
-        }                                                                                                                                  \
-        end_platform_frame(&ctxt);                                                                                                         \
-    }                                                                                                                                      \
-    if (pf_config.user_hooks.terminate) {                                                                                                  \
-        int err = pf_config.user_hooks.terminate(&ctxt, &user_data);                                                                       \
-        if (err != err_code::PLATFORM_NO_ERROR) {                                                                                          \
-            elog("User terminate failed with code %d", err);                                                                               \
-        }                                                                                                                                  \
-    }                                                                                                                                      \
-    return terminate_platform(&ctxt);
-
-#define DEFINE_APPLICATION_MAIN_STATIC(user_type, config_platform_func)                                                                    \
-    user_type user_data{};                                                                                                                 \
-    nslib::platform_ctxt ctxt{};                                                                                                           \
-    int main(int argc, char **argv)                                                                                                        \
-    {                                                                                                                                      \
-        __MAIN_BLOCK__(config_platform_func)                                                                                               \
-    }
-
-#define DEFINE_APPLICATION_MAIN(user_type, config_platform_func)                                                                           \
-    int main(int argc, char **argv)                                                                                                        \
-    {                                                                                                                                      \
-        user_type user_data{};                                                                                                             \
-        nslib::platform_ctxt ctxt{};                                                                                                       \
-        __MAIN_BLOCK__(config_platform_func)                                                                                               \
-    }

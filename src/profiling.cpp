@@ -1,12 +1,14 @@
 #include "profiling.h"
 
+#if defined(PROFILING_ENABLED)
 #include <stdio.h>
-
 #include "hashfuncs.h"
+#endif
 
 namespace nslib
 {
 
+#if defined(PROFILING_ENABLED)
 profiling_scope::profiling_scope(profiling_context *scope_ctxt, const char *name) : ctxt(scope_ctxt)
 {
     if (ctxt) {
@@ -285,5 +287,5 @@ void profiling_set_avg_window(profiling_context *ctxt, u32 window_frames, mem_ar
     ctxt->avg_frame_total_ns = 0.0;
     ctxt->frame_index = 0;
 }
-
+#endif
 } // namespace nslib

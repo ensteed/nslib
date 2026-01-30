@@ -1,32 +1,34 @@
 #pragma once
 
-#include "basic_types.h"
-#include "memory.h"
-#include "profile_timer.h"
-#include "containers/array.h"
-#include "containers/hmap.h"
+#if defined(PROFILING_ENABLED)
+    #include "basic_types.h"
+    #include "memory.h"
+    #include "profile_timer.h"
+    #include "containers/array.h"
+    #include "containers/hmap.h"
+#endif
 
 namespace nslib
 {
 
-#define PROFILE_SCOPE_T(name, i) nslib::profiling_scope _nslib_profile_scope(nslib::GLOBAL_PROFILING_CONTEXT[i], name)
-#define PROFILE_SCOPE(name) PROFILE_SCOPE_T(name, PROFILE_MAIN_THREAD_ID)
+#if defined(PROFILING_ENABLED)
+    #define PROFILE_SCOPE_T(name, i) nslib::profiling_scope _nslib_profile_scope(nslib::GLOBAL_PROFILING_CONTEXT[i], name)
+    #define PROFILE_SCOPE(name) PROFILE_SCOPE_T(name, PROFILE_MAIN_THREAD_ID)
 
-#define PROFILE_BEGIN_T(name, i) profiling_begin(nslib::GLOBAL_PROFILING_CONTEXT[i], name)
-#define PROFILE_BEGIN(name) PROFILE_BEGIN_T(name, PROFILE_MAIN_THREAD_ID)
+    #define PROFILE_BEGIN_T(name, i) profiling_begin(nslib::GLOBAL_PROFILING_CONTEXT[i], name)
+    #define PROFILE_BEGIN(name) PROFILE_BEGIN_T(name, PROFILE_MAIN_THREAD_ID)
 
-#define PROFILE_END_T(i) profiling_end(nslib::GLOBAL_PROFILING_CONTEXT[i])
-#define PROFILE_END() PROFILE_END_T(PROFILE_MAIN_THREAD_ID)
+    #define PROFILE_END_T(i) profiling_end(nslib::GLOBAL_PROFILING_CONTEXT[i])
+    #define PROFILE_END() PROFILE_END_T(PROFILE_MAIN_THREAD_ID)
 
-#define PROFILE_BEGIN_FRAME_T(i) profiling_begin_frame(nslib::GLOBAL_PROFILING_CONTEXT[i])
-#define PROFILE_BEGIN_FRAME() PROFILE_BEGIN_FRAME_T(PROFILE_MAIN_THREAD_ID)
+    #define PROFILE_BEGIN_FRAME_T(i) profiling_begin_frame(nslib::GLOBAL_PROFILING_CONTEXT[i])
+    #define PROFILE_BEGIN_FRAME() PROFILE_BEGIN_FRAME_T(PROFILE_MAIN_THREAD_ID)
 
-#define PROFILE_END_FRAME_T(i) profiling_end_frame(nslib::GLOBAL_PROFILING_CONTEXT[i])
-#define PROFILE_END_FRAME() PROFILE_END_FRAME_T(PROFILE_MAIN_THREAD_ID)
-    
+    #define PROFILE_END_FRAME_T(i) profiling_end_frame(nslib::GLOBAL_PROFILING_CONTEXT[i])
+    #define PROFILE_END_FRAME() PROFILE_END_FRAME_T(PROFILE_MAIN_THREAD_ID)
 
-#define PROFILE_PRINT_REPORT_T(i) profiling_report(nslib::GLOBAL_PROFILING_CONTEXT[i])
-#define PROFILE_PRINT_REPORT() PROFILE_PRINT_REPORT_T(PROFILE_MAIN_THREAD_ID)
+    #define PROFILE_PRINT_REPORT_T(i) profiling_report(nslib::GLOBAL_PROFILING_CONTEXT[i])
+    #define PROFILE_PRINT_REPORT() PROFILE_PRINT_REPORT_T(PROFILE_MAIN_THREAD_ID)
 
 inline constexpr sizet PROFILE_CONTEXT_COUNT = 4;
 inline constexpr sizet PROFILE_MAIN_THREAD_ID = 0;
@@ -103,5 +105,25 @@ void profiling_end(profiling_context *ctxt);
 void profiling_report(const profiling_context *ctxt);
 
 void profiling_set_avg_window(profiling_context *ctxt, u32 window_frames, mem_arena *avg_arena = get_global_arena());
+
+#else
+    #define PROFILE_SCOPE_T(name, i)
+    #define PROFILE_SCOPE(name)
+
+    #define PROFILE_BEGIN_T(name, i)
+    #define PROFILE_BEGIN(name)
+
+    #define PROFILE_END_T(i)
+    #define PROFILE_END()
+
+    #define PROFILE_BEGIN_FRAME_T(i)
+    #define PROFILE_BEGIN_FRAME()
+
+    #define PROFILE_END_FRAME_T(i)
+    #define PROFILE_END_FRAME()
+
+    #define PROFILE_PRINT_REPORT_T(i)
+    #define PROFILE_PRINT_REPORT()
+#endif
 
 } // namespace nslib

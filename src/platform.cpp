@@ -388,7 +388,9 @@ void *platform_realloc(void *ptr, sizet byte_size)
     return realloc(ptr, byte_size);
 }
 
+#if defined(PROFILING_ENABLED)
 profiling_context *GLOBAL_PROFILING_CONTEXT[PROFILE_CONTEXT_COUNT]{};
+#endif
 
 int init_platform(const platform_init_info *settings, platform_ctxt *ctxt)
 {
@@ -397,12 +399,14 @@ int init_platform(const platform_init_info *settings, platform_ctxt *ctxt)
     set_logging_level(GLOBAL_LOGGER, settings->default_log_level);
     init_mem_arenas(&settings->mem, &ctxt->arenas);
 
+#if defined(PROFILING_ENABLED)
     // Setup profiling
     for (int i = 0; i < PROFILE_CONTEXT_COUNT; ++i) {
         profiling_init(&ctxt->profiling_contexts[i], 128, 64, &ctxt->arenas.free_list);
         //profiling_set_avg_window(&ctxt->profiling_contexts[i], 10000, &ctxt->arenas.free_list);
         GLOBAL_PROFILING_CONTEXT[i] = &ctxt->profiling_contexts[i];
     }
+#endif
 
     ctxt->init_flags = settings->flags;
     bool init_audio = test_flags(settings->flags, PLATFORM_INIT_FLAG_AUDIO);
@@ -461,9 +465,11 @@ int terminate_platform(platform_ctxt *ctxt)
         SDL_Quit();
         ilog("Terminated SDL");
     }
+#if defined(PROFILING_ENABLED)
     for (int i = 0; i < PROFILE_CONTEXT_COUNT; ++i) {
         profiling_terminate(&ctxt->profiling_contexts[i]);
     }
+#endif
     terminate_mem_arenas(&ctxt->arenas);
     return err_code::PLATFORM_NO_ERROR;
 }

@@ -273,6 +273,7 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
 
 void map_input_frame(input_keymap_stack *stack, const platform_frame_event_queue *frame)
 {
+    PROFILE_SCOPE("map_input_frame");
     asrt(frame);
     asrt(stack);
     asrt(frame->events.size <= frame->events.capacity);

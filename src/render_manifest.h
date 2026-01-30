@@ -33,16 +33,6 @@ struct mdraw_call
     instance_id iid;
 };
 
-struct mdraw_group
-{
-    array<mdraw_call> draw_calls;
-};
-
-struct mrender_job_ctxt
-{
-    sizet command_buf;
-};
-
 struct rpass_slot_assignment
 {
     rres_id res_id{INVALID_IND};
@@ -62,7 +52,11 @@ struct mview
 };
 
 struct render_job_cb_params
-{};
+{
+    mpass_id pid;
+    mview_id vid;
+    const array<mdraw_call> *draw_calls;
+};
 
 using render_job_cb = void(const render_job_cb_params &, void *user);
 
@@ -70,6 +64,7 @@ struct mrender_job
 {
     mpass_id pid;
     mview_id vid;
+    array<mdraw_call> draw_calls;
     render_job_cb *cb;
     void *cb_user;
 };

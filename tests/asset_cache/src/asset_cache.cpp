@@ -6,9 +6,6 @@
 
 using namespace nslib;
 
-struct app_data
-{};
-
 void test_asset_id_helpers()
 {
     ilog("begin");
@@ -153,30 +150,27 @@ void test_cache_default_types()
     ilog("end");
 }
 
-int app_init(platform_ctxt *ctxt, void *)
+void run_asset_cache_tests(platform_ctxt *ctxt)
 {
-    ilog("begin");
     test_asset_id_helpers();
     test_cache_init_terminate();
     test_direct_pool_init_and_terminate();
     test_cache_pool_api();
     test_cache_default_types();
-    ilog("end");
-    return err_code::PLATFORM_NO_ERROR;
 }
 
-int configure_platform(platform_init_info *config, app_data *app)
+int main(int argc, char **argv)
 {
-    ilog("begin");
-    config->user_hooks.init = app_init;
-    config->user_hooks.run_frame = [](platform_ctxt *ctxt, void *) -> int {
-        ilog("begin");
-        ctxt->running = false;
-        ilog("end");
-        return 0;
-    };
-    ilog("end");
-    return err_code::PLATFORM_NO_ERROR;
-}
+    platform_ctxt ctxt{};
 
-DEFINE_APPLICATION_MAIN(app_data, configure_platform)
+    platform_init_info pf_config{argc, argv};
+    init_platform(&pf_config, &ctxt);
+
+    int result = init_platform(&pf_config, &ctxt);
+    if (result != err_code::PLATFORM_NO_ERROR) {
+        return result;
+    }
+
+    run_asset_cache_tests(&ctxt);
+    return terminate_platform(&ctxt);
+}

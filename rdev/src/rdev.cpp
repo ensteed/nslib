@@ -13,7 +13,7 @@ using namespace nslib;
     #include "imgui/imgui.h"
 #endif
 
-struct app_data
+struct rdev_app_ctxt
 {
     renderer rndr{};
     sim_region rgn{};
@@ -32,10 +32,7 @@ struct app_data
     u32 plane_1;
 };
 
-app_data app{};
-nslib::platform_ctxt ctxt{};
-
-intern void setup_camera_controller(platform_ctxt *ctxt, app_data *app)
+intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     // Create camera
     auto sz = get_window_pixel_size(ctxt->win_hndl);
@@ -58,7 +55,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, app_data *app)
 
     // Add our input trigger functions
     auto cam_turn_func = [](const input_trigger &t, void *data) {
-        auto app = (app_data *)data;
+        auto app = (rdev_app_ctxt *)data;
         auto cam_ent = get_entity(app->cam_id, &app->rgn);
         auto camc = get_comp<camera>(cam_ent);
         auto camt = get_comp<transform>(cam_ent);
@@ -75,19 +72,19 @@ intern void setup_camera_controller(platform_ctxt *ctxt, app_data *app)
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
-        auto app = (app_data *)data;
+        auto app = (rdev_app_ctxt *)data;
         app->movement.y += (t.ev->key.action - 1) * (-2) + 1;
     };
     auto move_back_action = [](const input_trigger &t, void *data) {
-        auto app = (app_data *)data;
+        auto app = (rdev_app_ctxt *)data;
         app->movement.y -= (t.ev->key.action - 1) * (-2) + 1;
     };
     auto move_right_action = [](const input_trigger &t, void *data) {
-        auto app = (app_data *)data;
+        auto app = (rdev_app_ctxt *)data;
         app->movement.x += (t.ev->key.action - 1) * (-2) + 1;
     };
     auto move_left_action = [](const input_trigger &t, void *data) {
-        auto app = (app_data *)data;
+        auto app = (rdev_app_ctxt *)data;
         app->movement.x -= (t.ev->key.action - 1) * (-2) + 1;
     };
 
@@ -197,7 +194,7 @@ void build_and_compile_render_blueprint(renderer *rndr)
     compile_render_blueprint(rndr, rbp.item);
 }
 
-int init_rdev(platform_ctxt *ctxt, app_data *app)
+int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     render_blueprint bp{};
 
@@ -241,7 +238,7 @@ int init_rdev(platform_ctxt *ctxt, app_data *app)
     return ret;
 }
 
-void simulate(platform_ctxt *ctxt, app_data *app, f64 dt)
+void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 {
     // Move the cam if needed
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
@@ -276,19 +273,17 @@ void simulate(platform_ctxt *ctxt, app_data *app, f64 dt)
     }
 }
 
-bool run_frame(platform_ctxt *ctxt, app_data *app)
+bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     PROFILE_BEGIN_FRAME();
     begin_platform_frame(ctxt);
-    
+
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
     static int ticks = 0;
 
     app->accumulater += ctxt->time_pts.dt;
-    PROFILE_BEGIN("map_input_frame");
     map_input_frame(&app->stack, &ctxt->feventq);
-    PROFILE_END();
-    
+
     PROFILE_BEGIN("simulate");
     while (app->accumulater >= 0.01666) {
         ++ticks;
@@ -298,11 +293,7 @@ bool run_frame(platform_ctxt *ctxt, app_data *app)
     f64 alpha = app->accumulater / 0.010;
     PROFILE_END();
 
-
-    PROFILE_BEGIN("begin_render_frame");
     auto m = begin_render_frame(&app->rndr);
-    PROFILE_END();
-    
 
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
@@ -310,25 +301,25 @@ bool run_frame(platform_ctxt *ctxt, app_data *app)
 #endif
     // bool open{true};
     // ImGui::ShowDemoWindow();
-    PROFILE_BEGIN("end_render_frame");
     int res = end_render_frame(&app->rndr, cam, ctxt->time_pts.dt);
-    PROFILE_END();
-    
+
     bool ret = res == err_code::RENDER_NO_ERROR;
-    
+
     end_platform_frame(ctxt);
 
     PROFILE_END_FRAME();
 
+#if defined(PROFILING_ENABLED)
     static u32 frame_count_goal = ctxt->finished_frames + GLOBAL_PROFILING_CONTEXT[0]->avg_window;
     if (ctxt->finished_frames > frame_count_goal) {
         PROFILE_PRINT_REPORT();
         frame_count_goal += GLOBAL_PROFILING_CONTEXT[0]->avg_window;
     }
+#endif
     return ret;
 }
 
-void terminate_rdev(platform_ctxt *ctxt, app_data *app)
+void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     terminate_renderer(&app->rndr);
     terminate_keymap(&app->global_km);
@@ -340,9 +331,9 @@ void terminate_rdev(platform_ctxt *ctxt, app_data *app)
 
 int main(int argc, char **argv)
 {
-    using namespace nslib;
-    bool run_loop{true};
-    
+    rdev_app_ctxt app{};
+    platform_ctxt ctxt{};
+
     platform_init_info pf_config{argc, argv};
     pf_config.flags = PLATFORM_INIT_FLAG_AUDIO | PLATFORM_INIT_FLAG_WINDOW;
     pf_config.wind.resolution = {1000, 800};
@@ -362,11 +353,10 @@ int main(int argc, char **argv)
         return terminate_platform(&ctxt);
     }
 
-    while (ctxt.running && run_frame(&ctxt, &app));
-    
+    while (ctxt.running && run_frame(&ctxt, &app))
+        ;
+
     terminate_rdev(&ctxt, &app);
-    
+
     return terminate_platform(&ctxt);
 }
-
-

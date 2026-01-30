@@ -1557,6 +1557,7 @@ rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
 
 rmanifest* begin_render_frame(renderer *rndr)
 {
+    PROFILE_SCOPE("begin_render_frame");
     auto dev = &rndr->vk.inst.device;
 
     reset_arena(&rndr->vk_frame_linear);
@@ -1591,6 +1592,7 @@ rmanifest* begin_render_frame(renderer *rndr)
 
 int end_render_frame(renderer *rndr, camera *cam, f64 dt)
 {
+    PROFILE_SCOPE("end_render_frame");
     auto dev = &rndr->vk.inst.device;
     int current_frame_ind = rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
     auto *cur_frame = &rndr->fifs[current_frame_ind];

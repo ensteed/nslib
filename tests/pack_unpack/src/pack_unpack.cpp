@@ -4,12 +4,8 @@
 #include "containers/hmap.h"
 #include "containers/hset.h"
 #include "math/vector4.h"
-#include "asset_common.h"
 
 using namespace nslib;
-
-struct app_data
-{};
 
 struct fancy_struct
 {
@@ -237,9 +233,8 @@ void clear_data(data_to_pup *data)
     hset_clear(&data->hs_no_simp);
 }
 
-int app_init(platform_ctxt *ctxt, void *user_data)
+void run_pack_unpack_tests()
 {
-    auto app = (app_data *)user_data;
     ilog("App init");
     data_to_pup data{};
     hmap_init(&data.hm);
@@ -338,18 +333,16 @@ int app_init(platform_ctxt *ctxt, void *user_data)
     hset_terminate(&data.hs_u8);
     hset_terminate(&data.hs_i8);
     hset_terminate(&data.hs_no_simp);
-
-    return err_code::PLATFORM_NO_ERROR;
 }
 
-int configure_platform(platform_init_info *settings, app_data *app)
+int main(int argc, char **argv)
 {
-    settings->wind.win_flags = WINDOW_RESIZABLE;
-    settings->wind.resolution = {1920, 1080};
-    settings->wind.title = "Pack Unpack";
-    settings->default_log_level = LOG_DEBUG;
-    settings->user_hooks.init = app_init;
-    return err_code::PLATFORM_NO_ERROR;
+    platform_ctxt ctxt{};
+    platform_init_info pf_config{argc, argv};
+    int result = init_platform(&pf_config, &ctxt);
+    if (result != err_code::PLATFORM_NO_ERROR) {
+        return result;
+    }
+    run_pack_unpack_tests();
+    return terminate_platform(&ctxt);
 }
-
-DEFINE_APPLICATION_MAIN(app_data, configure_platform)
