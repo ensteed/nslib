@@ -16,6 +16,9 @@ set(NSLIB_SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 set(TESTS_DIR ${CMAKE_SOURCE_DIR}/tests)
 set(DEPS_DIR ${CMAKE_SOURCE_DIR}/deps)
 
+message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
+message(STATUS "CXX Compiler: ${CMAKE_CXX_COMPILER}")
+
 if(${CMAKE_BUILD_TYPE} STREQUAL Release)
   set(BUILD_DIR ${CMAKE_SOURCE_DIR}/build/release)
   message("Building release")

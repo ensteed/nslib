@@ -355,7 +355,7 @@ struct renderer
     mem_arena vk_frame_linear;
 
     mem_arena persist_fl;
-    mem_arena frame_stack;
+    mem_arena persist_stack;
     mem_arena frame_linear;
 
     // Renderer resources
@@ -403,11 +403,18 @@ struct renderer
     slot_pool<render_blueprint> blueprints{};
 
     rresource_target_registry rtargets{};
-
     rtexture_handle swapchain_fb_depth_stencil{};
 };
 
-int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena);
+struct init_renderer_params {
+    void *win_hndl;
+    mem_arena *upsream;
+    sizet persist_fl_size;
+    sizet persist_stack_size;
+    sizet frame_linear_size;
+};
+
+int init_renderer(renderer *rndr, const init_renderer_params &p);
 void terminate_renderer(renderer *rndr);
 
 VkFormat get_vk_format(rformat fmt);
@@ -444,8 +451,8 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
 rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
 
-rmanifest *begin_render_frame(renderer *rndr);
-int end_render_frame(renderer *rndr, camera *cam, f64 dt);
+rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp);
+int end_render_frame(rmanifest *m);
 
 
 } // namespace nslib

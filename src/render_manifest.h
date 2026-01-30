@@ -69,10 +69,15 @@ struct mrender_job
     void *cb_user;
 };
 
+struct mframe_params {
+    double dt;
+};
+
 struct rmanifest
 {
     renderer *rndr;
     render_blueprint_handle rbp;
+    mframe_params fp;
     array<mpass> passes;
     array<mview> views;
     array<mrender_job> jobs;

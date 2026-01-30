@@ -2,6 +2,7 @@
 #include "vk_context.h"
 #include "renderer.h"
 #include "sim_region.h"
+#include "render_manifest.h"
 
 #ifdef USE_IMGUI
     #include "imgui/imgui.h"
@@ -921,21 +922,22 @@ intern void terminate_blueprints(renderer *rndr)
     hmap_terminate(&rndr->blueprint_id_map);
 }
 
-int init_renderer(renderer *rndr, void *win_hndl, mem_arena *fl_arena)
+int init_renderer(renderer *rndr, const init_renderer_params &p)
 {
-    asrt(fl_arena->alloc_type == mem_alloc_type::FREE_LIST);
-    init_fl_arena(&rndr->persist_fl, 200 * MB_SIZE, fl_arena, "rndr-fl");
+    asrt(p.upsream->alloc_type != mem_alloc_type::POOL); // Cannot use pool arena here
+    init_fl_arena(&rndr->persist_fl, p.persist_fl_size, p.upsream, "rndr-persist-fl");
+    init_lin_arena(&rndr->persist_stack, p.persist_stack_size, p.upsream, "rndr-persist-stack");
+    init_lin_arena(&rndr->frame_linear, p.frame_linear_size, p.upsream, "rndr-frame-linear");
+    
     init_fl_arena(&rndr->vk_free_list, 50 * MB_SIZE, &rndr->persist_fl, "rndr-vk-fl");
     init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, &rndr->persist_fl, "rndr-vk-frame");
-    init_lin_arena(&rndr->frame_linear, 10 * KB_SIZE, fl_arena, "rndr-frame-linear");
-    init_lin_arena(&rndr->frame_stack, 10 * MB_SIZE, fl_arena, "rndr-frame-stack");
 
     // Vulkan
     vkr_cfg vkii{.app_name = "rdev",
                  .vi{1, 0, 0},
                  .arenas{.persistent_arena = &rndr->vk_free_list, .command_arena = &rndr->vk_frame_linear},
                  .log_verbosity = LOG_DEBUG,
-                 .window = win_hndl,
+                 .window = p.win_hndl,
                  .inst_create_flags = INST_CREATE_FLAGS,
                  .extra_instance_extension_names = ADDITIONAL_INST_EXTENSIONS,
                  .extra_instance_extension_count = ADDITIONAL_INST_EXTENSION_COUNT,
@@ -1016,7 +1018,6 @@ void terminate_renderer(renderer *rndr)
     ilog("Terminating");
     reset_arena(&rndr->vk_frame_linear);
     reset_arena(&rndr->frame_linear);
-    reset_arena(&rndr->frame_stack);
 
     // Device needs to be idle before finishing with everything
     vkr_device_wait_idle(&rndr->vk.inst.device);
@@ -1064,8 +1065,10 @@ void terminate_renderer(renderer *rndr)
 
     terminate_arena(&rndr->vk_free_list);
     terminate_arena(&rndr->vk_frame_linear);
+
+    // Preserve this order just in case the passed in arena was a stack arena
     terminate_arena(&rndr->frame_linear);
-    terminate_arena(&rndr->frame_stack);
+    terminate_arena(&rndr->persist_stack);
     terminate_arena(&rndr->persist_fl);
 }
 
@@ -1555,14 +1558,22 @@ rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
     return fiter ? fiter->val : rbuffer_target_handle{};
 }
 
-rmanifest* begin_render_frame(renderer *rndr)
+// We can let this "leak" as it doesn't leak due to using frame linear allocator
+intern rmanifest* create_manifest(renderer *rndr) {
+    rmanifest *m = mem_alloc<rmanifest>(&rndr->frame_linear);
+    arr_init(&m->jobs, &rndr->frame_linear, 24);
+    arr_init(&m->passes, &rndr->frame_linear, 12);
+    arr_init(&m->views, &rndr->frame_linear, 12);
+    return m;
+}
+
+rmanifest* begin_render_frame(renderer *rndr, render_blueprint_handle bp)
 {
     PROFILE_SCOPE("begin_render_frame");
     auto dev = &rndr->vk.inst.device;
 
     reset_arena(&rndr->vk_frame_linear);
     reset_arena(&rndr->frame_linear);
-    reset_arena(&rndr->frame_stack);
 
 // Start GUI frame
 #ifdef USE_IMGUI
@@ -1585,23 +1596,27 @@ rmanifest* begin_render_frame(renderer *rndr)
         return nullptr;
     }
 
-    // Clear all prev desc sets
-    // vkr_reset_descriptor_pool(&cur_frame->desc_pool, &rndr->vk);
-    return nullptr;
+    rmanifest *m = create_manifest(rndr);
+    m->rndr = rndr;
+    m->rbp = bp;
+    return m;
 }
 
-int end_render_frame(renderer *rndr, camera *cam, f64 dt)
+int end_render_frame(rmanifest *m)
 {
-    PROFILE_SCOPE("end_render_frame");
-    auto dev = &rndr->vk.inst.device;
-    int current_frame_ind = rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
-    auto *cur_frame = &rndr->fifs[current_frame_ind];
+    PROFILE_SCOPE("end_render_frame");    
+    asrt(m);
+    asrt(is_valid(m->rbp));
+    
+    auto dev = &m->rndr->vk.inst.device;
+    int current_frame_ind = m->rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
+    auto *cur_frame = &m->rndr->fifs[current_frame_ind];
 
-    if (window_resized_this_frame(rndr->vk.cfg.window)) {
-        rndr->no_resize_frames = 0.0;
+    if (window_resized_this_frame(m->rndr->vk.cfg.window)) {
+        m->rndr->no_resize_frames = 0.0;
     }
     else {
-        rndr->no_resize_frames += dt;
+        m->rndr->no_resize_frames += m->fp.dt;
     }
 
     /////////////////////////////////
@@ -1618,8 +1633,8 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
     // At least.. i think?
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
-        if (rndr->no_resize_frames > RESIZE_DEBOUNCE_FRAME_COUNT) {
-            recreate_swapchain(rndr);
+        if (m->rndr->no_resize_frames > RESIZE_DEBOUNCE_FRAME_COUNT) {
+            recreate_swapchain(m->rndr);
         }
 #ifdef USE_IMGUI
         ImGui::EndFrame();
@@ -1632,15 +1647,6 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
         ImGui::EndFrame();
 #endif
         return err_code::RENDER_ACQUIRE_IMAGE_FAIL;
-    }
-
-    if (cam) {
-        svec2 sz = get_window_pixel_size(rndr->vk.cfg.window);
-        if (cam->vp_size != sz) {
-            rndr->no_resize_frames = 0;
-            cam->vp_size = sz;
-            cam->proj = (math::perspective(cam->fov, (f32)cam->vp_size.w / (f32)cam->vp_size.h, cam->near_far.x, cam->near_far.y));
-        }
     }
 
 // Finalize IM GUI data - not dependent on our render stuff currently
@@ -1660,7 +1666,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     // We have the acquired image index, though we don't know when it will be ready to have ops submitted, we can record
     // the ops in the command buffer and submit once it is ready
     // This takes about %80 of the run frame
-    vk_res = record_command_buffer(rndr, fb, cur_frame);
+    vk_res = record_command_buffer(m->rndr, fb, cur_frame);
     if (vk_res != err_code::RENDER_NO_ERROR) {
         return vk_res;
     }
@@ -1690,7 +1696,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &cur_frame->cmd_buffer;
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &rndr->vk.inst.device.swapchain.renders_finished[im_ind];
+    submit_info.pSignalSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[im_ind];
     if (vkQueueSubmit(dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE], 1, &submit_info, cur_frame->in_flight) != VK_SUCCESS) {
         return err_code::RENDER_SUBMIT_QUEUE_FAIL;
     }
@@ -1702,7 +1708,7 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &rndr->vk.inst.device.swapchain.renders_finished[im_ind];
+    present_info.pWaitSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[im_ind];
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &dev->swapchain.swapchain;
     present_info.pImageIndices = &im_ind;
@@ -1712,15 +1718,16 @@ int end_render_frame(renderer *rndr, camera *cam, f64 dt)
     // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
     // the next frame, but it seems to resize more smoothly doing it here
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR || vk_res == VK_SUBOPTIMAL_KHR) {
-        if (rndr->no_resize_frames > RESIZE_DEBOUNCE_FRAME_COUNT) {
-            recreate_swapchain(rndr);
+        if (m->rndr->no_resize_frames > RESIZE_DEBOUNCE_FRAME_COUNT) {
+            recreate_swapchain(m->rndr);
         }
     }
     else if (vk_res != VK_SUCCESS) {
         elog("Failed to presenet KHR");
         return err_code::RENDER_PRESENT_KHR_FAIL;
     }
-    ++rndr->finished_frames;
+    ++m->rndr->finished_frames;
+    
     return err_code::RENDER_NO_ERROR;
 }
 

@@ -403,7 +403,7 @@ int init_platform(const platform_init_info *settings, platform_ctxt *ctxt)
     // Setup profiling
     for (int i = 0; i < PROFILE_CONTEXT_COUNT; ++i) {
         profiling_init(&ctxt->profiling_contexts[i], 128, 64, &ctxt->arenas.free_list);
-        //profiling_set_avg_window(&ctxt->profiling_contexts[i], 10000, &ctxt->arenas.free_list);
+        profiling_set_avg_window(&ctxt->profiling_contexts[i], 1000, &ctxt->arenas.free_list);
         GLOBAL_PROFILING_CONTEXT[i] = &ctxt->profiling_contexts[i];
     }
 #endif

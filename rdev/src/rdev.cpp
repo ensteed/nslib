@@ -15,18 +15,19 @@ using namespace nslib;
 
 struct rdev_app_ctxt
 {
-    renderer rndr{};
-    sim_region rgn{};
-    asset_cache cg{};
-    f64 accumulater{};
+    renderer rndr;
+    render_blueprint_handle rbp;
+    sim_region rgn;
+    asset_cache cg;
+    f64 accumulater;
 
     input_keymap movement_km;
     input_keymap global_km;
-    input_keymap_stack stack{};
+    input_keymap_stack stack;
 
     u32 cam_id;
     vec2 mpos;
-    svec2 movement{};
+    svec2 movement;
 
     u32 cube_1;
     u32 plane_1;
@@ -160,15 +161,11 @@ void create_textures(texture_pool *tex_pool)
     }
 }
 
-void build_render_blueprint(render_blueprint *bp)
-{
-    // auto pass = create_pass(bp);
-}
-
-void build_and_compile_render_blueprint(renderer *rndr)
+void build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
 {
     // First, create the needed target resources
     auto rbp = create_render_blueprint(rndr, "fwd-pbr");
+    app->rbp = rbp.hndl;
 
     auto pass_id = add_rbp_pass(rbp.item, {.name = "main-pass", .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
 
@@ -196,8 +193,6 @@ void build_and_compile_render_blueprint(renderer *rndr)
 
 int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
-    render_blueprint bp{};
-
     init_asset_cache_default_types(&app->cg, "asset-cache", get_global_arena());
 
     // Create meshes
@@ -207,16 +202,22 @@ int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     create_meshes(msh_pool, &rect, &cube);
     create_textures(tex_pool);
 
-    build_render_blueprint(&bp);
-
     // Initialize our renderer - fail early if init fails
-    int ret = init_renderer(&app->rndr, ctxt->win_hndl, &ctxt->arenas.free_list);
+    init_renderer_params p{
+        .upsream = &ctxt->arenas.free_list,
+        .win_hndl = ctxt->win_hndl,
+        .persist_fl_size = 200 * MB_SIZE,
+        .persist_stack_size = 10 * MB_SIZE,
+        .frame_linear_size = 10 * MB_SIZE,
+    };
+    int ret = init_renderer(&app->rndr, p);
+
     if (ret != err_code::RENDER_NO_ERROR) {
         return ret;
     }
 
     auto geom_stream_gp = setup_geometry_stream_group(&app->rndr);
-    build_and_compile_render_blueprint(&app->rndr);
+    build_and_compile_render_blueprint(&app->rndr, app);
 
     upload_geometry(&app->rndr, geom_stream_gp, msh_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
@@ -278,22 +279,18 @@ bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     PROFILE_BEGIN_FRAME();
     begin_platform_frame(ctxt);
 
-    auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
-    static int ticks = 0;
-
     app->accumulater += ctxt->time_pts.dt;
     map_input_frame(&app->stack, &ctxt->feventq);
 
     PROFILE_BEGIN("simulate");
     while (app->accumulater >= 0.01666) {
-        ++ticks;
         simulate(ctxt, app, 0.01666);
         app->accumulater -= 0.01666;
     }
     f64 alpha = app->accumulater / 0.010;
     PROFILE_END();
 
-    auto m = begin_render_frame(&app->rndr);
+    auto m = begin_render_frame(&app->rndr, app->rbp);
 
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
@@ -301,12 +298,8 @@ bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 #endif
     // bool open{true};
     // ImGui::ShowDemoWindow();
-    int res = end_render_frame(&app->rndr, cam, ctxt->time_pts.dt);
-
-    bool ret = res == err_code::RENDER_NO_ERROR;
-
+    int res = end_render_frame(m);
     end_platform_frame(ctxt);
-
     PROFILE_END_FRAME();
 
 #if defined(PROFILING_ENABLED)
@@ -316,7 +309,7 @@ bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
         frame_count_goal += GLOBAL_PROFILING_CONTEXT[0]->avg_window;
     }
 #endif
-    return ret;
+    return res == err_code::RENDER_NO_ERROR;
 }
 
 void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
