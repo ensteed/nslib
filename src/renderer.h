@@ -154,14 +154,14 @@ struct rsampler_info
 struct rmaterial_info
 {};
 
-struct rtechnique_info
-{
-    static_array<VkPipeline, MAX_BP_PASS_COUNT> rpass_plines;
+struct rtechnique_pass_entry {
+    rbp_pass_id bp_pass;
+    gpu_handle pline;
 };
 
-struct rpass_info
+struct rtechnique_info
 {
-    VkRenderPass vk_hndl;
+    static_array<rtechnique_pass_entry, MAX_BP_PASS_COUNT> rpass_plines;
 };
 
 struct imgui_ctxt
@@ -239,8 +239,8 @@ struct rview
 };
 
 // This will cause targets to resize dynamically with the swapchain as well
-const uvec2 SWAPCHAIN_SIZE = {};
-const uvec2 DEFAULT_SHADOW_MAP_SIZE = {2048, 2048};
+const svec2 WINDOW_SIZE = {};
+const svec2 DEFAULT_SHADOW_MAP_SIZE = {2048, 2048};
 
 struct rtexture_state
 {
@@ -313,7 +313,7 @@ struct rtexture_target_desc
     const char *name;
     rformat format;
     rtarget_texture_type type;
-    uvec2 dims;
+    svec2 dims;
 };
 
 #define TEXTURE_TARGET_COLOR_HDR(name)                                                                                                     \
@@ -321,7 +321,7 @@ struct rtexture_target_desc
         .name = name,                                                                                                                      \
         .format = rformat::RGBA16_SFLOAT,                                                                                                  \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
-        .dims = SWAPCHAIN_SIZE,                                                                                                            \
+        .dims = WINDOW_SIZE,                                                                                                               \
     }
 
 #define TEXTURE_TARGET_COLOR(name)                                                                                                         \
@@ -329,7 +329,15 @@ struct rtexture_target_desc
         .name = name,                                                                                                                      \
         .format = rformat::RGBA8_SFLOAT,                                                                                                   \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
-        .dims = SWAPCHAIN_SIZE,                                                                                                            \
+        .dims = WINDOW_SIZE,                                                                                                               \
+    }
+
+#define TEXTURE_TARGET_DEPTH(pnm)                                                                                                          \
+    {                                                                                                                                      \
+        .name = pnm,                                                                                                                       \
+        .format = rformat::D32_SFLOAT,                                                                                                     \
+        .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
+        .dims = WINDOW_SIZE,                                                                                                               \
     }
 
 #define TEXTURE_TARGET_SHADOW_MAP(name)                                                                                                    \
@@ -346,7 +354,6 @@ struct rtexture_target_desc
 // rbp_pass *create_pass(render_blueprint *bp, const char *pass_t);
 // void add_subpass(rbp_pass *pass);
 
-
 struct renderer
 {
     // Owned vulkan context and mem arenas used only for vulkan stuff
@@ -360,9 +367,8 @@ struct renderer
 
     // Renderer resources
     // TODO: Implement this for smarter pipeline creation
-    hmap<pipeline_key, pipeline_id> pline_cache;
-    array<VkPipeline> pipelines;
-    
+    hmap<pipeline_key, gpu_handle> pline_cache;
+
     slot_pool<rtechnique_info> techniques{};
     slot_pool<rmaterial_info> materials{};
     slot_pool<rtexture_info> textures{};
@@ -406,7 +412,8 @@ struct renderer
     rtexture_handle swapchain_fb_depth_stencil{};
 };
 
-struct init_renderer_params {
+struct init_renderer_params
+{
     void *win_hndl;
     mem_arena *upsream;
     sizet persist_fl_size;
@@ -453,6 +460,5 @@ rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
 
 rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp);
 int end_render_frame(rmanifest *m);
-
 
 } // namespace nslib

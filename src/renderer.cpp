@@ -303,7 +303,7 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_cont
         return err;
     }
 
-    //VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
+    // VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
 
     // // Bind the global vertex/index buffer/s
     // VkBuffer vert_bufs[RVERT_STREAM_COUNT]{};
@@ -578,7 +578,6 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
     return !failed;
 }
 
-
 intern void release_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
 {
     for (u32 i = 0; i < gp->layouts.size; ++i) {
@@ -709,6 +708,7 @@ intern void terminate_frame_contexts(renderer *rndr)
 
 intern void init_resource_target_registry(renderer *rndr)
 {
+    ilog("Initializing render memory");
     init_slot_pool(&rndr->rtargets.textures, MAX_TEXTURE_TARGET_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->rtargets.buffers, MAX_BUFFER_TARGET_COUNT, &rndr->persist_fl);
     // Load factor is .75 so two times capacity should make so table is never rehashed and still performant
@@ -719,14 +719,17 @@ intern void init_resource_target_registry(renderer *rndr)
 // We assume device has already been waited here
 intern void terminate_resource_target_registry(renderer *rndr)
 {
+    ilog("Terminating render targets");
     auto vk = &rndr->vk;
     for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
         for (auto iter = slot_pool_begin(&rndr->rtargets.textures); is_valid(iter); iter = slot_pool_next(&rndr->rtargets.textures, iter)) {
+            ilog("Terminating %s for FIF %d", iter.item->name, fif);
             vkr_terminate_image_view(iter.item->frames[fif].view, vk);
             vkr_terminate_image(&iter.item->frames[fif].image, vk);
             iter.item->frames[fif] = {};
         }
         for (auto iter = slot_pool_begin(&rndr->rtargets.buffers); is_valid(iter); iter = slot_pool_next(&rndr->rtargets.buffers, iter)) {
+            ilog("Terminating %s for FIF %d", iter.item->name, fif);
             vkr_terminate_buffer(&iter.item->frames[fif].buffer, vk);
             iter.item->frames[fif] = {};
         }
@@ -894,16 +897,14 @@ intern void terminate_global_pipeline_layout(renderer *rndr)
 intern void init_pipelines(renderer *rndr)
 {
     hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
-    arr_init(&rndr->pipelines, &rndr->persist_fl);
 }
 
 intern void terminate_pipelines(renderer *rndr)
 {
     // Terminate all pipelines
-    for (u32 i = 0; i < rndr->pipelines.size; ++i) {
-        vkr_terminate_pipeline(rndr->pipelines[i], &rndr->vk);
+    for (auto pliter = hmap_begin(&rndr->pline_cache); pliter; pliter = hmap_next(&rndr->pline_cache, pliter)) {
+        vkr_terminate_pipeline((VkPipeline)pliter->val, &rndr->vk);
     }
-    arr_terminate(&rndr->pipelines);
     hmap_terminate(&rndr->pline_cache);
 }
 
@@ -928,7 +929,7 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
     init_fl_arena(&rndr->persist_fl, p.persist_fl_size, p.upsream, "rndr-persist-fl");
     init_lin_arena(&rndr->persist_stack, p.persist_stack_size, p.upsream, "rndr-persist-stack");
     init_lin_arena(&rndr->frame_linear, p.frame_linear_size, p.upsream, "rndr-frame-linear");
-    
+
     init_fl_arena(&rndr->vk_free_list, 50 * MB_SIZE, &rndr->persist_fl, "rndr-vk-fl");
     init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, &rndr->persist_fl, "rndr-vk-frame");
 
@@ -945,9 +946,13 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
                  .device_extension_count = DEVICE_EXTENSION_COUNT,
                  .validation_layer_names = VALIDATION_LAYERS,
                  .validation_layer_count = VALIDATION_LAYER_COUNT};
-    if (vkr_init(&vkii, &rndr->vk) != err_code::VKR_NO_ERROR) {
+    s32 result = vkr_init(&vkii, &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) {
         return err_code::RENDER_INIT_FAIL;
     }
+
+    // Swapchain image handling...
+    
 
     // Blueprints
     init_blueprints(rndr);
@@ -971,7 +976,7 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
                       &rndr->vk);
 
     // Setup frames in flight
-    int result = init_frame_contexts(rndr);
+    result = init_frame_contexts(rndr);
     if (result != err_code::VKR_NO_ERROR) {
         elog("Failed to setup frame contexts");
         return result;
@@ -1487,8 +1492,7 @@ rmaterial_handle create_material(renderer *rndr, const rmaterial_desc &ctinfo)
     return {};
 }
 
-
-rtexture_target_handle create_rtarget_texture(renderer *rndr, const rtexture_target_desc &ci)
+rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci)
 {
     rtexture_target_ref tref = acquire_slot(&rndr->rtargets.textures);
     if (!is_valid(tref)) {
@@ -1504,7 +1508,7 @@ rtexture_target_handle create_rtarget_texture(renderer *rndr, const rtexture_tar
     bool is_color = (ci.type == RTARGET_TEXTURE_TYPE_COLOR || ci.type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
     cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
     cfg.im_create_flags = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
-    cfg.dims = {ci.dims, 1u};
+    cfg.dims = {ci.dims == svec2{} ? get_window_pixel_size(rndr->vk.cfg.window) : ci.dims, 1u};
     cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     cfg.array_layers = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? 6u : 1u;
@@ -1559,7 +1563,8 @@ rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
 }
 
 // We can let this "leak" as it doesn't leak due to using frame linear allocator
-intern rmanifest* create_manifest(renderer *rndr) {
+intern rmanifest *create_manifest(renderer *rndr)
+{
     rmanifest *m = mem_alloc<rmanifest>(&rndr->frame_linear);
     arr_init(&m->jobs, &rndr->frame_linear, 24);
     arr_init(&m->passes, &rndr->frame_linear, 12);
@@ -1567,7 +1572,7 @@ intern rmanifest* create_manifest(renderer *rndr) {
     return m;
 }
 
-rmanifest* begin_render_frame(renderer *rndr, render_blueprint_handle bp)
+rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
 {
     PROFILE_SCOPE("begin_render_frame");
     auto dev = &rndr->vk.inst.device;
@@ -1604,10 +1609,10 @@ rmanifest* begin_render_frame(renderer *rndr, render_blueprint_handle bp)
 
 int end_render_frame(rmanifest *m)
 {
-    PROFILE_SCOPE("end_render_frame");    
+    PROFILE_SCOPE("end_render_frame");
     asrt(m);
     asrt(is_valid(m->rbp));
-    
+
     auto dev = &m->rndr->vk.inst.device;
     int current_frame_ind = m->rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
     auto *cur_frame = &m->rndr->fifs[current_frame_ind];
@@ -1658,7 +1663,7 @@ int end_render_frame(rmanifest *m)
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
     // ind to the command pool
     auto fb = &dev->swapchain.fbs[im_ind];
-    //asrt(fb && "Invalid framebuffer");
+    // asrt(fb && "Invalid framebuffer");
 
     ///////////////////////////
     // Record Command Buffer //
@@ -1727,9 +1732,8 @@ int end_render_frame(rmanifest *m)
         return err_code::RENDER_PRESENT_KHR_FAIL;
     }
     ++m->rndr->finished_frames;
-    
+
     return err_code::RENDER_NO_ERROR;
 }
-
 
 } // namespace nslib

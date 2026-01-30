@@ -111,7 +111,7 @@ intern VkImageLayout get_baked_initial_layout(const rbp_pass &pass, const rbp_re
     // Optimization: If we are clearing and don't care about previous contents,
     // we tell the render pass to ignore the current layout and just treat it as undefined.
     return test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) ? VK_IMAGE_LAYOUT_UNDEFINED
-        : get_layout_from_requirement(pass, req, false);
+                                                                          : get_layout_from_requirement(pass, req, false);
 }
 
 intern VkAttachmentLoadOp get_requirement_load_op(const rbp_resource_requirement &req)
@@ -334,15 +334,22 @@ render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name)
     strncpy(ref.item->name, name, SMALL_STR_LEN - 1);
     ref.item->id = hash_type(ref.item->name);
     hmap_insert(&rndr->blueprint_id_map, ref.item->id, ref.hndl);
+    ilog("Created render bluepring %s with id %lu", name, ref.item->id);
     return ref;
 }
 
 bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
 {
     auto item = get_slot_item(&rndr->blueprints, hndl);
+    ilog("Destroying render blueprint %s with %lu passes", item->name, item->passes.size);
     clean_render_blueprint(rndr, item);
     hmap_terminate(&item->pass_idmap);
     return hmap_remove(&rndr->blueprint_id_map, item->id) && release_slot(&rndr->blueprints, hndl);
+}
+
+render_blueprint* get_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
+{
+    return get_slot_item(&rndr->blueprints, hndl);
 }
 
 render_blueprint_handle find_render_blueprint(renderer *rndr, rres_id bpid)
@@ -358,6 +365,10 @@ void clean_render_blueprint(renderer *rndr, render_blueprint *rbp)
     asrt(vk);
     ilog("Cleaning render blueprint %s", rbp->name);
     for (u32 rpi = 0; rpi < rbp->passes.size; ++rpi) {
+        ilog("Destroying vkRenderPass for %s with %lu resource slots and %lu subpasses",
+             rbp->passes[rpi].name,
+             rbp->passes[rpi].slots.size,
+             rbp->passes[rpi].subpasses.size);
         vkr_terminate_render_pass((VkRenderPass)rbp->passes[rpi].vk_handle, vk);
         rbp->passes[rpi].vk_handle = {};
     }
@@ -387,14 +398,10 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
         for (u32 subi = 0; subi < pass->subpasses.size; ++subi) {
             vkr_rpass_cfg_subpass subpass{};
             subpass.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
-            dlog("Looking at subpass %d", subi);
-
             for (u32 resi = 0; resi < pass->subpasses[subi].resources.size; ++resi) {
 
                 const rbp_resource_requirement &req = pass->subpasses[subi].resources[resi];
                 asrt(req.slot_ind < pass->slots.size);
-                dlog("Looking at resi %d: %s", resi, ls(to_json(req)));
-
                 const rbp_resource_slot_info &slot = pass->slots[req.slot_ind];
                 if (!is_valid(slot.att_ind)) {
                     continue;

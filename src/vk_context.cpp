@@ -769,7 +769,8 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk)
     swap_create.preTransform = swap_support.capabilities.currentTransform;
     swap_create.clipped = VK_TRUE;
     swap_create.oldSwapchain = VK_NULL_HANDLE;
-    swap_create.minImageCount = swap_support.capabilities.minImageCount + 1;
+    // Ideally we want as many swapchain images as frames in flight, but if that is not available, then we can make due
+    swap_create.minImageCount = MAX_FRAMES_IN_FLIGHT;
     if (swap_support.capabilities.maxImageCount != 0 && swap_support.capabilities.maxImageCount < swap_create.minImageCount) {
         swap_create.minImageCount = swap_support.capabilities.maxImageCount;
     }
@@ -807,16 +808,16 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk)
         }
     }
 
-    // Handle the extents - if the screen coords don't match the pixel coords then we gotta set this from the frame
-    // buffer as by default the extents are screen coords - this is really only for retina displays
+    // Setting the exten from caps is idea as it will match what the driver expects best - but on windows it sometimes
+    // will be uint max to say basically, choose whatever you want.. so in that case we choose based on the window
     swap_create.imageExtent = swap_support.capabilities.currentExtent;
-    // if (swap_support.capabilities.currentExtent.width == VKR_INVALID) {
-    auto cur_win_sz = get_window_pixel_size(vk->cfg.window);
-    swap_create.imageExtent = {(u32)cur_win_sz.w, (u32)cur_win_sz.h};
-    swap_create.imageExtent.width = std::clamp(
-        swap_create.imageExtent.width, swap_support.capabilities.minImageExtent.width, swap_support.capabilities.maxImageExtent.width);
-    swap_create.imageExtent.height = std::clamp(
-        swap_create.imageExtent.height, swap_support.capabilities.minImageExtent.height, swap_support.capabilities.maxImageExtent.height);
+    if (swap_create.imageExtent.width == UINT_MAX || swap_create.imageExtent.height == UINT_MAX) {
+        uvec2 cur_win_sz = get_window_pixel_size(vk->cfg.window);
+        swap_create.imageExtent.width =
+            std::clamp(cur_win_sz.w, swap_support.capabilities.minImageExtent.width, swap_support.capabilities.maxImageExtent.width);
+        swap_create.imageExtent.height =
+            std::clamp(cur_win_sz.h, swap_support.capabilities.minImageExtent.height, swap_support.capabilities.maxImageExtent.height);
+    }
 
     ilog("Should be setting extent to {%d %d} (min {%d %d} max {%d %d})",
          swap_create.imageExtent.width,
@@ -1351,7 +1352,7 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
     for (int i = 0; i < region_count; ++i) {
         tot_region_size += regions[i].size;
     }
-    
+
     vkr_buffer staging_buf{};
     vkr_buffer_cfg buf_cfg{};
     buf_cfg.buffer_size = tot_region_size;
@@ -1372,8 +1373,8 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
     // Translate all regions from source buffers to regions from staging buffer
     sizet cur_offset{};
     for (int i = 0; i < region_count; ++i) {
-        auto src_addr = (void*)((sizet)src_data + regions[i].srcOffset);
-        auto dst_addr = (void*)((sizet)staging_buf.mem_info.pMappedData + cur_offset);
+        auto src_addr = (void *)((sizet)src_data + regions[i].srcOffset);
+        auto dst_addr = (void *)((sizet)staging_buf.mem_info.pMappedData + cur_offset);
         memcpy(src_addr, src_addr, regions[i].size);
 
         new_regions[i].size = regions[i].size;
@@ -1385,7 +1386,7 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
     err = vkr_copy_buffer(dest_buffer, &staging_buf, new_regions.data, (u32)new_regions.size, cmd_buf, queue, vk);
     vkr_terminate_buffer(&staging_buf, vk);
 
-    arr_terminate(&new_regions);    
+    arr_terminate(&new_regions);
     return err;
 }
 
@@ -1418,7 +1419,7 @@ int vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg)
     alloc_info.requiredFlags = cfg.required_flags;
     alloc_info.preferredFlags = cfg.preferred_flags;
     alloc_info.pUserData = cfg.user_data;
-    
+
     int err = vmaCreateBuffer(cfg.vma_alloc->hndl, &cinfo, &alloc_info, &buffer->hndl, &buffer->mem_hndl, &buffer->mem_info);
     if (err != VK_SUCCESS) {
         elog("Failed in creating buffer with vk err %d", err);
@@ -1455,7 +1456,8 @@ VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, bool need_stenci
     return VK_FORMAT_UNDEFINED;
 }
 
-VkIndexType get_vk_index_type(sizet ind_size) {
+VkIndexType get_vk_index_type(sizet ind_size)
+{
     if (ind_size == 1) {
         return VK_INDEX_TYPE_UINT8;
     }
@@ -1587,7 +1589,6 @@ int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
     return vkr_stage_and_upload_image_data(dest_buffer, src_data, src_data_size, &region, cmd_buf, queue, vk);
 }
 
-
 // TODO Switch this API - we shouldn't be passing src_data_size - should be calculated from region
 int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
                                     const void *src_data,
@@ -1641,7 +1642,8 @@ int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
     return err;
 }
 
-int vkr_init_fence(VkFence *hndl, VkFenceCreateFlags flags, const vkr_context *vk) {
+int vkr_init_fence(VkFence *hndl, VkFenceCreateFlags flags, const vkr_context *vk)
+{
     VkFenceCreateInfo fence_info{};
     fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fence_info.flags = flags;
@@ -1652,11 +1654,13 @@ int vkr_init_fence(VkFence *hndl, VkFenceCreateFlags flags, const vkr_context *v
     return result;
 }
 
-void vkr_terminate_fence(VkFence hndl, const vkr_context *vk) {
+void vkr_terminate_fence(VkFence hndl, const vkr_context *vk)
+{
     vkDestroyFence(vk->inst.device.hndl, hndl, &vk->alloc_cbs);
 }
 
-int vkr_init_semaphore(VkSemaphore *hndl, VkSemaphoreCreateFlags flags, const vkr_context *vk) {
+int vkr_init_semaphore(VkSemaphore *hndl, VkSemaphoreCreateFlags flags, const vkr_context *vk)
+{
     VkSemaphoreCreateInfo sem_info{};
     sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     sem_info.flags = flags;
@@ -1667,7 +1671,8 @@ int vkr_init_semaphore(VkSemaphore *hndl, VkSemaphoreCreateFlags flags, const vk
     return result;
 }
 
-void vkr_terminate_semaphore(VkSemaphore hndl, const vkr_context *vk) {
+void vkr_terminate_semaphore(VkSemaphore hndl, const vkr_context *vk)
+{
     vkDestroySemaphore(vk->inst.device.hndl, hndl, &vk->alloc_cbs);
 }
 
@@ -1676,8 +1681,8 @@ void vkr_init_swapchain_framebuffers(vkr_device *device,
                                      VkRenderPass rpass,
                                      const array<array<vkr_framebuffer_attachment>> *other_attachments)
 {
-    //arr_init(vk->inst.)
-    // Set framebuffers
+    // arr_init(vk->inst.)
+    //  Set framebuffers
     arr_init(&device->swapchain.fbs, vk->cfg.arenas.persistent_arena);
     arr_resize(&device->swapchain.fbs, device->swapchain.image_views.size);
     for (int i = 0; i < vk->inst.device.swapchain.fbs.size; ++i) {
@@ -1981,7 +1986,7 @@ intern int blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const
 
     VkFence submit_fence;
     vkr_init_fence(&submit_fence, 0, vk);
-    
+
     int err = vkQueueSubmit(queue, 1, &submit_info, submit_fence);
     if (err != VK_SUCCESS) {
         wlog("Failed to submit queue with vulkan error %d", err);

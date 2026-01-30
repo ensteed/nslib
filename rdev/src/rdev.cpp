@@ -6,6 +6,7 @@
 #include "sim_region.h"
 #include "basic_types.h"
 #include "fwd_render.h"
+#include "render_manifest.h"
 #include "profiling.h"
 using namespace nslib;
 
@@ -16,7 +17,6 @@ using namespace nslib;
 struct rdev_app_ctxt
 {
     renderer rndr;
-    render_blueprint_handle rbp;
     sim_region rgn;
     asset_cache cg;
     f64 accumulater;
@@ -136,7 +136,7 @@ intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const m
     }
 }
 
-void create_meshes(mesh_pool *msh_pool, mesh **rect, mesh **cube)
+intern void create_meshes(mesh_pool *msh_pool, mesh **rect, mesh **cube)
 {
     auto cube_msh = create_asset(msh_pool, "rect");
     auto rect_msh = create_asset(msh_pool, "cube");
@@ -146,7 +146,7 @@ void create_meshes(mesh_pool *msh_pool, mesh **rect, mesh **cube)
     *cube = cube_msh.item;
 }
 
-void create_textures(texture_pool *tex_pool)
+intern void create_textures(texture_pool *tex_pool)
 {
     auto daniel_face = create_asset(tex_pool, "daniel-face");
     auto maria_face = create_asset(tex_pool, "maria-face");
@@ -161,11 +161,10 @@ void create_textures(texture_pool *tex_pool)
     }
 }
 
-void build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
+intern void build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
 {
     // First, create the needed target resources
     auto rbp = create_render_blueprint(rndr, "fwd-pbr");
-    app->rbp = rbp.hndl;
 
     auto pass_id = add_rbp_pass(rbp.item, {.name = "main-pass", .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
 
@@ -191,7 +190,7 @@ void build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
     compile_render_blueprint(rndr, rbp.item);
 }
 
-int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
+intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     init_asset_cache_default_types(&app->cg, "asset-cache", get_global_arena());
 
@@ -222,6 +221,9 @@ int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     upload_geometry(&app->rndr, geom_stream_gp, msh_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
 
+    // Create render targets
+    create_rtexture_target(&app->rndr, TEXTURE_TARGET_DEPTH("depthy-poo"));
+
     // Create our sim region aka scene
     init_sim_region(&app->rgn, get_global_arena());
 
@@ -239,7 +241,7 @@ int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     return ret;
 }
 
-void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
+intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 {
     // Move the cam if needed
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
@@ -274,7 +276,16 @@ void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     }
 }
 
-bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
+intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
+{
+    rpass_slot_assignment assignments[] = {
+        {.type = mslot_target_type::TEXTURE,.t{}},
+        {.type = mslot_target_type::TEXTURE,.t{find_rtexture_target(m->rndr, hash_type("depthy-poo"))}},
+    };
+    push_pass(m, 0, assignments, 2);
+}
+
+intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     PROFILE_BEGIN_FRAME();
     begin_platform_frame(ctxt);
@@ -290,8 +301,8 @@ bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     f64 alpha = app->accumulater / 0.010;
     PROFILE_END();
 
-    auto m = begin_render_frame(&app->rndr, app->rbp);
-
+    auto m = begin_render_frame(&app->rndr, find_render_blueprint(&app->rndr, hash_type("fwd-pbr")));
+    build_manifest(m, app);
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
     ImGui::ShowDebugLogWindow();
@@ -312,7 +323,7 @@ bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     return res == err_code::RENDER_NO_ERROR;
 }
 
-void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
+intern void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     terminate_renderer(&app->rndr);
     terminate_keymap(&app->global_km);

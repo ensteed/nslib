@@ -102,7 +102,7 @@ struct rbp_pass
     static_array<rbp_subpass, MAX_BP_SUBPASS_COUNT> subpasses{};
 
     // Filled during compile
-    sizet vk_handle;
+    gpu_handle vk_handle;
 };
 
 pup_func(rbp_pass)
@@ -171,6 +171,7 @@ rbp_pass_id find_rbp_pass(render_blueprint *rbp, rres_id id);
 // Renderer takes ownership of blueprint
 render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name);
 bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl);
+render_blueprint* get_render_blueprint(renderer *rndr, render_blueprint_handle hndl);
 render_blueprint_handle find_render_blueprint(renderer *rndr, rres_id bpid);
 
 void clean_render_blueprint(renderer *rndr, render_blueprint *rbp);

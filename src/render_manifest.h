@@ -28,21 +28,30 @@ struct mdraw_call
 {
     rgeom_handle geom;
     rmaterial_handle mat;
-    pipeline_id pl;
+    gpu_handle pipeline;
     static_array<rtexture_handle, RMATERIAL_TEXTURE_COUNT> textures;
     instance_id iid;
 };
 
+enum struct mslot_target_type {
+    INVALID,
+    TEXTURE,
+    BUFFER
+};
+
 struct rpass_slot_assignment
 {
-    rres_id res_id{INVALID_IND};
-    u32 res_ind{INVALID_ID};
+    mslot_target_type type{};
+    union {
+        rtexture_target_handle t;
+        rbuffer_target_handle b;
+    };
 };
 
 struct mpass
 {
-    u32 slot_assignments[MAX_BP_PASS_SLOT_COUNT];
-    rbp_pass_id pid;
+    rpass_slot_assignment slot_assignments[MAX_BP_PASS_SLOT_COUNT];
+    rbp_pass_id rbp_pid;
 };
 
 struct mview

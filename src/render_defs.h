@@ -82,6 +82,7 @@ struct render_blueprint;
 using render_blueprint_handle = slot_handle<render_blueprint>;
 using render_blueprint_ref = slot_item_ref<render_blueprint>;
 
+using gpu_handle = u64;
 using rbp_pass_id = u32;
 using rbp_subpass_id = u32;
 using rbp_resource_req_id = u32;
@@ -90,7 +91,6 @@ using rbp_slot_id = u32;
 using mpass_id = u32;
 using mview_id = u32;
 using mrender_job_id = u32;
-using pipeline_id = u32;
 using pipeline_key = u64;
 using instance_id = u32;
 
