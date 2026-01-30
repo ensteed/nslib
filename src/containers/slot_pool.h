@@ -264,28 +264,32 @@ template<typename T>
 slot_pool<T>::iterator slot_pool_begin(slot_pool<T> *pool)
 {
     asrt(pool);
-    return slot_pool_next(pool, {.hndl{.index = (u32)-1}});
+    slot_item_ref<T> tmp_ref{.hndl{.index= (u32)-1}};
+    return slot_pool_next(pool, tmp_ref);
 }
 
 template<typename T>
 slot_pool<T>::const_iterator slot_pool_begin(const slot_pool<T> *pool)
 {
     asrt(pool);
-    return slot_pool_next(pool, {.hndl{.index = (u32)-1}});
+    slot_item_ref<T> tmp_ref{.hndl{.index= (u32)-1}};
+    return slot_pool_next(pool, tmp_ref);
 }
 
 template<typename T>
 slot_pool<T>::iterator slot_pool_rbegin(slot_pool<T> *pool)
 {
     asrt(pool);
-    return slot_pool_prev(pool, {.hndl{.index = (u32)pool->slots.size}});
+    slot_item_ref<T> tmp_ref{.hndl{.index=(u32)pool->slots.size}};
+    return slot_pool_prev(pool, tmp_ref);
 }
 
 template<typename T>
 slot_pool<T>::const_iterator slot_pool_rbegin(const slot_pool<T> *pool)
 {
     asrt(pool);
-    return slot_pool_prev(pool, {.hndl{.index = (u32)pool->slots.size}});
+    slot_item_ref<T> tmp_ref{.hndl{.index=(u32)pool->slots.size}};
+    return slot_pool_prev(pool, tmp_ref);
 }
 
 } // namespace nslib
