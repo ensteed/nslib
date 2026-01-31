@@ -14,8 +14,8 @@ struct static_array
     using value_type = T;
     static inline constexpr sizet capacity = N;
 
-    T data[N];
     sizet size{0};
+    T data[N];
 
     inline const T &operator[](sizet ind) const
     {
@@ -34,10 +34,10 @@ struct array
     using const_iterator = const T *;
     using value_type = T;
 
-    mem_arena *arena{};
-    T *data{};
     sizet size{};
     sizet capacity{};
+    T *data{};
+    mem_arena *arena{};
 
     array(sizet initial_capacity = 0, mem_arena *arena = get_global_arena())
     {
@@ -184,10 +184,20 @@ typename T::const_iterator arr_end(const T *arrobj)
     return arrobj->data + arrobj->size;
 }
 
-template<typename T>
-void arr_copy(array<T> *dest, const array<T> *source)
+template<typename Arr1, typename Arr2>
+void arr_copy(Arr1 *dest, const Arr2 *source)
 {
     arr_copy(dest, source->data, source->size);
+}
+
+template<typename T, sizet N>
+void arr_copy(static_array<T, N> *dest, const T *src, sizet src_size)
+{
+    asrt(src_size <= N);
+    dest->size = src_size;
+    for (sizet i = 0; i < dest->size; ++i) {
+        (*dest)[i] = src[i];
+    }
 }
 
 template<typename T>

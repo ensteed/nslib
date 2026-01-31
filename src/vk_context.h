@@ -74,6 +74,7 @@ inline constexpr sizet MAX_DESCRIPTOR_SET_LAYOUT_COUNT = 4;
 inline constexpr sizet MAX_PUSH_CONSTANT_RANGES = 12;
 inline constexpr sizet MAX_VERT_BINDINGS = 12;
 inline constexpr sizet MAX_VERT_ATTRIBS = 12;
+inline constexpr sizet MAX_FRAMEBUFFER_ATTACHMENT_COUNT = 8;
 
 struct vkr_device;
 
@@ -168,11 +169,6 @@ struct vkr_image_view_cfg
     const vkr_image *image;
 };
 
-struct vkr_framebuffer_attachment
-{
-    VkImageView im_view;
-};
-
 struct vkr_sampler_cfg
 {
     VkSamplerCreateFlags flags;
@@ -244,20 +240,21 @@ struct vkr_phys_device
     VkPhysicalDeviceMemoryProperties mem_properties{};
 };
 
+struct vkr_framebuffer_key_data {
+    VkRenderPass rpass{VK_NULL_HANDLE};
+    uvec2 dims{};
+    u32 layers{};
+    static_array<VkImageView, MAX_FRAMEBUFFER_ATTACHMENT_COUNT> atts{0, VK_NULL_HANDLE};
+};
+
 struct vkr_framebuffer_cfg
 {
-    uvec2 size;
-    u32 layers{1};
-    VkRenderPass rpass;
-    const vkr_framebuffer_attachment *attachments;
-    u32 attachment_count;
+    vkr_framebuffer_key_data kd{};
 };
 
 struct vkr_framebuffer
 {
-    uvec2 size;
-    u32 layers;
-    array<vkr_framebuffer_attachment> attachments;
+    vkr_framebuffer_key_data kd{};
     VkFramebuffer hndl{VK_NULL_HANDLE};
 };
 
@@ -265,8 +262,6 @@ struct vkr_swapchain
 {
     array<vkr_image> images;
     array<VkImageView> image_views;
-    array<vkr_framebuffer> fbs;
-    array<array<vkr_framebuffer_attachment>> other_attachments;
     array<VkSemaphore> renders_finished;
     VkFormat format;
     VkExtent2D extent;
@@ -621,33 +616,6 @@ void vkr_terminate_fence(VkFence hndl, const vkr_context *vk);
 
 int vkr_init_semaphore(VkSemaphore *hndl, VkSemaphoreCreateFlags flags, const vkr_context *vk);
 void vkr_terminate_semaphore(VkSemaphore hndl, const vkr_context *vk);
-
-// Initialize the swapchain framebuffers (there is one for each color image in the swapchain)
-// The other_attachment image view will be added to each framebuffer (so make sure that is okay)
-void vkr_init_swapchain_framebuffers(vkr_device *device,
-                                     const vkr_context *vk,
-                                     VkRenderPass rpass,
-                                     const vkr_framebuffer_attachment &other_attachment);
-
-
-// Initialize the swapchain framebuffers (there is one for each color image in the swapchain)
-// The other_attachments image views will be added to each framebuffer (so make sure that is okay)
-void vkr_init_swapchain_framebuffers(vkr_device *device,
-                                     const vkr_context *vk,
-                                     VkRenderPass rpass,
-                                     const array<vkr_framebuffer_attachment> &other_attachments);
-
-// Initialize the swapchain framebuffers (there is one for each color image in the swapchain)
-// The other_attachments should be an array of image view arrays, where each of the image view arrays contain
-// attachments for the corresponding framebuffer - IE the outer most array (other attachments) should be the same size
-// as the swapchain images array.
-void vkr_init_swapchain_framebuffers(vkr_device *device,
-                                     const vkr_context *vk,
-                                     VkRenderPass rpass,
-                                     const array<array<vkr_framebuffer_attachment>> *other_attachments);
-
-void vkr_terminate_swapchain_framebuffers(vkr_device *device, const vkr_context *vk);
-
 
 // The device should be created before calling this
 int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk);

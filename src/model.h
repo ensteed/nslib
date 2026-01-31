@@ -33,6 +33,7 @@ struct texture
     void *pixels;
     uvec3 dims;
     texture_usage usage;
+    rtexture_handle rndr_hndl;
 };
 
 // Material references textures and pipelines, which both must be uploaded to GPUa

@@ -293,7 +293,7 @@ intern bool destroy_geometry(rgeom_ref gref, renderer *rndr)
     return release_slot(&rndr->geometry, gref.hndl);
 }
 
-intern int record_command_buffer(renderer *rndr, vkr_framebuffer *fb, frame_context *cur_frame)
+intern int record_command_buffer(renderer *rndr, vkr_framebuffer *, frame_context *cur_frame)
 {
     PROFILE_SCOPE("record_command_buffer");
     auto dev = &rndr->vk.inst.device;
@@ -591,51 +591,25 @@ intern void release_geometry_stream_group(geom_streams_group *gp, const vkr_cont
     *gp = {};
 }
 
-intern int init_swapchain_images_and_framebuffer(renderer *rndr)
+intern void terminate_swapchain_framebuffers(renderer *rndr)
 {
-    auto vk = &rndr->vk;
-    auto dev = &rndr->vk.inst.device;
+    auto vk_sw = &rndr->vk.inst.device.swapchain;
 
-    vkr_image_cfg im_cfg{};
-    im_cfg.dims = {dev->swapchain.extent.width, dev->swapchain.extent.height, 1};
-    im_cfg.format = vkr_find_best_depth_format(&rndr->vk.inst.pdev_info);
-    im_cfg.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    im_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    im_cfg.vma_alloc = &dev->vma_alloc;
-
-    rtexture_info *sl_item = get_slot_item(&rndr->textures, rndr->swapchain_fb_depth_stencil);
-    if (!sl_item) {
-        auto sl_ref = acquire_slot(&rndr->textures);
-        rndr->swapchain_fb_depth_stencil = sl_ref.hndl;
-        sl_item = sl_ref.item;
+    for (auto sliter = slot_pool_begin(&rndr->fb_cache.items); is_valid(sliter); sliter = slot_pool_next(&rndr->fb_cache.items, sliter)) {
+        // Go through each swapchain image view and check
+        u32 found_swap = INVALID_ID;
+        for (u32 swap_i = 0; swap_i < vk_sw->image_views.size && found_swap == INVALID_ID; ++swap_i) {
+            // Check if the frame buffer has the image view as an attachment
+            found_swap = arr_find(&sliter.item->gpu_d.kd.atts, vk_sw->image_views[swap_i]) ? swap_i : INVALID_ID;
+        }
+        // If it had one, we delete it and continue, otherwise we leave it alone and continue
+        if (found_swap != INVALID_ID) {
+            ilog("Destroying framebuffer %p for swap chain image %u", sliter.item->gpu_d.hndl, found_swap);
+            vkr_terminate_framebuffer(&sliter.item->gpu_d, &rndr->vk);
+            hmap_remove(&rndr->fb_cache.key_lut, sliter.item->key);
+            release_slot(&rndr->fb_cache.items, sliter.hndl);
+        }
     }
-    int err = vkr_init_image(&sl_item->im, im_cfg);
-    if (err != err_code::VKR_NO_ERROR) {
-        return err;
-    }
-
-    vkr_image_view_cfg imv_cfg{};
-    imv_cfg.srange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-    imv_cfg.image = &sl_item->im;
-
-    err = vkr_init_image_view(&sl_item->im_view, imv_cfg, vk);
-    if (err != err_code::VKR_NO_ERROR) {
-        return err;
-    }
-
-    // We need the render pass associated with our main framebuffer
-    // vkr_framebuffer_attachment fb_att{.im_view = sl_item->im_view};
-    // vkr_init_swapchain_framebuffers(dev, vk, rndr->rpasses[RPASS_TYPE_OPAQUE].vk_hndl, fb_att);
-    return err;
-}
-
-intern void terminate_swapchain_images_and_framebuffer(renderer *rndr)
-{
-    auto dev = &rndr->vk.inst.device;
-    auto sl_item = get_slot_item(&rndr->textures, rndr->swapchain_fb_depth_stencil);
-    vkr_terminate_image_view(sl_item->im_view, &rndr->vk);
-    vkr_terminate_image(&sl_item->im, &rndr->vk);
-    vkr_terminate_swapchain_framebuffers(dev, &rndr->vk);
 }
 
 intern void recreate_swapchain(renderer *rndr)
@@ -644,12 +618,10 @@ intern void recreate_swapchain(renderer *rndr)
     // Recreating the swapchain will wait on all semaphores and fences before continuing
     auto dev = &rndr->vk.inst.device;
     vkr_device_wait_idle(dev);
-    terminate_swapchain_images_and_framebuffer(rndr);
     vkr_terminate_swapchain(&dev->swapchain, &rndr->vk);
     vkr_terminate_surface(&rndr->vk, rndr->vk.inst.surface);
     vkr_init_surface(&rndr->vk, &rndr->vk.inst.surface);
     vkr_init_swapchain(&dev->swapchain, &rndr->vk);
-    init_swapchain_images_and_framebuffer(rndr);
 }
 
 intern int init_frame_contexts(renderer *rndr)
@@ -711,9 +683,16 @@ intern void init_resource_target_registry(renderer *rndr)
     ilog("Initializing render memory");
     init_slot_pool(&rndr->rtargets.textures, MAX_TEXTURE_TARGET_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->rtargets.buffers, MAX_BUFFER_TARGET_COUNT, &rndr->persist_fl);
-    // Load factor is .75 so two times capacity should make so table is never rehashed and still performant
+    // Load factor is .75 so two times size should make so table is never rehashed and still performant
     hmap_init(&rndr->rtargets.texture_id_map, hash_type, &rndr->persist_fl, MAX_TEXTURE_TARGET_COUNT * 2);
     hmap_init(&rndr->rtargets.buffer_id_map, hash_type, &rndr->persist_fl, MAX_BUFFER_TARGET_COUNT * 2);
+
+    // We reserve the first render texture target as the swapchain image - and update the current fif texture to
+    // reference the swapchain image at the start of every frame once we acquire it
+    rndr->swapchain = acquire_slot(&rndr->rtargets.textures);
+    strcpy(rndr->swapchain.item->name, "swapchain");
+    rndr->swapchain.item->id = hash_type("swapchain");
+    hmap_insert(&rndr->rtargets.texture_id_map, rndr->swapchain.item->id, rndr->swapchain.hndl);
 }
 
 // We assume device has already been waited here
@@ -723,10 +702,15 @@ intern void terminate_resource_target_registry(renderer *rndr)
     auto vk = &rndr->vk;
     for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
         for (auto iter = slot_pool_begin(&rndr->rtargets.textures); is_valid(iter); iter = slot_pool_next(&rndr->rtargets.textures, iter)) {
-            ilog("Terminating %s for FIF %d", iter.item->name, fif);
-            vkr_terminate_image_view(iter.item->frames[fif].view, vk);
-            vkr_terminate_image(&iter.item->frames[fif].image, vk);
-            iter.item->frames[fif] = {};
+            if (iter.item->id != rndr->swapchain.item->id) {
+                ilog("Terminating %s for FIF %d", iter.item->name, fif);
+                vkr_terminate_image_view(iter.item->frames[fif].view, vk);
+                vkr_terminate_image(&iter.item->frames[fif].image, vk);
+                iter.item->frames[fif] = {};
+            }
+            else {
+                ilog("Skipping %s for FIF %d", iter.item->name, fif);
+            }
         }
         for (auto iter = slot_pool_begin(&rndr->rtargets.buffers); is_valid(iter); iter = slot_pool_next(&rndr->rtargets.buffers, iter)) {
             ilog("Terminating %s for FIF %d", iter.item->name, fif);
@@ -894,18 +878,39 @@ intern void terminate_global_pipeline_layout(renderer *rndr)
     vkr_terminate_pipeline_layout(rndr->g_layout, &rndr->vk);
 }
 
-intern void init_pipelines(renderer *rndr)
+template<typename T>
+void init_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, u32 elements)
 {
-    hmap_init(&rndr->pline_cache, hash_type, &rndr->persist_fl);
+    init_slot_pool(&cache->items, elements, &rndr->persist_fl);
+    hmap_init(&cache->key_lut, hash_type, &rndr->persist_fl, elements * 2);
 }
 
-intern void terminate_pipelines(renderer *rndr)
+template<typename T, typename TermFunc>
+intern void terminate_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, TermFunc term_func)
 {
-    // Terminate all pipelines
-    for (auto pliter = hmap_begin(&rndr->pline_cache); pliter; pliter = hmap_next(&rndr->pline_cache, pliter)) {
-        vkr_terminate_pipeline((VkPipeline)pliter->val, &rndr->vk);
+    for (auto sliter = slot_pool_begin(&cache->items); is_valid(sliter); sliter = slot_pool_next(&cache->items, sliter)) {
+        term_func(&sliter.item->gpu_d);
     }
-    hmap_terminate(&rndr->pline_cache);
+    terminate_slot_pool(&cache->items);
+    hmap_terminate(&cache->key_lut);
+}
+
+intern VkFramebuffer get_or_create_framebuffer(framebuffer_cache *cache, const vkr_framebuffer_key_data &kd, const vkr_context *vk) {
+    u64 hash = hash_type((const char*)&kd, sizeof(vkr_framebuffer_key_data));
+    auto fiter = hmap_find(&cache->key_lut, hash);
+    if (fiter) {
+        auto slitem = get_slot_item(&cache->items, fiter->val);
+        asrt(slitem);
+        return slitem->gpu_d.hndl;
+    }
+    ilog("Creating new framebuffer for unique hash %lu", hash);
+    auto new_slot = acquire_slot(&cache->items);
+    asrt(is_valid(new_slot) && "Out of framebuffer slots");
+    vkr_framebuffer_cfg cfg{.kd=kd};
+    int result = vkr_init_framebuffer(&new_slot.item->gpu_d, cfg, vk);
+    asrt(result == err_code::VKR_NO_ERROR);
+    hmap_insert(&cache->key_lut, hash, new_slot.hndl);
+    return new_slot.item->gpu_d.hndl;
 }
 
 intern void init_blueprints(renderer *rndr)
@@ -952,13 +957,15 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
     }
 
     // Swapchain image handling...
-    
 
     // Blueprints
     init_blueprints(rndr);
 
-    // Pipelines
-    init_pipelines(rndr);
+    // Pipeline cache (no pipelines yet)
+    init_gpu_resource_cache(rndr, &rndr->pline_cache, 32);
+
+    // Framebuffer cache (no framebuffers yet)
+    init_gpu_resource_cache(rndr, &rndr->fb_cache, 16);
 
     // Geometry stream groups
     init_geometry_stream_groups(rndr);
@@ -1003,17 +1010,6 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
         return result;
     }
 
-    // Swapchain images and framebuffers...
-    result = init_swapchain_images_and_framebuffer(rndr);
-    if (result != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup swapchain images/framebuffers");
-        return result;
-    }
-
-    // We reserve the first render texture target as the swapchain image - and update the current fif texture to
-    // reference the swapchain image at the start of every frame once we acquire it
-    rndr->swapchain = acquire_slot(&rndr->rtargets.textures);
-
 #ifdef USE_IMGUI
     init_imgui(rndr, win_hndl);
 #endif
@@ -1035,9 +1031,6 @@ void terminate_renderer(renderer *rndr)
 #ifdef USE_IMGUI
     terminate_imgui(rndr);
 #endif
-
-    // Don't free the depth image view/image (or other swapchain atts) as they will just have been freed
-    vkr_terminate_swapchain_framebuffers(&rndr->vk.inst.device, &rndr->vk);
 
     // Global samplers
     terminate_global_samplers(rndr);
@@ -1063,8 +1056,11 @@ void terminate_renderer(renderer *rndr)
     // Geometry vert/index buffers
     terminate_geometry_stream_groups(rndr);
 
-    // Pipelines
-    terminate_pipelines(rndr);
+    // Framebuffer cache and all created framebuffers
+    terminate_gpu_resource_cache(rndr, &rndr->fb_cache, [rndr](vkr_framebuffer *fb) { vkr_terminate_framebuffer(fb, &rndr->vk); });
+
+    // Pipeline cache and all created pipelines
+    terminate_gpu_resource_cache(rndr, &rndr->pline_cache, [rndr](gpu_handle *pl) { vkr_terminate_pipeline(*((VkPipeline*)pl), &rndr->vk); });
 
     // Blueprints
     terminate_blueprints(rndr);
@@ -1249,7 +1245,7 @@ u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc 
     asrt(desc.layouts.size > 0);
     asrt(desc.layouts[0].streams.size > 0);
     asrt(desc.layouts[0].streams[0].attribs.size > 0);
-    asrt(rndr->geom_groups.size < rndr->geom_groups.capacity);
+    asrt(rndr->geom_groups.size <= rndr->geom_groups.capacity);
     u32 geom_id = (u32)rndr->geom_groups.size++;
     auto cur_group = &rndr->geom_groups[geom_id];
 
@@ -1510,7 +1506,7 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
     vkr_image_cfg cfg{};
     cfg.format = get_vk_format(ci.format);
     bool is_color = (ci.type == RTARGET_TEXTURE_TYPE_COLOR || ci.type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
-    cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+    cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
     cfg.im_create_flags = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     cfg.dims = {ci.dims == svec2{} ? get_window_pixel_size(rndr->vk.cfg.window) : ci.dims, 1u};
     cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -1522,12 +1518,14 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
 
     vkr_image_view_cfg iv_cfg{};
     iv_cfg.view_type = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+    iv_cfg.srange.aspectMask = is_color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         int result = vkr_init_image(&tref.item->frames[i].image, cfg);
         asrt(result == err_code::VKR_NO_ERROR);
-        vkr_image_view_cfg ivcfg{};
         iv_cfg.image = &tref.item->frames[i].image;
+        result = vkr_init_image_view(&tref.item->frames[i].view, iv_cfg, &rndr->vk);
+        asrt(result == err_code::VKR_NO_ERROR);
     }
 
     hmap_insert(&rndr->rtargets.texture_id_map, tref.item->id, tref.hndl);
@@ -1580,15 +1578,19 @@ intern rmanifest *create_manifest(renderer *rndr)
     for (u32 i = 0; i < m->textures.size; ++i) {
         m->textures[i] = rndr->rtargets.textures.slots[i].item;
     }
-    
+
     // Buffers
     arr_init(&m->buffers, &rndr->frame_linear);
     arr_resize(&m->buffers, rndr->rtargets.buffers.slots.size);
     for (u32 i = 0; i < m->buffers.size; ++i) {
         m->buffers[i] = rndr->rtargets.buffers.slots[i].item;
     }
-    
+
     return m;
+}
+
+intern int get_fif_ind(renderer *rndr) {
+    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
 }
 
 rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
@@ -1600,14 +1602,17 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     reset_arena(&rndr->frame_linear);
 
     // Update finished frames which is used to get the current frame
-    int current_frame_ind = rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
-    auto *cur_frame = &rndr->fifs[current_frame_ind];
+    int fif = get_fif_ind(rndr);
+    auto *cur_fif = &rndr->fifs[fif];
+
+    // Reset command pool
+    vkResetCommandPool(dev->hndl, cur_fif->cmd_pool, {});
 
     // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
     // triggered state so there will be no waiting on the first time. We then reset the fence (aka set it to
     // untriggered) and it is passed to the vkQueueSubmit call to trigger it again. So if not the first time rendering
     // this FIF, we are waiting for the vkQueueSubmit from the previous time this FIF was rendered to complete
-    int vk_res = vkWaitForFences(dev->hndl, 1, &cur_frame->in_flight, VK_TRUE, UINT64_MAX);
+    int vk_res = vkWaitForFences(dev->hndl, 1, &cur_fif->in_flight, VK_TRUE, UINT64_MAX);
     if (vk_res != VK_SUCCESS) {
         elog("Failed to wait for fence");
         return nullptr;
@@ -1618,7 +1623,8 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     /////////////////////////////////
     // Acquire the image, signal the image_avail semaphore once the image has been acquired. We get the index back, but
     // that doesn't mean the image is ready. The image is only ready (on the GPU side) once the image avail semaphore is triggered
-    vk_res = vkAcquireNextImageKHR(dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_frame->image_avail, VK_NULL_HANDLE, &cur_frame->cur_im_ind);
+    vk_res = vkAcquireNextImageKHR(
+        dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_fif->image_avail, VK_NULL_HANDLE, &cur_fif->cur_im_ind);
 
     // If the image is out of date/suboptimal we need to recreate the swapchain and our caller needs to exit early as
     // well. It seems that on some platforms, if the result from above is out of date or suboptimal, the semaphore
@@ -1641,7 +1647,7 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     // only thing that will trigger the fence - so this is why this reset needs to come here (rather than right after
     // waiting) because if we return early due to swapchain resize, and we had reset the fence, then the next time our
     // frame came around we would just be stuck waiting forever
-    vk_res = vkResetFences(dev->hndl, 1, &cur_frame->in_flight);
+    vk_res = vkResetFences(dev->hndl, 1, &cur_fif->in_flight);
     if (vk_res != VK_SUCCESS) {
         elog("Failed to reset fence");
         return nullptr;
@@ -1649,10 +1655,10 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
 
     // Update our special swapchain handle
     auto sw = &rndr->vk.inst.device.swapchain;
-    rndr->swapchain.item->frames[current_frame_ind].view = sw->image_views[cur_frame->cur_im_ind];
-    rndr->swapchain.item->frames[current_frame_ind].image = sw->images[cur_frame->cur_im_ind];
-    
-    
+    rndr->swapchain.item->frames[fif].view = sw->image_views[cur_fif->cur_im_ind];
+    rndr->swapchain.item->frames[fif].image = sw->images[cur_fif->cur_im_ind];
+    rndr->swapchain.item->frames[fif].state = {};
+
 // Start GUI frame
 #ifdef USE_IMGUI
     ImGui_ImplVulkan_NewFrame();
@@ -1660,12 +1666,10 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     ImGui::NewFrame();
 #endif
 
-    // Setup global swapchain texture handle
-    
     rmanifest *m = create_manifest(rndr);
     m->rndr = rndr;
     m->rbp = bp;
-    
+
     return m;
 }
 
@@ -1674,11 +1678,10 @@ int end_render_frame(rmanifest *m)
     PROFILE_SCOPE("end_render_frame");
     asrt(m);
     asrt(is_valid(m->rbp));
-
     auto dev = &m->rndr->vk.inst.device;
-    int current_frame_ind = m->rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
-    auto *cur_frame = &m->rndr->fifs[current_frame_ind];
- 
+    int fif = get_fif_ind(m->rndr);
+    auto *cur_frame = &m->rndr->fifs[fif];
+
 // Finalize IM GUI data - not dependent on our render stuff currently
 #ifdef USE_IMGUI
     ImGui::Render();
@@ -1687,20 +1690,36 @@ int end_render_frame(rmanifest *m)
     // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
     // ind to the command pool
-    auto fb = &dev->swapchain.fbs[cur_frame->cur_im_ind];
+    //auto fb = &dev->swapchain.fbs[cur_frame->cur_im_ind];
     // asrt(fb && "Invalid framebuffer");
 
-    ///////////////////////////
-    // Record Command Buffer //
-    ///////////////////////////
+    ////////////////////////////
+    // Record Command Buffers //
+    ////////////////////////////
+    array<VkCommandBuffer> bufs;
+    arr_init(&bufs, &m->rndr->frame_linear, m->jobs.size);
+    arr_resize(&bufs, m->jobs.size);
+    
+    vkr_alloc_cmd_bufs_cfg buf_cfgs{};
+    buf_cfgs.count = m->jobs.size;
+    vkr_alloc_cmd_bufs(bufs.data, buf_cfgs, &m->rndr->vk);
+
+    for (u32 rji = 0; rji < m->jobs.size; ++rji) {
+        int err = vkr_begin_cmd_buf(bufs[rji], {});
+        if (err != err_code::VKR_NO_ERROR) {
+            continue;
+        }
+        
+        
+        vkr_end_cmd_buf(bufs[rji]);
+    }
     // We have the acquired image index, though we don't know when it will be ready to have ops submitted, we can record
     // the ops in the command buffer and submit once it is ready
     // This takes about %80 of the run frame
-    int vk_res = record_command_buffer(m->rndr, fb, cur_frame);
+    int vk_res = record_command_buffer(m->rndr, nullptr, cur_frame);
     if (vk_res != err_code::RENDER_NO_ERROR) {
         return vk_res;
     }
-
 
     //////////////////////////////////
     // Submit command buffer to GPU //

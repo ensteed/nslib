@@ -203,8 +203,8 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     // Initialize our renderer - fail early if init fails
     init_renderer_params p{
-        .upsream = &ctxt->arenas.free_list,
         .win_hndl = ctxt->win_hndl,
+        .upsream = &ctxt->arenas.free_list,
         .persist_fl_size = 200 * MB_SIZE,
         .persist_stack_size = 10 * MB_SIZE,
         .frame_linear_size = 10 * MB_SIZE,

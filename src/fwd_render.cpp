@@ -113,10 +113,13 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, mesh *geom, mem_arena *arena
 
     geom->rhndl = create_geometry(rndr, cinf);
     bool result = is_valid(geom->rhndl);
-    if (!result) {
-        wlog("Could not create %s mesh render resource", ls(geom->name));
+    if (result) {
+        ilog("Uploaded geometry to renderer for %s", ls(geom->name));
+        
     }
-
+    else {
+        wlog("Could not upload geometry to renderer for %s", ls(geom->name));
+    }
     mem_free(tmp_inds, arena);
     mem_free(tmp_bone_weight_ids, arena);
     mem_free(tmp_norm_tan_uvs, arena);
@@ -144,8 +147,13 @@ void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena)
         ctinfo.data = iter.item->pixels;
         ctinfo.data_size = get_texture_memsize(iter.item);
         ctinfo.format = get_rformat_for_usage(iter.item->usage);
-        create_texture(rndr, ctinfo);
-        ilog("Should create render texture %s", ls(iter.item->name));
+        iter.item->rndr_hndl = create_texture(rndr, ctinfo);
+        if (is_valid(iter.item->rndr_hndl)) {
+            ilog("Uploaded texture %s to renderer", ls(iter.item->name));
+        }
+        else {
+            wlog("Failed to upload texture %s to renderer", ls(iter.item->name));
+        }
     }
 }
 

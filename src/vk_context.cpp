@@ -1239,43 +1239,28 @@ void vkr_terminate_pipeline(VkPipeline hndl, const vkr_context *vk)
 
 int vkr_init_framebuffer(vkr_framebuffer *fb, const vkr_framebuffer_cfg &cfg, const vkr_context *vk)
 {
-    asrt(cfg.rpass);
-    asrt(cfg.attachments);
-
-    arr_init(&fb->attachments, vk->cfg.arenas.persistent_arena);
-    fb->size = cfg.size;
-    fb->layers = fb->layers;
-
-    arr_copy(&fb->attachments, cfg.attachments, cfg.attachment_count);
-
-    array<VkImageView> att;
-    arr_init(&att, vk->cfg.arenas.command_arena);
-    arr_resize(&att, cfg.attachment_count);
-    for (int i = 0; i < att.size; ++i) {
-        att[i] = cfg.attachments[i].im_view;
-    }
+    asrt(cfg.kd.rpass);
+    fb->kd = cfg.kd;
 
     VkFramebufferCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    create_info.renderPass = cfg.rpass;
-    create_info.pAttachments = att.data;
-    create_info.attachmentCount = (u32)att.size;
-    create_info.width = cfg.size.x;
-    create_info.height = cfg.size.y;
-    create_info.layers = cfg.layers;
+    create_info.renderPass = fb->kd.rpass;
+    create_info.pAttachments = fb->kd.atts.data;
+    create_info.attachmentCount = fb->kd.atts.size;
+    create_info.width = fb->kd.dims.x;
+    create_info.height = fb->kd.dims.y;
+    create_info.layers = fb->kd.layers;
     int res = vkCreateFramebuffer(vk->inst.device.hndl, &create_info, &vk->alloc_cbs, &fb->hndl);
     if (res != VK_SUCCESS) {
         elog("Failed to create framebuffer with vk err %d", res);
         return err_code::VKR_CREATE_FRAMEBUFFER_FAIL;
     }
-    arr_terminate(&att);
     return err_code::VKR_NO_ERROR;
 }
 
 void vkr_terminate_framebuffer(vkr_framebuffer *fb, const vkr_context *vk)
 {
     vkDestroyFramebuffer(vk->inst.device.hndl, fb->hndl, &vk->alloc_cbs);
-    arr_terminate(&fb->attachments);
 }
 
 u32 vkr_find_mem_type(u32 type_flags, VkMemoryPropertyFlags property_flags, const vkr_phys_device *pdev)
@@ -1676,82 +1661,6 @@ void vkr_terminate_semaphore(VkSemaphore hndl, const vkr_context *vk)
     vkDestroySemaphore(vk->inst.device.hndl, hndl, &vk->alloc_cbs);
 }
 
-void vkr_init_swapchain_framebuffers(vkr_device *device,
-                                     const vkr_context *vk,
-                                     VkRenderPass rpass,
-                                     const array<array<vkr_framebuffer_attachment>> *other_attachments)
-{
-    // arr_init(vk->inst.)
-    //  Set framebuffers
-    arr_init(&device->swapchain.fbs, vk->cfg.arenas.persistent_arena);
-    arr_resize(&device->swapchain.fbs, device->swapchain.image_views.size);
-    for (int i = 0; i < vk->inst.device.swapchain.fbs.size; ++i) {
-        vkr_framebuffer_cfg cfg{};
-        cfg.size = {vk->inst.device.swapchain.extent.width, vk->inst.device.swapchain.extent.height};
-        cfg.rpass = rpass;
-        array<vkr_framebuffer_attachment> atts;
-        arr_init(&atts, vk->cfg.arenas.command_arena);
-
-        vkr_framebuffer_attachment col_att{};
-        col_att.im_view = device->swapchain.image_views[i];
-        arr_push_back(&atts, col_att);
-        if (other_attachments) {
-            arr_append(&atts, (*other_attachments)[i].data, (*other_attachments)[i].size);
-        }
-        cfg.attachment_count = (u32)atts.size;
-        cfg.attachments = atts.data;
-        vkr_init_framebuffer(&device->swapchain.fbs[i], cfg, vk);
-        arr_terminate(&atts);
-    }
-}
-
-void vkr_init_swapchain_framebuffers(vkr_device *device,
-                                     const vkr_context *vk,
-                                     VkRenderPass rpass,
-                                     const vkr_framebuffer_attachment &other_attachment)
-{
-    array<array<vkr_framebuffer_attachment>> other_atts;
-    arr_init(&other_atts, vk->cfg.arenas.command_arena);
-    arr_resize(&other_atts, device->swapchain.image_views.size);
-    for (int i = 0; i < other_atts.size; ++i) {
-        arr_init(&other_atts[i], vk->cfg.arenas.command_arena);
-        arr_emplace_back(&other_atts[i], other_attachment);
-    }
-    vkr_init_swapchain_framebuffers(device, vk, rpass, &other_atts);
-    for (int i = 0; i < other_atts.size; ++i) {
-        arr_terminate(&other_atts[i]);
-    }
-    arr_terminate(&other_atts);
-}
-
-void vkr_init_swapchain_framebuffers(vkr_device *device,
-                                     const vkr_context *vk,
-                                     VkRenderPass rpass,
-                                     const array<vkr_framebuffer_attachment> &other_attachments)
-{
-    array<array<vkr_framebuffer_attachment>> other_atts;
-    arr_init(&other_atts, vk->cfg.arenas.command_arena);
-    arr_resize(&other_atts, device->swapchain.image_views.size);
-    for (int i = 0; i < other_atts.size; ++i) {
-        arr_init(&other_atts[i], vk->cfg.arenas.command_arena);
-        arr_append(&other_atts[i], other_attachments.data, other_attachments.size);
-    }
-    vkr_init_swapchain_framebuffers(device, vk, rpass, &other_atts);
-    for (int i = 0; i < other_atts.size; ++i) {
-        arr_terminate(&other_atts[i]);
-    }
-    arr_terminate(&other_atts);
-}
-
-void vkr_terminate_swapchain_framebuffers(vkr_device *device, const vkr_context *vk)
-{
-    for (int i = 0; i < vk->inst.device.swapchain.fbs.size; ++i) {
-        vkr_terminate_framebuffer(&device->swapchain.fbs[i], vk);
-        device->swapchain.fbs[i] = {};
-    }
-    arr_terminate(&device->swapchain.fbs);
-}
-
 // Initialize surface in the vk_context from the window - the instance must have been created already
 int vkr_init_surface(const vkr_context *vk, VkSurfaceKHR *surface)
 {
@@ -1959,7 +1868,7 @@ void vkr_cmd_begin_rpass(VkCommandBuffer cmd_buf,
     info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     info.renderPass = rpass;
     info.framebuffer = fb->hndl;
-    info.renderArea.extent = {fb->size.w, fb->size.h};
+    info.renderArea.extent = {fb->kd.dims.w, fb->kd.dims.h};
 
     // TODO: Figure out what all these different things are with regards to screen size...
     // Viewport.. ImageView extent.. framebuffer size.. render area..

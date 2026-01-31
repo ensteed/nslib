@@ -51,6 +51,12 @@ struct slot_item_ref {
     T *item;
 };
 
+op_eq_func_tt(slot_item_ref) {
+    return lhs.item == rhs.item && lhs.hndl == rhs.hndl;
+}
+
+op_neq_func_tt(slot_item_ref);
+
 template<typename T>
 bool is_valid(const slot_item_ref<T> &ref)
 {

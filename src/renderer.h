@@ -180,7 +180,6 @@ struct frame_context
     // Frame cmd pool
     // TODO: There should really be a command pool for each frame, and a command buffer allocated for each draw set
     VkCommandPool cmd_pool;
-    VkCommandBuffer cmd_buffer;
 
     // Reset every frame
     VkDescriptorPool desc_pool;
@@ -249,9 +248,9 @@ const svec2 DEFAULT_SHADOW_MAP_SIZE = {2048, 2048};
 
 struct rtexture_state
 {
-    VkImageLayout layout;
-    VkAccessFlags access;
-    VkPipelineStageFlags stage;
+    VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};
+    VkAccessFlags access{VK_ACCESS_NONE};
+    VkPipelineStageFlags stage{VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
 };
 
 struct rbuffer_state
@@ -358,6 +357,25 @@ struct rtexture_target_desc
 
 // rbp_pass *create_pass(render_blueprint *bp, const char *pass_t);
 // void add_subpass(rbp_pass *pass);
+template<typename T>
+struct gpu_resource_entry {
+    T gpu_d;
+    u64 key;
+};
+
+template<typename T>
+struct gpu_resource_cache {
+    hmap<u64, slot_handle<gpu_resource_entry<T>>> key_lut;
+    slot_pool<gpu_resource_entry<T>> items;
+};
+
+using framebuffer_entry = gpu_resource_entry<vkr_framebuffer>;
+using framebuffer_handle = slot_handle<framebuffer_entry>;
+using framebuffer_cache = gpu_resource_cache<vkr_framebuffer>;
+
+using pipeline_entry = gpu_resource_entry<gpu_handle>;
+using pipeline_handle = slot_handle<pipeline_entry>;
+using pipeline_cache = gpu_resource_cache<gpu_handle>;
 
 struct renderer
 {
@@ -372,7 +390,8 @@ struct renderer
 
     // Renderer resources
     // TODO: Implement this for smarter pipeline creation
-    hmap<pipeline_key, gpu_handle> pline_cache;
+    pipeline_cache pline_cache;
+    framebuffer_cache fb_cache;
 
     slot_pool<rtechnique_info> techniques{};
     slot_pool<rmaterial_info> materials{};
@@ -415,7 +434,6 @@ struct renderer
 
     rresource_target_registry rtargets{};
     rtexture_target_ref swapchain{};
-    rtexture_handle swapchain_fb_depth_stencil{};
 };
 
 struct init_renderer_params
@@ -426,6 +444,7 @@ struct init_renderer_params
     sizet persist_stack_size;
     sizet frame_linear_size;
 };
+
 
 int init_renderer(renderer *rndr, const init_renderer_params &p);
 void terminate_renderer(renderer *rndr);
