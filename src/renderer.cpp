@@ -1010,6 +1010,10 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
         return result;
     }
 
+    // We reserve the first render texture target as the swapchain image - and update the current fif texture to
+    // reference the swapchain image at the start of every frame once we acquire it
+    rndr->swapchain = acquire_slot(&rndr->rtargets.textures);
+
 #ifdef USE_IMGUI
     init_imgui(rndr, win_hndl);
 #endif
@@ -1569,6 +1573,21 @@ intern rmanifest *create_manifest(renderer *rndr)
     arr_init(&m->jobs, &rndr->frame_linear, 24);
     arr_init(&m->passes, &rndr->frame_linear, 12);
     arr_init(&m->views, &rndr->frame_linear, 12);
+
+    // Initialize our manifest textures and buffers with the global ones (well, globabl to the renderer)
+    arr_init(&m->textures, &rndr->frame_linear);
+    arr_resize(&m->textures, rndr->rtargets.textures.slots.size);
+    for (u32 i = 0; i < m->textures.size; ++i) {
+        m->textures[i] = rndr->rtargets.textures.slots[i].item;
+    }
+    
+    // Buffers
+    arr_init(&m->buffers, &rndr->frame_linear);
+    arr_resize(&m->buffers, rndr->rtargets.buffers.slots.size);
+    for (u32 i = 0; i < m->buffers.size; ++i) {
+        m->buffers[i] = rndr->rtargets.buffers.slots[i].item;
+    }
+    
     return m;
 }
 
@@ -1579,13 +1598,6 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
 
     reset_arena(&rndr->vk_frame_linear);
     reset_arena(&rndr->frame_linear);
-
-// Start GUI frame
-#ifdef USE_IMGUI
-    ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
-#endif
 
     // Update finished frames which is used to get the current frame
     int current_frame_ind = rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
@@ -1601,9 +1613,59 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
         return nullptr;
     }
 
+    /////////////////////////////////
+    // Acquire Swapchain Image Ind //
+    /////////////////////////////////
+    // Acquire the image, signal the image_avail semaphore once the image has been acquired. We get the index back, but
+    // that doesn't mean the image is ready. The image is only ready (on the GPU side) once the image avail semaphore is triggered
+    vk_res = vkAcquireNextImageKHR(dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_frame->image_avail, VK_NULL_HANDLE, &cur_frame->cur_im_ind);
+
+    // If the image is out of date/suboptimal we need to recreate the swapchain and our caller needs to exit early as
+    // well. It seems that on some platforms, if the result from above is out of date or suboptimal, the semaphore
+    // associated with it will never get triggered. So if we were to continue and just resize at the end of frame it
+    // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
+    // At least.. i think?
+    if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
+        recreate_swapchain(rndr);
+        return nullptr;
+    }
+    else if (vk_res != VK_SUCCESS && vk_res != VK_SUBOPTIMAL_KHR) {
+        elog("Failed to acquire swapchain image");
+        return nullptr;
+    }
+
+    /////////////////////
+    // Reset FIF Fence //
+    /////////////////////
+    // Here we reset the fence for the current frame fence as we know we are going to call queue submit which is the
+    // only thing that will trigger the fence - so this is why this reset needs to come here (rather than right after
+    // waiting) because if we return early due to swapchain resize, and we had reset the fence, then the next time our
+    // frame came around we would just be stuck waiting forever
+    vk_res = vkResetFences(dev->hndl, 1, &cur_frame->in_flight);
+    if (vk_res != VK_SUCCESS) {
+        elog("Failed to reset fence");
+        return nullptr;
+    }
+
+    // Update our special swapchain handle
+    auto sw = &rndr->vk.inst.device.swapchain;
+    rndr->swapchain.item->frames[current_frame_ind].view = sw->image_views[cur_frame->cur_im_ind];
+    rndr->swapchain.item->frames[current_frame_ind].image = sw->images[cur_frame->cur_im_ind];
+    
+    
+// Start GUI frame
+#ifdef USE_IMGUI
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+#endif
+
+    // Setup global swapchain texture handle
+    
     rmanifest *m = create_manifest(rndr);
     m->rndr = rndr;
     m->rbp = bp;
+    
     return m;
 }
 
@@ -1616,44 +1678,7 @@ int end_render_frame(rmanifest *m)
     auto dev = &m->rndr->vk.inst.device;
     int current_frame_ind = m->rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
     auto *cur_frame = &m->rndr->fifs[current_frame_ind];
-
-    if (window_resized_this_frame(m->rndr->vk.cfg.window)) {
-        m->rndr->no_resize_frames = 0.0;
-    }
-    else {
-        m->rndr->no_resize_frames += m->fp.dt;
-    }
-
-    /////////////////////////////////
-    // Acquire Swapchain Image Ind //
-    /////////////////////////////////
-    // Acquire the image, signal the image_avail semaphore once the image has been acquired. We get the index back, but
-    // that doesn't mean the image is ready. The image is only ready (on the GPU side) once the image avail semaphore is triggered
-    u32 im_ind{};
-    int vk_res = vkAcquireNextImageKHR(dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_frame->image_avail, VK_NULL_HANDLE, &im_ind);
-
-    // If the image is out of date/suboptimal we need to recreate the swapchain and our caller needs to exit early as
-    // well. It seems that on some platforms, if the result from above is out of date or suboptimal, the semaphore
-    // associated with it will never get triggered. So if we were to continue and just resize at the end of frame it
-    // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
-    // At least.. i think?
-    if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
-        if (m->rndr->no_resize_frames > RESIZE_DEBOUNCE_FRAME_COUNT) {
-            recreate_swapchain(m->rndr);
-        }
-#ifdef USE_IMGUI
-        ImGui::EndFrame();
-#endif
-        return vk_res;
-    }
-    else if (vk_res != VK_SUCCESS && vk_res != VK_SUBOPTIMAL_KHR) {
-        elog("Failed to acquire swapchain image");
-#ifdef USE_IMGUI
-        ImGui::EndFrame();
-#endif
-        return err_code::RENDER_ACQUIRE_IMAGE_FAIL;
-    }
-
+ 
 // Finalize IM GUI data - not dependent on our render stuff currently
 #ifdef USE_IMGUI
     ImGui::Render();
@@ -1662,7 +1687,7 @@ int end_render_frame(rmanifest *m)
     // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
     // ind to the command pool
-    auto fb = &dev->swapchain.fbs[im_ind];
+    auto fb = &dev->swapchain.fbs[cur_frame->cur_im_ind];
     // asrt(fb && "Invalid framebuffer");
 
     ///////////////////////////
@@ -1671,21 +1696,11 @@ int end_render_frame(rmanifest *m)
     // We have the acquired image index, though we don't know when it will be ready to have ops submitted, we can record
     // the ops in the command buffer and submit once it is ready
     // This takes about %80 of the run frame
-    vk_res = record_command_buffer(m->rndr, fb, cur_frame);
+    int vk_res = record_command_buffer(m->rndr, fb, cur_frame);
     if (vk_res != err_code::RENDER_NO_ERROR) {
         return vk_res;
     }
 
-    /////////////////////
-    // Reset FIF Fence //
-    /////////////////////
-    // Here we reset the fence for the current frame fence as we know we are going to call queue submit which is the
-    // only thing that will trigger the fence - so this is why this reset needs to come here (rather than right after waiting)
-    vk_res = vkResetFences(dev->hndl, 1, &cur_frame->in_flight);
-    if (vk_res != VK_SUCCESS) {
-        elog("Failed to reset fence");
-        return err_code::RENDER_RESET_FENCE_FAIL;
-    }
 
     //////////////////////////////////
     // Submit command buffer to GPU //
@@ -1701,7 +1716,7 @@ int end_render_frame(rmanifest *m)
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &cur_frame->cmd_buffer;
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[im_ind];
+    submit_info.pSignalSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
     if (vkQueueSubmit(dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE], 1, &submit_info, cur_frame->in_flight) != VK_SUCCESS) {
         return err_code::RENDER_SUBMIT_QUEUE_FAIL;
     }
@@ -1713,10 +1728,10 @@ int end_render_frame(rmanifest *m)
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[im_ind];
+    present_info.pWaitSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &dev->swapchain.swapchain;
-    present_info.pImageIndices = &im_ind;
+    present_info.pImageIndices = &cur_frame->cur_im_ind;
     present_info.pResults = nullptr; // Optional - check for individual swaps
     vk_res = vkQueuePresentKHR(dev->qfams[VKR_QUEUE_FAM_TYPE_PRESENT].qs[VKR_RENDER_QUEUE], &present_info);
 

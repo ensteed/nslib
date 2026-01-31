@@ -174,6 +174,11 @@ struct imgui_ctxt
 
 struct frame_context
 {
+    // Updated at the start of each render frame once the image ind is acquired
+    u32 cur_im_ind;
+
+    // Frame cmd pool
+    // TODO: There should really be a command pool for each frame, and a command buffer allocated for each draw set
     VkCommandPool cmd_pool;
     VkCommandBuffer cmd_buffer;
 
@@ -409,6 +414,7 @@ struct renderer
     slot_pool<render_blueprint> blueprints{};
 
     rresource_target_registry rtargets{};
+    rtexture_target_ref swapchain{};
     rtexture_handle swapchain_fb_depth_stencil{};
 };
 
