@@ -415,7 +415,7 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
                 // Use format to tell if attachment hasn't been set yet - if it hasn't we set it as this is the first
                 // resource using that attachment
                 if (att->format == VK_FORMAT_UNDEFINED) {
-                    att->format = get_vk_format(slot.format);
+                    att->format = get_vk_format(&rndr->vk, slot.format);
                     asrt(att->format != VK_FORMAT_UNDEFINED);
                     att->samples = VK_SAMPLE_COUNT_1_BIT;
                     att->loadOp = use_stencil ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : get_requirement_load_op(req);

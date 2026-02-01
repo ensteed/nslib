@@ -102,7 +102,7 @@ struct rmanifest
 mpass_id push_pass(rmanifest *m, rbp_pass_id pid, rpass_slot_assignment *assignments, sizet assignment_count);
 mpass_id push_pass(rmanifest *m, rbp_pass_id pid);
 mview_id push_view(rmanifest *m, const mat4 &proj, const mat4 &cam);
-mrender_job_id push_render_job(rmanifest *m, const mrender_job &rj);
+mrender_job_id push_render_job(rmanifest *m, mpass_id pass, mview_id view, render_job_cb *cb, void *cb_params);
 u32 push_draw(rmanifest *m, const mdraw_params &dp);
 
 } // namespace nslib

@@ -172,6 +172,11 @@ struct imgui_ctxt
     mem_arena fl;
 };
 
+struct frame_thread_cmd {
+    VkCommandPool pool;
+    VkCommandBuffer buf;
+};
+
 struct frame_context
 {
     // Updated at the start of each render frame once the image ind is acquired
@@ -179,7 +184,7 @@ struct frame_context
 
     // Frame cmd pool
     // TODO: There should really be a command pool for each frame, and a command buffer allocated for each draw set
-    VkCommandPool cmd_pool;
+    array<frame_thread_cmd> thread_pools;
 
     // Reset every frame
     VkDescriptorPool desc_pool;
@@ -439,11 +444,11 @@ struct init_renderer_params
 {
     void *win_hndl;
     mem_arena *upsream;
+    sizet thread_count{4};
     sizet persist_fl_size;
     sizet persist_stack_size;
     sizet frame_linear_size;
 };
-
 
 int init_renderer(renderer *rndr, const init_renderer_params &p);
 void terminate_renderer(renderer *rndr);
@@ -451,7 +456,7 @@ void terminate_renderer(renderer *rndr);
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
 
-VkFormat get_vk_format(rformat fmt);
+VkFormat get_vk_format(const vkr_context *vk, rformat fmt);
 
 u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 

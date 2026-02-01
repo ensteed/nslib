@@ -100,6 +100,8 @@ enum struct rformat
     D32_SFLOAT, // 4 bytes
     D24_UNORM_S8_UINT, // 4 bytes
     D32_SFLOAT_S8_UINT, // 8 bytes
+    // Whatever format the swapchain is
+    SWAPCHAIN,
     INVALID,
 };
 

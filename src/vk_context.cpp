@@ -770,7 +770,7 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk)
     swap_create.clipped = VK_TRUE;
     swap_create.oldSwapchain = VK_NULL_HANDLE;
     // Ideally we want as many swapchain images as frames in flight, but if that is not available, then we can make due
-    swap_create.minImageCount = MAX_FRAMES_IN_FLIGHT;
+    swap_create.minImageCount = std::max((u32)MAX_FRAMES_IN_FLIGHT, swap_support.capabilities.minImageCount);
     if (swap_support.capabilities.maxImageCount != 0 && swap_support.capabilities.maxImageCount < swap_create.minImageCount) {
         swap_create.minImageCount = swap_support.capabilities.maxImageCount;
     }
@@ -889,6 +889,9 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk)
 
 int vkr_alloc_cmd_bufs(VkCommandBuffer *bufs, const vkr_alloc_cmd_bufs_cfg &cfg, const vkr_context *vk)
 {
+    if (cfg.count == 0) {
+        return err_code::VKR_NO_ERROR;
+    }
     VkCommandBufferAllocateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     info.commandPool = cfg.pool;

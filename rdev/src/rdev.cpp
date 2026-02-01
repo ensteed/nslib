@@ -169,7 +169,7 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     auto pass_id = add_rbp_pass(rbp.item, {.name = "main-pass", .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
 
     rbp_slot_id col_slot_ind = add_rbp_resource_slot(
-        rbp.item, pass_id, {.name = "color", .format = rformat::RGBA8_SRGB, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
+        rbp.item, pass_id, {.name = "color", .format = rformat::SWAPCHAIN, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
     rbp_slot_id depth_slot_ind = add_rbp_resource_slot(
         rbp.item, pass_id, {.name = "depth", .format = rformat::D32_SFLOAT, .usage = rbp_resource_usage::DEPTH_ATTACHMENT});
 
@@ -288,7 +288,12 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
         {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, SWAPCHAIN_ID)}},
         {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, hash_type("depthy-poo"))}},
     };
-    push_pass(m, 0, assignments, 2);
+    auto mp_id = push_pass(m, 0, assignments, 2);
+
+    auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
+    auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
+    auto view_id = push_view(m, cam->proj, cam->view);
+    push_render_job(m, mp_id, view_id, nullptr, nullptr);
 }
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
@@ -309,12 +314,12 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     auto m = begin_render_frame(&app->rndr, find_render_blueprint(&app->rndr, hash_type("fwd-pbr")));
     build_manifest(m, app);
+
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
     ImGui::ShowDebugLogWindow();
 #endif
-    // bool open{true};
-    // ImGui::ShowDemoWindow();
+    
     int res = end_render_frame(m);
     end_platform_frame(ctxt);
     PROFILE_END_FRAME();
@@ -331,9 +336,6 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
 intern void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
-#ifdef USE_IMGUI
-    terminate_imgui(&app->rndr);
-#endif
     terminate_renderer(&app->rndr);
     terminate_keymap(&app->global_km);
     terminate_keymap(&app->movement_km);

@@ -31,10 +31,11 @@ mview_id push_view(rmanifest *m, const mat4 &proj, const mat4 &cam)
     return ind;
 }
 
-mrender_job_id push_render_job(rmanifest *m, const mrender_job &rj)
+mrender_job_id push_render_job(rmanifest *m, mpass_id pass, mview_id view, render_job_cb *cb, void *cb_params)
 {
     mrender_job_id ind = (mrender_job_id)m->jobs.size;
-    arr_push_back(&m->jobs, rj);
+    auto rj = arr_emplace_back(&m->jobs, pass, view, array<mdraw_call>{}, cb, cb_params);
+    arr_init(&rj->draw_calls, m->jobs.arena, 64);
     return ind;
 }
 
