@@ -33,7 +33,8 @@ struct mdraw_call
     instance_id iid;
 };
 
-enum struct mslot_target_type {
+enum struct mslot_target_type
+{
     INVALID,
     TEXTURE,
     BUFFER
@@ -42,7 +43,8 @@ enum struct mslot_target_type {
 struct rpass_slot_assignment
 {
     mslot_target_type type{};
-    union {
+    union
+    {
         rtexture_target_handle t;
         rbuffer_target_handle b;
     };
@@ -50,7 +52,8 @@ struct rpass_slot_assignment
 
 struct mpass
 {
-    rpass_slot_assignment slot_assignments[MAX_BP_PASS_SLOT_COUNT];
+    // These need to match exactly in size with the rbp slot count
+    static_array<rpass_slot_assignment, MAX_BP_PASS_SLOT_COUNT> slot_assignments;
     rbp_pass_id rbp_pid;
 };
 
@@ -78,7 +81,8 @@ struct mrender_job
     void *cb_user;
 };
 
-struct mframe_params {
+struct mframe_params
+{
     double dt;
 };
 
@@ -88,7 +92,7 @@ struct rmanifest
     render_blueprint_handle rbp;
     array<rbuffer_target> buffers;
     array<rtexture_target> textures;
-    
+
     mframe_params fp;
     array<mpass> passes;
     array<mview> views;
@@ -96,6 +100,7 @@ struct rmanifest
 };
 
 mpass_id push_pass(rmanifest *m, rbp_pass_id pid, rpass_slot_assignment *assignments, sizet assignment_count);
+mpass_id push_pass(rmanifest *m, rbp_pass_id pid);
 mview_id push_view(rmanifest *m, const mat4 &proj, const mat4 &cam);
 mrender_job_id push_render_job(rmanifest *m, const mrender_job &rj);
 u32 push_draw(rmanifest *m, const mdraw_params &dp);

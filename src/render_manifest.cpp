@@ -4,15 +4,24 @@
 namespace nslib
 {
 
-mpass_id push_pass(rmanifest *m, rbp_pass_id pid, rpass_slot_assignment *assignments, sizet assignment_count)
+mpass_id push_pass(rmanifest *m, rbp_pass_id pid)
 {
+    auto bp = get_render_blueprint(m->rndr, m->rbp);
     mpass_id ind = (mpass_id)m->passes.size;
     arr_resize(&m->passes, ind + 1);
+    arr_resize(&m->passes[ind].slot_assignments, bp->passes[pid].slots.size);
     m->passes[ind].rbp_pid = pid;
-    for (sizet i = 0; i < assignment_count; ++i) {
-        m->passes[ind].slot_assignments[i] = assignments[i];
-    }
     return ind;
+}
+
+mpass_id push_pass(rmanifest *m, rbp_pass_id pid, rpass_slot_assignment *assignments, sizet assignment_count)
+{
+    auto pind = push_pass(m, pid);
+    asrt(assignment_count == m->passes[pind].slot_assignments.size);
+    for (sizet i = 0; i < m->passes[pind].slot_assignments.size; ++i) {
+        m->passes[pind].slot_assignments[i] = assignments[i];
+    }
+    return pind;
 }
 
 mview_id push_view(rmanifest *m, const mat4 &proj, const mat4 &cam)

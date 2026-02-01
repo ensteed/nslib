@@ -73,7 +73,8 @@ bool sdl_event_func(void *sdl_event, void *)
     }
     return false;
 }
-intern void init_imgui(renderer *rndr, void *win_hndl)
+
+void init_imgui(renderer *rndr, const rbp_pass &pass)
 {
     auto dev = &rndr->vk.inst.device;
     // 263 KB seems to be about the min required - we'll give it a MB
@@ -81,13 +82,13 @@ intern void init_imgui(renderer *rndr, void *win_hndl)
 
     // Use the main forward pass for imgui.. this might only change if we use deferred shading.. but i think the imgui
     // created pipeling only requires a color attachment
-    // rndr->imgui.rpass = rndr->rpasses[RPASS_TYPE_OPAQUE].vk_hndl;
+    rndr->imgui.rpass = (VkRenderPass)pass.vk_handle;
 
     ImGui::SetAllocatorFunctions(imgui_mem_alloc, imgui_mem_free, &rndr->imgui.fl);
     rndr->imgui.ctxt = ImGui::CreateContext();
     ImGui::StyleColorsDark();
     auto &io = ImGui::GetIO();
-    io.FontGlobalScale = get_window_display_scale(win_hndl);
+    io.FontGlobalScale = get_window_display_scale(rndr->vk.cfg.window);
 
     vkr_desc_cfg cfg{};
     cfg.max_sets = 1;
@@ -121,9 +122,10 @@ intern void init_imgui(renderer *rndr, void *win_hndl)
         wlog("Could not create imgui vulkan font texture");
     }
 
-    set_platform_sdl_event_hook(win_hndl, {.cb = sdl_event_func});
+    set_platform_sdl_event_hook(rndr->vk.cfg.window, {.cb = sdl_event_func});
 }
-intern void terminate_imgui(renderer *rndr)
+
+void terminate_imgui(renderer *rndr)
 {
     ImGui_ImplVulkan_Shutdown();
     vkr_terminate_desc_pool(rndr->imgui.pool, &rndr->vk);
@@ -298,10 +300,10 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *, frame_contex
     PROFILE_SCOPE("record_command_buffer");
     auto dev = &rndr->vk.inst.device;
 
-    int err = vkr_begin_cmd_buf(cur_frame->cmd_buffer, {});
-    if (err != err_code::VKR_NO_ERROR) {
-        return err;
-    }
+    // int err = vkr_begin_cmd_buf(cur_frame->cmd_buffer, {});
+    // if (err != err_code::VKR_NO_ERROR) {
+    //     return err;
+    // }
 
     // VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
 
@@ -334,73 +336,73 @@ intern int record_command_buffer(renderer *rndr, vkr_framebuffer *, frame_contex
     //     scissor.extent = {fb->size.w, fb->size.h};
     //     vkCmdSetScissor(cur_frame->cmd_buffer, 0, 1, &scissor);
 
-// Bind frame rpass descriptor set
-// auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->frame_set_layouti].hndl;
-// vkCmdBindDescriptorSets(
-//     cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, G_FRAME_PL_LAYOUT, DESCRIPTOR_SET_LAYOUT_FRAME, 1, &ds, 0, nullptr);
+    // Bind frame rpass descriptor set
+    // auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->frame_set_layouti].hndl;
+    // vkCmdBindDescriptorSets(
+    //     cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, G_FRAME_PL_LAYOUT, DESCRIPTOR_SET_LAYOUT_FRAME, 1, &ds, 0, nullptr);
 
-// // We could make our render pass have the vert/index buffer info.. ie
-// auto pl_iter = hmap_begin(&rpass_iter->val->plines);
-// while (pl_iter) {
-//     // Grab the pipeline and set it, and set the viewport/scissor
-//     auto pipeline = &dev->pipelines[pl_iter->val->plinfo->plind];
-//     vkCmdBindPipeline(cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->hndl);
+    // // We could make our render pass have the vert/index buffer info.. ie
+    // auto pl_iter = hmap_begin(&rpass_iter->val->plines);
+    // while (pl_iter) {
+    //     // Grab the pipeline and set it, and set the viewport/scissor
+    //     auto pipeline = &dev->pipelines[pl_iter->val->plinfo->plind];
+    //     vkCmdBindPipeline(cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->hndl);
 
-//     auto ds = cur_frame->desc_pool.desc_sets[pl_iter->val->set_layouti].hndl;
-//     vkCmdBindDescriptorSets(
-//         cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout_hndl, DESCRIPTOR_SET_LAYOUT_PIPELINE, 1, &ds, 0,
-//         nullptr);
+    //     auto ds = cur_frame->desc_pool.desc_sets[pl_iter->val->set_layouti].hndl;
+    //     vkCmdBindDescriptorSets(
+    //         cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout_hndl, DESCRIPTOR_SET_LAYOUT_PIPELINE, 1, &ds, 0,
+    //         nullptr);
 
-//     auto mat_iter = hmap_begin(&pl_iter->val->mats);
-//     while (mat_iter) {
-//         // Bind the material set
-//         auto ds = cur_frame->desc_pool.desc_sets[mat_iter->val->set_layouti].hndl;
-//         vkCmdBindDescriptorSets(
-//             cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout_hndl, DESCRIPTOR_SET_LAYOUT_MATERIAL, 1, &ds, 0,
-//             nullptr);
+    //     auto mat_iter = hmap_begin(&pl_iter->val->mats);
+    //     while (mat_iter) {
+    //         // Bind the material set
+    //         auto ds = cur_frame->desc_pool.desc_sets[mat_iter->val->set_layouti].hndl;
+    //         vkCmdBindDescriptorSets(
+    //             cmd_buf->hndl, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout_hndl, DESCRIPTOR_SET_LAYOUT_MATERIAL, 1, &ds, 0,
+    //             nullptr);
 
-//         for (u32 dci = 0; dci < mat_iter->val->dcs.size; ++dci) {
-//             const draw_call *cur_dc = &mat_iter->val->dcs[dci];
-//             auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->obj_set_layouti].hndl;
-//             sizet obj_ubo_item_size = vkr_uniform_buffer_offset_alignment(&rndr->vk, sizeof(obj_ubo_data));
-//             // Our dynamic ubo_offset in to our singlestoring all of our transforms is computed by adding
-//             // the material base draw call ubo_offset (computed each frame).
-//             u32 dyn_offset = (u32)(obj_ubo_item_size * cur_dc->ubo_offset);
-//             vkCmdBindDescriptorSets(cmd_buf->hndl,
-//                                     VK_PIPELINE_BIND_POINT_GRAPHICS,
-//                                     pipeline->layout_hndl,
-//                                     DESCRIPTOR_SET_LAYOUT_OBJECT,
-//                                     1,
-//                                     &ds,
-//                                     1,
-//                                     &dyn_offset);
+    //         for (u32 dci = 0; dci < mat_iter->val->dcs.size; ++dci) {
+    //             const draw_call *cur_dc = &mat_iter->val->dcs[dci];
+    //             auto ds = cur_frame->desc_pool.desc_sets[rpass_iter->val->obj_set_layouti].hndl;
+    //             sizet obj_ubo_item_size = vkr_uniform_buffer_offset_alignment(&rndr->vk, sizeof(obj_ubo_data));
+    //             // Our dynamic ubo_offset in to our singlestoring all of our transforms is computed by adding
+    //             // the material base draw call ubo_offset (computed each frame).
+    //             u32 dyn_offset = (u32)(obj_ubo_item_size * cur_dc->ubo_offset);
+    //             vkCmdBindDescriptorSets(cmd_buf->hndl,
+    //                                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+    //                                     pipeline->layout_hndl,
+    //                                     DESCRIPTOR_SET_LAYOUT_OBJECT,
+    //                                     1,
+    //                                     &ds,
+    //                                     1,
+    //                                     &dyn_offset);
 
-//             push_constants pc{3};
-//             vkCmdPushConstants(cmd_buf->hndl, pipeline->layout_hndl, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constants), &pc);
-//             vkCmdDrawIndexed(cmd_buf->hndl,
-//                              cur_dc->index_count,
-//                              cur_dc->instance_count,
-//                              cur_dc->first_index,
-//                              cur_dc->vertex_offset,
-//                              cur_dc->first_instance);
-//         }
-//         mat_iter = hmap_next(&pl_iter->val->mats, mat_iter);
-//     }
-//     pl_iter = hmap_next(&rpass_iter->val->plines, pl_iter);
-// }
+    //             push_constants pc{3};
+    //             vkCmdPushConstants(cmd_buf->hndl, pipeline->layout_hndl, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constants), &pc);
+    //             vkCmdDrawIndexed(cmd_buf->hndl,
+    //                              cur_dc->index_count,
+    //                              cur_dc->instance_count,
+    //                              cur_dc->first_index,
+    //                              cur_dc->vertex_offset,
+    //                              cur_dc->first_instance);
+    //         }
+    //         mat_iter = hmap_next(&pl_iter->val->mats, mat_iter);
+    //     }
+    //     pl_iter = hmap_next(&rpass_iter->val->plines, pl_iter);
+    // }
 
-// If we are on the imgui rpass, render its stuff. It has it's own pipeling, vertex/index buffers, etc
-#ifdef USE_IMGUI
-    if (rpass->vk_hndl == rndr->imgui.rpass) {
-        auto img_data = ImGui::GetDrawData();
-        ImGui_ImplVulkan_RenderDrawData(img_data, cur_frame->cmd_buffer);
-    }
-#endif
+    // If we are on the imgui rpass, render its stuff. It has it's own pipeling, vertex/index buffers, etc
+    // #ifdef USE_IMGUI
+    //     if (rpass->vk_hndl == rndr->imgui.rpass) {
+    //         auto img_data = ImGui::GetDrawData();
+    //         ImGui_ImplVulkan_RenderDrawData(img_data, cur_frame->cmd_buffer);
+    //     }
+    // #endif
 
     //     vkr_cmd_end_rpass(cur_frame->cmd_buffer);
     // }
 
-    return vkr_end_cmd_buf(cur_frame->cmd_buffer);
+    return 0; // vkr_end_cmd_buf(cur_frame->cmd_buffer);
 }
 
 intern u32 get_format_byte_size(rformat format)
@@ -657,9 +659,6 @@ intern int init_frame_contexts(renderer *rndr)
         // Create frame command pool
         vkr_init_cmd_pool(
             &cur_fif->cmd_pool, dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, &rndr->vk);
-
-        // Create frame command buffer
-        vkr_alloc_cmd_bufs(&cur_fif->cmd_buffer, {.pool = cur_fif->cmd_pool}, &rndr->vk);
     }
     ilog("Successfully initialized %lu render frames in flight", rndr->fifs.size);
     return err_code::VKR_NO_ERROR;
@@ -689,10 +688,10 @@ intern void init_resource_target_registry(renderer *rndr)
 
     // We reserve the first render texture target as the swapchain image - and update the current fif texture to
     // reference the swapchain image at the start of every frame once we acquire it
-    rndr->swapchain = acquire_slot(&rndr->rtargets.textures);
-    strcpy(rndr->swapchain.item->name, "swapchain");
-    rndr->swapchain.item->id = hash_type("swapchain");
-    hmap_insert(&rndr->rtargets.texture_id_map, rndr->swapchain.item->id, rndr->swapchain.hndl);
+    auto swapchain = acquire_slot(&rndr->rtargets.textures);
+    strcpy(swapchain.item->name, "swapchain");
+    swapchain.item->id = hash_type("swapchain");
+    hmap_insert(&rndr->rtargets.texture_id_map, swapchain.item->id, swapchain.hndl);
 }
 
 // We assume device has already been waited here
@@ -702,7 +701,7 @@ intern void terminate_resource_target_registry(renderer *rndr)
     auto vk = &rndr->vk;
     for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
         for (auto iter = slot_pool_begin(&rndr->rtargets.textures); is_valid(iter); iter = slot_pool_next(&rndr->rtargets.textures, iter)) {
-            if (iter.item->id != rndr->swapchain.item->id) {
+            if (iter.item->id != SWAPCHAIN_ID) {
                 ilog("Terminating %s for FIF %d", iter.item->name, fif);
                 vkr_terminate_image_view(iter.item->frames[fif].view, vk);
                 vkr_terminate_image(&iter.item->frames[fif].image, vk);
@@ -895,22 +894,23 @@ intern void terminate_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *
     hmap_terminate(&cache->key_lut);
 }
 
-intern VkFramebuffer get_or_create_framebuffer(framebuffer_cache *cache, const vkr_framebuffer_key_data &kd, const vkr_context *vk) {
-    u64 hash = hash_type((const char*)&kd, sizeof(vkr_framebuffer_key_data));
+intern const vkr_framebuffer *get_or_create_framebuffer(framebuffer_cache *cache, const vkr_framebuffer_key_data &kd, const vkr_context *vk)
+{
+    u64 hash = hash_type((const char *)&kd, sizeof(vkr_framebuffer_key_data));
     auto fiter = hmap_find(&cache->key_lut, hash);
     if (fiter) {
         auto slitem = get_slot_item(&cache->items, fiter->val);
         asrt(slitem);
-        return slitem->gpu_d.hndl;
+        return &slitem->gpu_d;
     }
     ilog("Creating new framebuffer for unique hash %lu", hash);
     auto new_slot = acquire_slot(&cache->items);
     asrt(is_valid(new_slot) && "Out of framebuffer slots");
-    vkr_framebuffer_cfg cfg{.kd=kd};
+    vkr_framebuffer_cfg cfg{.kd = kd};
     int result = vkr_init_framebuffer(&new_slot.item->gpu_d, cfg, vk);
     asrt(result == err_code::VKR_NO_ERROR);
     hmap_insert(&cache->key_lut, hash, new_slot.hndl);
-    return new_slot.item->gpu_d.hndl;
+    return &new_slot.item->gpu_d;
 }
 
 intern void init_blueprints(renderer *rndr)
@@ -1010,10 +1010,6 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
         return result;
     }
 
-#ifdef USE_IMGUI
-    init_imgui(rndr, win_hndl);
-#endif
-
     // Setup our indice and vert buffer sbuffer
     return err_code::RENDER_NO_ERROR;
 }
@@ -1060,7 +1056,7 @@ void terminate_renderer(renderer *rndr)
     terminate_gpu_resource_cache(rndr, &rndr->fb_cache, [rndr](vkr_framebuffer *fb) { vkr_terminate_framebuffer(fb, &rndr->vk); });
 
     // Pipeline cache and all created pipelines
-    terminate_gpu_resource_cache(rndr, &rndr->pline_cache, [rndr](gpu_handle *pl) { vkr_terminate_pipeline(*((VkPipeline*)pl), &rndr->vk); });
+    terminate_gpu_resource_cache(rndr, &rndr->pline_cache, [rndr](gpu_handle *pl) { vkr_terminate_pipeline(*((VkPipeline *)pl), &rndr->vk); });
 
     // Blueprints
     terminate_blueprints(rndr);
@@ -1538,6 +1534,11 @@ rtexture_target_handle find_rtexture_target(renderer *rndr, rres_id id)
     return fiter ? fiter->val : rtexture_target_handle{};
 }
 
+rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl)
+{
+    return get_slot_item(&rndr->rtargets.textures, hndl);
+}
+
 rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci)
 {
     rbuffer_target_ref btref = acquire_slot(&rndr->rtargets.buffers);
@@ -1556,6 +1557,11 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
     }
     hmap_insert(&rndr->rtargets.buffer_id_map, btref.item->id, btref.hndl);
     return btref.hndl;
+}
+
+rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl)
+{
+    return get_slot_item(&rndr->rtargets.buffers, hndl);
 }
 
 rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
@@ -1589,7 +1595,8 @@ intern rmanifest *create_manifest(renderer *rndr)
     return m;
 }
 
-intern int get_fif_ind(renderer *rndr) {
+intern int get_fif_ind(renderer *rndr)
+{
     return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -1623,8 +1630,8 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     /////////////////////////////////
     // Acquire the image, signal the image_avail semaphore once the image has been acquired. We get the index back, but
     // that doesn't mean the image is ready. The image is only ready (on the GPU side) once the image avail semaphore is triggered
-    vk_res = vkAcquireNextImageKHR(
-        dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_fif->image_avail, VK_NULL_HANDLE, &cur_fif->cur_im_ind);
+    vk_res =
+        vkAcquireNextImageKHR(dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_fif->image_avail, VK_NULL_HANDLE, &cur_fif->cur_im_ind);
 
     // If the image is out of date/suboptimal we need to recreate the swapchain and our caller needs to exit early as
     // well. It seems that on some platforms, if the result from above is out of date or suboptimal, the semaphore
@@ -1655,9 +1662,11 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
 
     // Update our special swapchain handle
     auto sw = &rndr->vk.inst.device.swapchain;
-    rndr->swapchain.item->frames[fif].view = sw->image_views[cur_fif->cur_im_ind];
-    rndr->swapchain.item->frames[fif].image = sw->images[cur_fif->cur_im_ind];
-    rndr->swapchain.item->frames[fif].state = {};
+    auto sw_hndl = find_rtexture_target(rndr, SWAPCHAIN_ID);
+    auto swapchain = get_rtexture_target(rndr, sw_hndl);
+    swapchain->frames[fif].view = sw->image_views[cur_fif->cur_im_ind];
+    swapchain->frames[fif].image = sw->images[cur_fif->cur_im_ind];
+    swapchain->frames[fif].state = {};
 
 // Start GUI frame
 #ifdef USE_IMGUI
@@ -1690,7 +1699,7 @@ int end_render_frame(rmanifest *m)
     // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
     // ind to the command pool
-    //auto fb = &dev->swapchain.fbs[cur_frame->cur_im_ind];
+    // auto fb = &dev->swapchain.fbs[cur_frame->cur_im_ind];
     // asrt(fb && "Invalid framebuffer");
 
     ////////////////////////////
@@ -1699,26 +1708,84 @@ int end_render_frame(rmanifest *m)
     array<VkCommandBuffer> bufs;
     arr_init(&bufs, &m->rndr->frame_linear, m->jobs.size);
     arr_resize(&bufs, m->jobs.size);
-    
+
+    if (bufs.size == 0) {
+        //++m->rndr->finished_frames;
+        return err_code::RENDER_NO_ERROR;
+    }
+
     vkr_alloc_cmd_bufs_cfg buf_cfgs{};
     buf_cfgs.count = m->jobs.size;
     vkr_alloc_cmd_bufs(bufs.data, buf_cfgs, &m->rndr->vk);
+
 
     for (u32 rji = 0; rji < m->jobs.size; ++rji) {
         int err = vkr_begin_cmd_buf(bufs[rji], {});
         if (err != err_code::VKR_NO_ERROR) {
             continue;
         }
-        
-        
+        auto rbp = get_render_blueprint(m->rndr, m->rbp);
+        auto cur_rj = &m->jobs[rji];
+        auto mpass = &m->passes[cur_rj->pid];
+        auto rbp_pass = &rbp->passes[mpass->rbp_pid];
+        auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
+        auto mview = &m->views[cur_rj->vid];
+
+        // Must have all slots assigned
+        asrt(rbp_pass->slots.size == mpass->slot_assignments.size);
+
+        VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
+
+        u32 att_cnt{};
+        vkr_framebuffer_key_data fb_kd{};
+        for (u32 si = 0; si < mpass->slot_assignments.size; ++si) {
+            auto cur_sl = &mpass->slot_assignments[si];
+            bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t);
+            bool b_cond = cur_sl->type == mslot_target_type::BUFFER && is_valid(cur_sl->b);
+            asrt(t_cond || b_cond);
+
+            // If is attachment, we add to framebuffer
+            u32 att_ind = rbp_pass->slots[si].att_ind;
+            if (is_valid(att_ind)) {
+                asrt(att_ind < fb_kd.atts.capacity);
+                auto tview = m->textures[cur_sl->t.index].frames[fif].view;
+                // Resize only if cur att ind is less than or equal our size - we have no guarentees
+                // that the slot order will necessarily match the attachment order
+                if (att_ind >= fb_kd.atts.size) {
+                    arr_resize(&fb_kd.atts, att_ind + 1);
+                }
+                fb_kd.atts[att_ind] = tview;
+                ++att_cnt;
+            }
+        }
+        asrt(fb_kd.atts.size == att_cnt);
+
+        auto fb = get_or_create_framebuffer(&m->rndr->fb_cache, fb_kd, &m->rndr->vk);
+        vkr_cmd_begin_rpass(bufs[rji], vk_rpass, fb, att_clear_vals, 2);
+
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = (float)fb->kd.dims.w;
+        viewport.height = (float)fb->kd.dims.h;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(bufs[rji], 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = {fb->kd.dims.w, fb->kd.dims.h};
+        vkCmdSetScissor(bufs[rji], 0, 1, &scissor);
+
+#ifdef USE_IMGUI
+        if ((VkRenderPass)rbp_pass->vk_handle == m->rndr->imgui.rpass) {
+            auto img_data = ImGui::GetDrawData();
+            ImGui_ImplVulkan_RenderDrawData(img_data, bufs[rji]);
+        }
+#endif
+
+        vkr_cmd_end_rpass(bufs[rji]);
         vkr_end_cmd_buf(bufs[rji]);
-    }
-    // We have the acquired image index, though we don't know when it will be ready to have ops submitted, we can record
-    // the ops in the command buffer and submit once it is ready
-    // This takes about %80 of the run frame
-    int vk_res = record_command_buffer(m->rndr, nullptr, cur_frame);
-    if (vk_res != err_code::RENDER_NO_ERROR) {
-        return vk_res;
     }
 
     //////////////////////////////////
@@ -1733,8 +1800,8 @@ int end_render_frame(rmanifest *m)
     submit_info.pWaitSemaphores = &cur_frame->image_avail;
     submit_info.pWaitDstStageMask = wait_stages;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &cur_frame->cmd_buffer;
-    submit_info.signalSemaphoreCount = 1;
+    submit_info.pCommandBuffers = bufs.data;
+    submit_info.signalSemaphoreCount = bufs.size;
     submit_info.pSignalSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
     if (vkQueueSubmit(dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE], 1, &submit_info, cur_frame->in_flight) != VK_SUCCESS) {
         return err_code::RENDER_SUBMIT_QUEUE_FAIL;
@@ -1752,7 +1819,7 @@ int end_render_frame(rmanifest *m)
     present_info.pSwapchains = &dev->swapchain.swapchain;
     present_info.pImageIndices = &cur_frame->cur_im_ind;
     present_info.pResults = nullptr; // Optional - check for individual swaps
-    vk_res = vkQueuePresentKHR(dev->qfams[VKR_QUEUE_FAM_TYPE_PRESENT].qs[VKR_RENDER_QUEUE], &present_info);
+    s32 vk_res = vkQueuePresentKHR(dev->qfams[VKR_QUEUE_FAM_TYPE_PRESENT].qs[VKR_RENDER_QUEUE], &present_info);
 
     // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
     // the next frame, but it seems to resize more smoothly doing it here

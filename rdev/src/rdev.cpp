@@ -161,7 +161,7 @@ intern void create_textures(texture_pool *tex_pool)
     }
 }
 
-intern void build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
+intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
 {
     // First, create the needed target resources
     auto rbp = create_render_blueprint(rndr, "fwd-pbr");
@@ -188,6 +188,7 @@ intern void build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *ap
 
     dlog("Blueprint: %s", ls(to_json(*rbp.item)));
     compile_render_blueprint(rndr, rbp.item);
+    return rbp;
 }
 
 intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
@@ -216,7 +217,12 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     }
 
     auto geom_stream_gp = setup_geometry_stream_group(&app->rndr);
-    build_and_compile_render_blueprint(&app->rndr, app);
+    auto rbp = build_and_compile_render_blueprint(&app->rndr, app);
+
+#ifdef USE_IMGUI
+    auto pass_id = find_rbp_pass(rbp.item, hash_type("main-pass"));
+    init_imgui(&app->rndr, rbp.item->passes[pass_id]);
+#endif
 
     upload_geometry(&app->rndr, geom_stream_gp, msh_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
@@ -279,8 +285,8 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
 {
     rpass_slot_assignment assignments[] = {
-        {.type = mslot_target_type::TEXTURE,.t{}},
-        {.type = mslot_target_type::TEXTURE,.t{find_rtexture_target(m->rndr, hash_type("depthy-poo"))}},
+        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, SWAPCHAIN_ID)}},
+        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, hash_type("depthy-poo"))}},
     };
     push_pass(m, 0, assignments, 2);
 }
@@ -325,6 +331,9 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
 intern void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
+#ifdef USE_IMGUI
+    terminate_imgui(&app->rndr);
+#endif
     terminate_renderer(&app->rndr);
     terminate_keymap(&app->global_km);
     terminate_keymap(&app->movement_km);

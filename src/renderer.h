@@ -433,7 +433,6 @@ struct renderer
     slot_pool<render_blueprint> blueprints{};
 
     rresource_target_registry rtargets{};
-    rtexture_target_ref swapchain{};
 };
 
 struct init_renderer_params
@@ -448,6 +447,9 @@ struct init_renderer_params
 
 int init_renderer(renderer *rndr, const init_renderer_params &p);
 void terminate_renderer(renderer *rndr);
+
+void init_imgui(renderer *rndr, const rbp_pass &pass);
+void terminate_imgui(renderer *rndr);
 
 VkFormat get_vk_format(rformat fmt);
 
