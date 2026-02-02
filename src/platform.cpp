@@ -570,9 +570,11 @@ void process_platform_events(platform_ctxt *pf)
             handle_sdl_mwheel_event(pf, &ev, event.wheel);
             break;
         case SDL_EVENT_WINDOW_RESIZED:
+            ilog("Resize");
             handle_sdl_window_geom_with_prev(pf, &ev, prev_win_sz_screen_coords, EVENT_TYPE_WINDOW_RESIZE, event.window);
             break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+            ilog("Pixel change");
             handle_sdl_window_geom_with_prev(pf, &ev, prev_win_sz_pixels, EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE, event.window);
             break;
         case SDL_EVENT_WINDOW_MOVED:

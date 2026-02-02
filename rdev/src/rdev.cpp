@@ -313,15 +313,20 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     PROFILE_END();
 
     auto m = begin_render_frame(&app->rndr, find_render_blueprint(&app->rndr, hash_type("fwd-pbr")));
+    if (!m) {
+        return true;
+    }
+    
     build_manifest(m, app);
 
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
     ImGui::ShowDebugLogWindow();
 #endif
-    
+
     int res = end_render_frame(m);
     end_platform_frame(ctxt);
+
     PROFILE_END_FRAME();
 
 #if defined(PROFILING_ENABLED)

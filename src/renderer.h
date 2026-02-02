@@ -154,7 +154,8 @@ struct rsampler_info
 struct rmaterial_info
 {};
 
-struct rtechnique_pass_entry {
+struct rtechnique_pass_entry
+{
     rbp_pass_id bp_pass;
     gpu_handle pline;
 };
@@ -172,7 +173,8 @@ struct imgui_ctxt
     mem_arena fl;
 };
 
-struct frame_thread_cmd {
+struct frame_thread_cmd
+{
     VkCommandPool pool;
     VkCommandBuffer buf;
 };
@@ -287,11 +289,21 @@ struct rtexture_target_frame_fif
     rtexture_state state;
 };
 
+enum rtarget_texture_flag
+{
+    RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW = 1,
+};
+
 struct rtexture_target
 {
     // Set during build
     small_str name;
     rres_id id;
+    u32 flags;
+    // We need to store this so we can resize the image
+    vkr_image_cfg cfg{};
+    vkr_image_view_cfg iv_cfg{};
+    
     rtexture_target_frame_fif frames[MAX_FRAMES_IN_FLIGHT];
 };
 
@@ -323,6 +335,7 @@ struct rtexture_target_desc
     rformat format;
     rtarget_texture_type type;
     svec2 dims;
+    u32 flags;
 };
 
 #define TEXTURE_TARGET_COLOR_HDR(name)                                                                                                     \
@@ -331,6 +344,7 @@ struct rtexture_target_desc
         .format = rformat::RGBA16_SFLOAT,                                                                                                  \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
+        .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
     }
 
 #define TEXTURE_TARGET_COLOR(name)                                                                                                         \
@@ -339,6 +353,7 @@ struct rtexture_target_desc
         .format = rformat::RGBA8_SFLOAT,                                                                                                   \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
+        .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
     }
 
 #define TEXTURE_TARGET_DEPTH(pnm)                                                                                                          \
@@ -347,6 +362,7 @@ struct rtexture_target_desc
         .format = rformat::D32_SFLOAT,                                                                                                     \
         .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
+        .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
     }
 
 #define TEXTURE_TARGET_SHADOW_MAP(name)                                                                                                    \
@@ -363,13 +379,15 @@ struct rtexture_target_desc
 // rbp_pass *create_pass(render_blueprint *bp, const char *pass_t);
 // void add_subpass(rbp_pass *pass);
 template<typename T>
-struct gpu_resource_entry {
+struct gpu_resource_entry
+{
     T gpu_d;
     u64 key;
 };
 
 template<typename T>
-struct gpu_resource_cache {
+struct gpu_resource_cache
+{
     hmap<u64, slot_handle<gpu_resource_entry<T>>> key_lut;
     slot_pool<gpu_resource_entry<T>> items;
 };

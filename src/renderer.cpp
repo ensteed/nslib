@@ -514,7 +514,7 @@ intern void terminate_swapchain_framebuffers(renderer *rndr)
     }
 }
 
-intern void recreate_swapchain(renderer *rndr)
+intern void handle_window_resize(renderer *rndr)
 {
     ilog("Recreating swapchain");
     // Recreating the swapchain will wait on all semaphores and fences before continuing
@@ -524,6 +524,25 @@ intern void recreate_swapchain(renderer *rndr)
     vkr_terminate_surface(&rndr->vk, rndr->vk.inst.surface);
     vkr_init_surface(&rndr->vk, &rndr->vk.inst.surface);
     vkr_init_swapchain(&dev->swapchain, &rndr->vk);
+
+    for (auto rt_iter = slot_pool_begin(&rndr->rtargets.textures); is_valid(rt_iter);
+         rt_iter = slot_pool_next(&rndr->rtargets.textures, rt_iter)) {
+        if (rt_iter.item->id != SWAPCHAIN_ID && test_flags(rt_iter.item->flags, RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW)) {
+            rt_iter.item->cfg.dims = {dev->swapchain.extent.width, dev->swapchain.extent.height};
+            ilog("Resizing %s to {%u %u}", rt_iter.item->name, rt_iter.item->cfg.dims.x, rt_iter.item->cfg.dims.y);
+            for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
+                auto cur_i = &rt_iter.item->frames[fif];
+                vkr_terminate_image(&cur_i->image, &rndr->vk);
+                vkr_terminate_image_view(cur_i->view, &rndr->vk);
+                cur_i->image = {};
+                cur_i->view = {};
+                int result = vkr_init_image(&cur_i->image, rt_iter.item->cfg);
+                asrt(result == err_code::VKR_NO_ERROR);
+                result = vkr_init_image_view(&cur_i->view, rt_iter.item->iv_cfg, &rndr->vk);
+                asrt(result == err_code::VKR_NO_ERROR);
+            }
+        }
+    }
 }
 
 intern int init_frame_contexts(renderer *rndr, sizet thread_cnt)
@@ -560,8 +579,10 @@ intern int init_frame_contexts(renderer *rndr, sizet thread_cnt)
         arr_init(&cur_fif->thread_pools, &rndr->persist_fl, thread_cnt);
         arr_resize(&cur_fif->thread_pools, thread_cnt);
         for (u32 i = 0; i < cur_fif->thread_pools.size; ++i) {
-            result = vkr_init_cmd_pool(
-                &cur_fif->thread_pools[i].pool, dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, &rndr->vk);
+            result = vkr_init_cmd_pool(&cur_fif->thread_pools[i].pool,
+                                       dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
+                                       VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                                       &rndr->vk);
             if (result != err_code::VKR_NO_ERROR) {
                 return result;
             }
@@ -1417,30 +1438,30 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
 
     strncpy(tref.item->name, ci.name, SMALL_STR_LEN - 1);
     tref.item->id = hash_type(tref.item->name);
+    tref.item->flags = ci.flags;
 
     // If parameter not here its cause I want to leave at default on purpose
-    vkr_image_cfg cfg{};
-    cfg.format = get_vk_format(&rndr->vk, ci.format);
+    tref.item->cfg.format = get_vk_format(&rndr->vk, ci.format);
     bool is_color = (ci.type == RTARGET_TEXTURE_TYPE_COLOR || ci.type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
-    cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-    cfg.im_create_flags = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
-    cfg.dims = {ci.dims == svec2{} ? get_window_pixel_size(rndr->vk.cfg.window) : ci.dims, 1u};
-    cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-    cfg.array_layers = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? 6u : 1u;
-    cfg.priority = 1.0f;
-    cfg.user_data = tref.item->name;
-    cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+    tref.item->cfg.usage =
+        VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    tref.item->cfg.im_create_flags = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+    tref.item->cfg.dims = {ci.dims == svec2{} ? get_window_pixel_size(rndr->vk.cfg.window) : ci.dims, 1u};
+    tref.item->cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    tref.item->cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    tref.item->cfg.array_layers = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? 6u : 1u;
+    tref.item->cfg.priority = 1.0f;
+    tref.item->cfg.user_data = tref.item->name;
+    tref.item->cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
 
-    vkr_image_view_cfg iv_cfg{};
-    iv_cfg.view_type = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
-    iv_cfg.srange.aspectMask = is_color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    tref.item->iv_cfg.view_type = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+    tref.item->iv_cfg.srange.aspectMask = is_color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        int result = vkr_init_image(&tref.item->frames[i].image, cfg);
+        int result = vkr_init_image(&tref.item->frames[i].image, tref.item->cfg);
         asrt(result == err_code::VKR_NO_ERROR);
-        iv_cfg.image = &tref.item->frames[i].image;
-        result = vkr_init_image_view(&tref.item->frames[i].view, iv_cfg, &rndr->vk);
+        tref.item->iv_cfg.image = &tref.item->frames[i].image;
+        result = vkr_init_image_view(&tref.item->frames[i].view, tref.item->iv_cfg, &rndr->vk);
         asrt(result == err_code::VKR_NO_ERROR);
     }
 
@@ -1529,6 +1550,12 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     int fif = get_fif_ind(rndr);
     auto *cur_fif = &rndr->fifs[fif];
 
+    // Handle as early as possible
+    if (window_resized_this_frame(rndr->vk.cfg.window)) {
+        handle_window_resize(rndr);
+        return nullptr;
+    }
+
     // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
     // triggered state so there will be no waiting on the first time. We then reset the fence (aka set it to
     // untriggered) and it is passed to the vkQueueSubmit call to trigger it again. So if not the first time rendering
@@ -1538,7 +1565,7 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
         elog("Failed to wait for fence");
         return nullptr;
     }
-    
+
     reset_arena(&rndr->vk_frame_linear);
     reset_arena(&rndr->frame_linear);
 
@@ -1561,7 +1588,7 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
     // At least.. i think?
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
-        recreate_swapchain(rndr);
+        handle_window_resize(rndr);
         return nullptr;
     }
     else if (vk_res != VK_SUCCESS && vk_res != VK_SUBOPTIMAL_KHR) {
@@ -1665,7 +1692,7 @@ int end_render_frame(rmanifest *m)
                 if (fb_kd.dims < tex_dims) {
                     fb_kd.dims = tex_dims;
                 }
-                
+
                 // Resize only if cur att ind is less than or equal our size - we have no guarentees
                 // that the slot order will necessarily match the attachment order
                 if (att_ind >= fb_kd.atts.size) {
@@ -1742,7 +1769,7 @@ int end_render_frame(rmanifest *m)
     // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
     // the next frame, but it seems to resize more smoothly doing it here
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR || vk_res == VK_SUBOPTIMAL_KHR) {
-        recreate_swapchain(m->rndr);
+        handle_window_resize(m->rndr);
     }
     else if (vk_res != VK_SUCCESS) {
         elog("Failed to presenet KHR");
