@@ -49,7 +49,6 @@ inline constexpr u8 MAX_BP_PASS_SLOT_COUNT = 16;
 inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
 // Cannot be constexpr since hash_type is not
 inline const u64 SWAPCHAIN_ID = hash_type("swapchain");
-// Number of command buffers per frame in flight - try to have one per pass in general so we can multithread passes
 
 // Indice type
 using ind_t = u16;

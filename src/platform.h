@@ -290,6 +290,7 @@ struct platform_sdl_event_hook
 
 struct platform_frame_event_queue
 {
+    bool window_pixel_change{false};
     static_array<platform_event, 1024> events{};
     platform_sdl_event_hook sdl_hook{};
 };

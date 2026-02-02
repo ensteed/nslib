@@ -37,7 +37,7 @@ intern constexpr u32 DEVICE_EXTENSION_COUNT = 1;
 intern constexpr const char *DEVICE_EXTENSIONS[DEVICE_EXTENSION_COUNT] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 #endif
 
-intern constexpr f64 RESIZE_DEBOUNCE_FRAME_COUNT = 0.15; // 100 ms
+intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
 intern VkPipelineLayout G_FRAME_PL_LAYOUT{};
 
 intern void imgui_mem_free(void *ptr, void *usr)
@@ -832,8 +832,13 @@ void init_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, u32 e
 }
 
 template<typename T, typename TermFunc>
-intern void terminate_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, TermFunc term_func)
+intern void terminate_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, TermFunc term_func, const char *lname)
 {
+    ilog("Terminating %u used %s (%u total size with %u free slots)",
+         cache->items.used_count,
+         lname,
+         cache->items.slots.size,
+         cache->items.free_list.size);
     for (auto sliter = slot_pool_begin(&cache->items); is_valid(sliter); sliter = slot_pool_next(&cache->items, sliter)) {
         term_func(&sliter.item->gpu_d);
     }
@@ -957,6 +962,9 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
         return result;
     }
 
+    // Start timeer
+    ptimer_restart(&rndr->pt);
+
     // Setup our indice and vert buffer sbuffer
     return err_code::RENDER_NO_ERROR;
 }
@@ -1000,10 +1008,12 @@ void terminate_renderer(renderer *rndr)
     terminate_geometry_stream_groups(rndr);
 
     // Framebuffer cache and all created framebuffers
-    terminate_gpu_resource_cache(rndr, &rndr->fb_cache, [rndr](vkr_framebuffer *fb) { vkr_terminate_framebuffer(fb, &rndr->vk); });
+    terminate_gpu_resource_cache(
+        rndr, &rndr->fb_cache, [rndr](vkr_framebuffer *fb) { vkr_terminate_framebuffer(fb, &rndr->vk); }, "framebuffers");
 
     // Pipeline cache and all created pipelines
-    terminate_gpu_resource_cache(rndr, &rndr->pline_cache, [rndr](gpu_handle *pl) { vkr_terminate_pipeline(*((VkPipeline *)pl), &rndr->vk); });
+    terminate_gpu_resource_cache(
+        rndr, &rndr->pline_cache, [rndr](gpu_handle *pl) { vkr_terminate_pipeline(*((VkPipeline *)pl), &rndr->vk); }, "pipelines");
 
     // Blueprints
     terminate_blueprints(rndr);
@@ -1552,20 +1562,35 @@ intern int get_fif_ind(renderer *rndr)
     return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
 }
 
+intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif) {
+    if (window_resized_this_frame(rndr->vk.cfg.window)) {
+        cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
+    }
+    
+    if (cur_fif->swapchain_resize > 0.0f) {
+        cur_fif->swapchain_resize -= rndr->pt.dt;
+        if (cur_fif->swapchain_resize > 0.0f) {
+            return false;
+        }
+        handle_window_resize(rndr);
+        cur_fif->swapchain_resize = false;
+    }
+    return true;
+}
+
 rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
 {
     PROFILE_SCOPE("begin_render_frame");
+    ptimer_split(&rndr->pt);
     auto dev = &rndr->vk.inst.device;
 
     // Update finished frames which is used to get the current frame
     int fif = get_fif_ind(rndr);
     auto *cur_fif = &rndr->fifs[fif];
-    cur_fif->swapchain_resize = cur_fif->swapchain_resize || window_resized_this_frame(rndr->vk.cfg.window);
-
+    
     // Window resize
-    if (cur_fif->swapchain_resize) {
-        handle_window_resize(rndr);
-        cur_fif->swapchain_resize = false;
+    if (!window_resize_continue_check(rndr, cur_fif)) {
+        return nullptr;
     }
 
     // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
@@ -1589,7 +1614,7 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
     // At least.. i think?
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
-        cur_fif->swapchain_resize = true;
+        cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
         return nullptr;
     }
     asrt(vk_res == VK_SUCCESS || vk_res == VK_SUBOPTIMAL_KHR);
@@ -1774,7 +1799,7 @@ int end_render_frame(rmanifest *m)
     // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
     // the next frame, but it seems to resize more smoothly doing it here
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR || vk_res == VK_SUBOPTIMAL_KHR) {
-        cur_frame->swapchain_resize = true;
+        cur_frame->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
     }
     else {
         asrt(vk_res == VK_SUCCESS);

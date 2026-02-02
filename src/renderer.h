@@ -1,6 +1,7 @@
 #pragma once
 
 #include "math/matrix4.h"
+#include "profile_timer.h"
 #include "containers/slot_pool.h"
 #include "vk_context.h"
 #include "render_blueprint.h"
@@ -195,7 +196,9 @@ struct frame_context
     VkFence in_flight;
     VkSemaphore image_avail;
 
-    bool swapchain_resize{false};
+    // We use this as a debounce. A resize event set's the time to the debounce time, and we only actually resize the
+    // swapchain once that is <= 0.0f
+    f32 swapchain_resize;
 };
 
 struct stream_buffer_entry
@@ -458,6 +461,8 @@ struct renderer
     slot_pool<render_blueprint> blueprints{};
 
     rresource_target_registry rtargets{};
+
+    profile_timepoints pt{};
 };
 
 struct init_renderer_params

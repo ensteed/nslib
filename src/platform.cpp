@@ -541,6 +541,7 @@ void process_platform_events(platform_ctxt *pf)
     svec2 prev_win_pos = get_window_pos(pf->win_hndl);
 
     arr_clear(&pf->feventq.events);
+    pf->feventq.window_pixel_change = false;
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (pf->feventq.sdl_hook.cb && pf->feventq.sdl_hook.cb(&event, pf->feventq.sdl_hook.user)) {
@@ -570,11 +571,11 @@ void process_platform_events(platform_ctxt *pf)
             handle_sdl_mwheel_event(pf, &ev, event.wheel);
             break;
         case SDL_EVENT_WINDOW_RESIZED:
-            ilog("Resize");
+            pf->feventq.window_pixel_change = true;
             handle_sdl_window_geom_with_prev(pf, &ev, prev_win_sz_screen_coords, EVENT_TYPE_WINDOW_RESIZE, event.window);
             break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-            ilog("Pixel change");
+            pf->feventq.window_pixel_change = true;            
             handle_sdl_window_geom_with_prev(pf, &ev, prev_win_sz_pixels, EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE, event.window);
             break;
         case SDL_EVENT_WINDOW_MOVED:
@@ -593,18 +594,23 @@ void process_platform_events(platform_ctxt *pf)
             handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_MOUSE, event.window);
             break;
         case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+            pf->feventq.window_pixel_change = true;
             handle_sdl_window_event(pf, &ev, 1, EVENT_TYPE_WINDOW_FULLSCREEN, event.window);
             break;
         case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+            pf->feventq.window_pixel_change = true;
             handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_FULLSCREEN, event.window);
             break;
         case SDL_EVENT_WINDOW_MINIMIZED:
+            pf->feventq.window_pixel_change = true;            
             handle_sdl_window_event(pf, &ev, -1, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_MAXIMIZED:
+            pf->feventq.window_pixel_change = true;            
             handle_sdl_window_event(pf, &ev, 1, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_RESTORED:
+            pf->feventq.window_pixel_change = true;            
             handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_SHOWN:
@@ -677,14 +683,7 @@ vec2 get_mouse_pos()
 bool window_resized_this_frame(void *win_hndl)
 {
     platform_ctxt *pf = platform_window_ptr(win_hndl);
-    for (sizet evind{0}; evind < pf->feventq.events.size; ++evind) {
-        if (pf->feventq.events[evind].type == EVENT_TYPE_WINDOW_RESIZE ||
-            pf->feventq.events[evind].type == EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE ||
-            pf->feventq.events[evind].type == EVENT_TYPE_WINDOW_FULLSCREEN || pf->feventq.events[evind].type == EVENT_TYPE_WINDOW_VIEWSTATE) {
-            return true;
-        }
-    }
-    return false;
+    return pf->feventq.window_pixel_change;
 }
 
 void begin_platform_frame(platform_ctxt *ctxt)
