@@ -520,6 +520,7 @@ intern void handle_window_resize(renderer *rndr)
     // Recreating the swapchain will wait on all semaphores and fences before continuing
     auto dev = &rndr->vk.inst.device;
     vkr_device_wait_idle(dev);
+    terminate_swapchain_framebuffers(rndr);
     vkr_terminate_swapchain(&dev->swapchain, &rndr->vk);
     vkr_terminate_surface(&rndr->vk, rndr->vk.inst.surface);
     vkr_init_surface(&rndr->vk, &rndr->vk.inst.surface);
@@ -528,7 +529,7 @@ intern void handle_window_resize(renderer *rndr)
     for (auto rt_iter = slot_pool_begin(&rndr->rtargets.textures); is_valid(rt_iter);
          rt_iter = slot_pool_next(&rndr->rtargets.textures, rt_iter)) {
         if (rt_iter.item->id != SWAPCHAIN_ID && test_flags(rt_iter.item->flags, RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW)) {
-            rt_iter.item->cfg.dims = {dev->swapchain.extent.width, dev->swapchain.extent.height};
+            rt_iter.item->cfg.dims = {dev->swapchain.extent.width, dev->swapchain.extent.height, 1};
             ilog("Resizing %s to {%u %u}", rt_iter.item->name, rt_iter.item->cfg.dims.x, rt_iter.item->cfg.dims.y);
             for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
                 auto cur_i = &rt_iter.item->frames[fif];
