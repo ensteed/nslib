@@ -194,6 +194,8 @@ struct frame_context
     // Synchronization
     VkFence in_flight;
     VkSemaphore image_avail;
+
+    bool swapchain_resize{false};
 };
 
 struct stream_buffer_entry

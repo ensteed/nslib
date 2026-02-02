@@ -531,6 +531,7 @@ intern void handle_window_resize(renderer *rndr)
         if (rt_iter.item->id != SWAPCHAIN_ID && test_flags(rt_iter.item->flags, RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW)) {
             rt_iter.item->cfg.dims = {dev->swapchain.extent.width, dev->swapchain.extent.height, 1};
             ilog("Resizing %s to {%u %u}", rt_iter.item->name, rt_iter.item->cfg.dims.x, rt_iter.item->cfg.dims.y);
+            asrt(!rt_iter.item->iv_cfg.image);
             for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
                 auto cur_i = &rt_iter.item->frames[fif];
                 vkr_terminate_image(&cur_i->image, &rndr->vk);
@@ -539,9 +540,15 @@ intern void handle_window_resize(renderer *rndr)
                 cur_i->view = {};
                 int result = vkr_init_image(&cur_i->image, rt_iter.item->cfg);
                 asrt(result == err_code::VKR_NO_ERROR);
+
+                // Update the image ptr
+                rt_iter.item->iv_cfg.image = &cur_i->image;
                 result = vkr_init_image_view(&cur_i->view, rt_iter.item->iv_cfg, &rndr->vk);
                 asrt(result == err_code::VKR_NO_ERROR);
             }
+
+            // Restore the image pointer to null
+            rt_iter.item->iv_cfg.image = nullptr;
         }
     }
 }
@@ -1466,6 +1473,9 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
         asrt(result == err_code::VKR_NO_ERROR);
     }
 
+    // So we don't forget to update this to each per fif image on doing any resizes
+    tref.item->iv_cfg.image = nullptr;
+
     hmap_insert(&rndr->rtargets.texture_id_map, tref.item->id, tref.hndl);
     return tref.hndl;
 }
@@ -1550,11 +1560,12 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     // Update finished frames which is used to get the current frame
     int fif = get_fif_ind(rndr);
     auto *cur_fif = &rndr->fifs[fif];
+    cur_fif->swapchain_resize = cur_fif->swapchain_resize || window_resized_this_frame(rndr->vk.cfg.window);
 
-    // Handle as early as possible
-    if (window_resized_this_frame(rndr->vk.cfg.window)) {
+    // Window resize
+    if (cur_fif->swapchain_resize) {
         handle_window_resize(rndr);
-        return nullptr;
+        cur_fif->swapchain_resize = false;
     }
 
     // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
@@ -1562,18 +1573,7 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     // untriggered) and it is passed to the vkQueueSubmit call to trigger it again. So if not the first time rendering
     // this FIF, we are waiting for the vkQueueSubmit from the previous time this FIF was rendered to complete
     int vk_res = vkWaitForFences(dev->hndl, 1, &cur_fif->in_flight, VK_TRUE, UINT64_MAX);
-    if (vk_res != VK_SUCCESS) {
-        elog("Failed to wait for fence: %d", vk_res);
-        return nullptr;
-    }
-
-    reset_arena(&rndr->vk_frame_linear);
-    reset_arena(&rndr->frame_linear);
-
-    // Reset command pool
-    for (u32 ti = 0; ti < cur_fif->thread_pools.size; ++ti) {
-        vkResetCommandPool(dev->hndl, cur_fif->thread_pools[ti].pool, {});
-    }
+    asrt(vk_res == VK_SUCCESS);
 
     /////////////////////////////////
     // Acquire Swapchain Image Ind //
@@ -1583,18 +1583,24 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     vk_res =
         vkAcquireNextImageKHR(dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_fif->image_avail, VK_NULL_HANDLE, &cur_fif->cur_im_ind);
 
-    // If the image is out of date/suboptimal we need to recreate the swapchain and our caller needs to exit early as
+    // If the image is out of date we need to recreate the swapchain and our caller needs to exit early as
     // well. It seems that on some platforms, if the result from above is out of date or suboptimal, the semaphore
     // associated with it will never get triggered. So if we were to continue and just resize at the end of frame it
     // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
     // At least.. i think?
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
-        handle_window_resize(rndr);
+        cur_fif->swapchain_resize = true;
         return nullptr;
     }
-    else if (vk_res != VK_SUCCESS && vk_res != VK_SUBOPTIMAL_KHR) {
-        elog("Failed to acquire swapchain image");
-        return nullptr;
+    asrt(vk_res == VK_SUCCESS || vk_res == VK_SUBOPTIMAL_KHR);
+
+    reset_arena(&rndr->vk_frame_linear);
+    reset_arena(&rndr->frame_linear);
+
+    // Reset command pool
+    for (u32 ti = 0; ti < cur_fif->thread_pools.size; ++ti) {
+        vk_res = vkResetCommandPool(dev->hndl, cur_fif->thread_pools[ti].pool, {});
+        asrt(vk_res == VK_SUCCESS);
     }
 
     /////////////////////
@@ -1605,10 +1611,7 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     // waiting) because if we return early due to swapchain resize, and we had reset the fence, then the next time our
     // frame came around we would just be stuck waiting forever
     vk_res = vkResetFences(dev->hndl, 1, &cur_fif->in_flight);
-    if (vk_res != VK_SUCCESS) {
-        elog("Failed to reset fence");
-        return nullptr;
-    }
+    asrt(vk_res == VK_SUCCESS);
 
     // Update our special swapchain handle
     auto sw = &rndr->vk.inst.device.swapchain;
@@ -1690,8 +1693,11 @@ int end_render_frame(rmanifest *m)
                 asrt(att_ind < fb_kd.atts.capacity);
                 auto tview = m->textures[cur_sl->t.index].frames[fif].view;
                 auto tex_dims = m->textures[cur_sl->t.index].frames[fif].image.dims.xy;
-                if (fb_kd.dims < tex_dims) {
-                    fb_kd.dims = tex_dims;
+                if (fb_kd.dims.x < tex_dims.x) {
+                    fb_kd.dims.x = tex_dims.x;
+                }
+                if (fb_kd.dims.y < tex_dims.y) {
+                    fb_kd.dims.y = tex_dims.y;
                 }
 
                 // Resize only if cur att ind is less than or equal our size - we have no guarentees
@@ -1749,9 +1755,7 @@ int end_render_frame(rmanifest *m)
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
     s32 vk_res = vkQueueSubmit(dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE], 1, &submit_info, cur_frame->in_flight);
-    if (vk_res != VK_SUCCESS) {
-        return err_code::RENDER_SUBMIT_QUEUE_FAIL;
-    }
+    asrt(vk_res == VK_SUCCESS);
 
     ///////////////////
     // Present Image //
@@ -1770,14 +1774,12 @@ int end_render_frame(rmanifest *m)
     // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
     // the next frame, but it seems to resize more smoothly doing it here
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR || vk_res == VK_SUBOPTIMAL_KHR) {
-        handle_window_resize(m->rndr);
+        cur_frame->swapchain_resize = true;
     }
-    else if (vk_res != VK_SUCCESS) {
-        elog("Failed to presenet KHR");
-        return err_code::RENDER_PRESENT_KHR_FAIL;
+    else {
+        asrt(vk_res == VK_SUCCESS);
+        ++m->rndr->finished_frames;
     }
-    ++m->rndr->finished_frames;
-
     return err_code::RENDER_NO_ERROR;
 }
 

@@ -312,9 +312,9 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     f64 alpha = app->accumulater / 0.010;
     PROFILE_END();
 
-    auto m = begin_render_frame(&app->rndr, find_render_blueprint(&app->rndr, hash_type("fwd-pbr")));
-    if (!m) {
-        return true;
+    rmanifest *m{nullptr};
+    while (!m) {
+        m = begin_render_frame(&app->rndr, find_render_blueprint(&app->rndr, hash_type("fwd-pbr")));
     }
     
     build_manifest(m, app);
