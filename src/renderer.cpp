@@ -1563,7 +1563,7 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     // this FIF, we are waiting for the vkQueueSubmit from the previous time this FIF was rendered to complete
     int vk_res = vkWaitForFences(dev->hndl, 1, &cur_fif->in_flight, VK_TRUE, UINT64_MAX);
     if (vk_res != VK_SUCCESS) {
-        elog("Failed to wait for fence");
+        elog("Failed to wait for fence: %d", vk_res);
         return nullptr;
     }
 
