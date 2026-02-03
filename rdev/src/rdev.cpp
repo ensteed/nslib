@@ -5,7 +5,7 @@
 #include "input_mapping.h"
 #include "sim_region.h"
 #include "basic_types.h"
-#include "fwd_render.h"
+#include "engine_rendering.h"
 #include "render_manifest.h"
 #include "profiling.h"
 using namespace nslib;
@@ -14,8 +14,8 @@ using namespace nslib;
     #include "imgui/imgui.h"
 #endif
 
-intern constexpr const char * MAIN_PASS_COLOR_NAME = "main-pass-color";
-intern const rres_id MAIN_PASS_COLOR_ID = hash_type("main-pass-color");
+// intern constexpr const char * MAIN_PASS_COLOR_NAME = "main-pass-color";
+// intern const rres_id MAIN_PASS_COLOR_ID = hash_type("main-pass-color");
 
 intern constexpr const char * MAIN_PASS_DEPTH_NAME = "main-pass-depth";
 intern const rres_id MAIN_PASS_DEPTH_ID = hash_type("main-pass-depth");
@@ -183,7 +183,7 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
 
     // Main geometry pass
     rbp_slot_id col_slot_ind = add_rbp_resource_slot(
-        rbp.item, pass_id, {.name = "color", .format = rformat::RGBA8_SRGB, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
+        rbp.item, pass_id, {.name = "color", .format = rformat::SWAPCHAIN, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
     rbp_slot_id depth_slot_ind = add_rbp_resource_slot(
         rbp.item, pass_id, {.name = "depth", .format = rformat::D32_SFLOAT, .usage = rbp_resource_usage::DEPTH_ATTACHMENT});
 
@@ -253,7 +253,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
 
     // Create render targets
-    create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));
+    // create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));
     create_rtexture_target(&app->rndr, TEXTURE_TARGET_DEPTH(MAIN_PASS_DEPTH_NAME));
 
     // Create our sim region aka scene
@@ -315,20 +315,24 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     auto imgui_pass = find_rbp_pass(bp, IMGUI_PASS_ID);
         
     rpass_slot_assignment assignments[] = {
-        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, MAIN_PASS_COLOR_ID)}},
+        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, SWAPCHAIN_ID)}},
         {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID)}},
     };
     auto mp_id = push_pass(m, bp_main_pass, assignments, 2);
-
-    assignments[0].t = find_rtexture_target(m->rndr, SWAPCHAIN_ID);
     auto imgui_id = push_pass(m, imgui_pass, assignments, 1);
 
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
     auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
-    auto view_id = push_view(m, cam->proj, cam->view);
-    push_render_job(m, mp_id, view_id, nullptr, nullptr);
-    push_render_job(m, imgui_id, view_id, nullptr, nullptr);
     
+    mview gui_view{cam->proj, cam->view};
+    gui_view.norm_scissor = {0.25, 0.25, 0.5, 0.5};
+    
+    
+    auto view_id = push_view(m, {cam->proj, cam->view});
+    auto gui_view_id = push_view(m, gui_view);
+    
+    push_render_job(m, mp_id, view_id, [](const render_job_cb_params&, void*){}, nullptr);
+    push_render_job(m, imgui_id, gui_view_id, draw_imgui, nullptr);
 }
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)

@@ -3,6 +3,7 @@
 #include "containers/array.h"
 #include "util.h"
 #include "math/vector4.h"
+#include "math/primitives.h"
 #include "basic_types.h"
 
 namespace nslib
@@ -649,6 +650,7 @@ int vkr_end_cmd_buf(VkCommandBuffer hndl);
 void vkr_cmd_begin_rpass(VkCommandBuffer cmd_buf,
                          VkRenderPass rpass,
                          const vkr_framebuffer *fb,
+                         const VkRect2D &render_area,
                          const VkClearValue *att_clear_vals,
                          sizet clear_val_size);
 void vkr_cmd_end_rpass(VkCommandBuffer cmd_buf);

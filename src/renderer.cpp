@@ -1,7 +1,7 @@
 #include "platform.h"
-#include "vk_context.h"
+#include "vkr_context.h"
 #include "renderer.h"
-#include "sim_region.h"
+#include "vkr_utils.h"
 #include "render_manifest.h"
 
 #ifdef USE_IMGUI
@@ -447,7 +447,7 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
             auto cur_attrib_layout = &layout->vert_layout.attribs[atti + layout_attrib_offset];
 
             cur_attrib_layout->binding = cur_binding->binding;
-            cur_attrib_layout->format = get_vk_format(vk, cur_attrib_desc->fmt);
+            cur_attrib_layout->format = vkr_get_format(vk, cur_attrib_desc->fmt);
             cur_attrib_layout->location = cur_attrib_desc->shader_location;
             cur_attrib_layout->offset = cur_binding->stride;
 
@@ -493,24 +493,24 @@ intern void release_geometry_stream_group(geom_streams_group *gp, const vkr_cont
     *gp = {};
 }
 
-intern void terminate_swapchain_framebuffers(renderer *rndr)
+intern void terminate_framebuffers_with_image(renderer *rndr, VkImageView iv)
 {
-    auto vk_sw = &rndr->vk.inst.device.swapchain;
-
     for (auto sliter = slot_pool_begin(&rndr->fb_cache.items); is_valid(sliter); sliter = slot_pool_next(&rndr->fb_cache.items, sliter)) {
-        // Go through each swapchain image view and check
-        u32 found_swap = INVALID_ID;
-        for (u32 swap_i = 0; swap_i < vk_sw->image_views.size && found_swap == INVALID_ID; ++swap_i) {
-            // Check if the frame buffer has the image view as an attachment
-            found_swap = arr_find(&sliter.item->gpu_d.kd.atts, vk_sw->image_views[swap_i]) ? swap_i : INVALID_ID;
-        }
         // If it had one, we delete it and continue, otherwise we leave it alone and continue
-        if (found_swap != INVALID_ID) {
-            ilog("Destroying framebuffer %p for swap chain image %u", sliter.item->gpu_d.hndl, found_swap);
+        if (arr_find(&sliter.item->gpu_d.kd.atts, iv)) {
+            ilog("Destroying framebuffer %p for image view %p", sliter.item->gpu_d.hndl, iv);
             vkr_terminate_framebuffer(&sliter.item->gpu_d, &rndr->vk);
             hmap_remove(&rndr->fb_cache.key_lut, sliter.item->key);
             release_slot(&rndr->fb_cache.items, sliter.hndl);
         }
+    }
+}
+
+intern void terminate_swapchain_framebuffers(renderer *rndr)
+{
+    auto vk_sw = &rndr->vk.inst.device.swapchain;
+    for (u32 swap_i = 0; swap_i < vk_sw->image_views.size; ++swap_i) {
+        terminate_framebuffers_with_image(rndr, vk_sw->image_views[swap_i]);
     }
 }
 
@@ -534,6 +534,12 @@ intern void handle_window_resize(renderer *rndr)
             asrt(!rt_iter.item->iv_cfg.image);
             for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
                 auto cur_i = &rt_iter.item->frames[fif];
+
+                // Terminate any framebuffers associated with this image view
+                // If the image is in a framebuffer with the swapchain image then it will have already have been
+                // destroyed during the terminate swapchain framebuffers
+                terminate_framebuffers_with_image(rndr, cur_i->view);
+
                 vkr_terminate_image(&cur_i->image, &rndr->vk);
                 vkr_terminate_image_view(cur_i->view, &rndr->vk);
                 cur_i->image = {};
@@ -1030,170 +1036,6 @@ void terminate_renderer(renderer *rndr)
     terminate_arena(&rndr->persist_fl);
 }
 
-VkFormat get_vk_format(const vkr_context *vk, rformat fmt)
-{
-    switch (fmt) {
-    case (rformat::RGBA8_SRGB):
-        return VK_FORMAT_R8G8B8A8_SRGB;
-    case (rformat::RGBA8_SRGB_COMPRESSED):
-        return VK_FORMAT_BC7_SRGB_BLOCK;
-    case (rformat::RGBA8_UNORM):
-        return VK_FORMAT_R8G8B8A8_UNORM;
-    case (rformat::RGBA8_UNORM_COMPRESSED):
-        return VK_FORMAT_BC7_UNORM_BLOCK;
-    case (rformat::RGBA8_SNORM):
-        return VK_FORMAT_R8G8B8A8_SNORM;
-    case (rformat::RGBA8_UINT):
-        return VK_FORMAT_R8G8B8A8_UINT;
-    case (rformat::RGBA8_SINT):
-        return VK_FORMAT_R8G8B8A8_SINT;
-    case (rformat::RGB8_SRGB):
-        return VK_FORMAT_R8G8B8_SRGB;
-    case (rformat::RGB8_SRGB_COMPRESSED):
-        return VK_FORMAT_BC1_RGB_SRGB_BLOCK;
-    case (rformat::RGB8_UNORM):
-        return VK_FORMAT_R8G8B8_UNORM;
-    case (rformat::RGB8_UNORM_COMPRESSED):
-        return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
-    case (rformat::RGB8_SNORM):
-        return VK_FORMAT_R8G8B8_SNORM;
-    case (rformat::RGB8_UINT):
-        return VK_FORMAT_R8G8B8_UINT;
-    case (rformat::RGB8_SINT):
-        return VK_FORMAT_R8G8B8_SINT;
-    case (rformat::RG8_SRGB):
-        return VK_FORMAT_R8G8_SRGB;
-    case (rformat::RG8_UNORM):
-        return VK_FORMAT_R8G8_UNORM;
-    case (rformat::RG8_UNORM_COMPRESSED):
-        return VK_FORMAT_BC5_UNORM_BLOCK;
-    case (rformat::RG8_SNORM):
-        return VK_FORMAT_R8G8_SNORM;
-    case (rformat::RG8_SNORM_COMPRESSED):
-        return VK_FORMAT_BC5_SNORM_BLOCK;
-    case (rformat::RG8_UINT):
-        return VK_FORMAT_R8G8_UINT;
-    case (rformat::RG8_SINT):
-        return VK_FORMAT_R8G8_SINT;
-    case (rformat::R8_SRGB):
-        return VK_FORMAT_R8_SRGB;
-    case (rformat::R8_UNORM):
-        return VK_FORMAT_R8_UNORM;
-    case (rformat::R8_UNORM_COMPRESSED):
-        return VK_FORMAT_BC4_UNORM_BLOCK;
-    case (rformat::R8_SNORM):
-        return VK_FORMAT_R8_SNORM;
-    case (rformat::R8_SNORM_COMPRESSED):
-        return VK_FORMAT_BC4_SNORM_BLOCK;
-    case (rformat::R8_UINT):
-        return VK_FORMAT_R8_UINT;
-    case (rformat::R8_SINT):
-        return VK_FORMAT_R8_SINT;
-    case (rformat::RGBA16_SFLOAT):
-        return VK_FORMAT_R16G16B16A16_SFLOAT;
-    case (rformat::RGBA16_UNORM):
-        return VK_FORMAT_R16G16B16A16_UNORM;
-    case (rformat::RGBA16_SNORM):
-        return VK_FORMAT_R16G16B16A16_SNORM;
-    case (rformat::RGBA16_UINT):
-        return VK_FORMAT_R16G16B16A16_UINT;
-    case (rformat::RGBA16_SINT):
-        return VK_FORMAT_R16G16B16A16_SINT;
-    case (rformat::RGB16_SFLOAT):
-        return VK_FORMAT_R16G16B16_SFLOAT;
-    case (rformat::RGB16_UNORM):
-        return VK_FORMAT_R16G16B16_UNORM;
-    case (rformat::RGB16_SNORM):
-        return VK_FORMAT_R16G16B16_SNORM;
-    case (rformat::RGB16_UINT):
-        return VK_FORMAT_R16G16B16_UINT;
-    case (rformat::RGB16_SINT):
-        return VK_FORMAT_R16G16B16_SINT;
-    case (rformat::RG16_SFLOAT):
-        return VK_FORMAT_R16G16_SFLOAT;
-    case (rformat::RG16_UNORM):
-        return VK_FORMAT_R16G16_UNORM;
-    case (rformat::RG16_SNORM):
-        return VK_FORMAT_R16G16_SNORM;
-    case (rformat::RG16_UINT):
-        return VK_FORMAT_R16G16_UINT;
-    case (rformat::RG16_SINT):
-        return VK_FORMAT_R16G16_SINT;
-    case (rformat::R16_SFLOAT):
-        return VK_FORMAT_R16_SFLOAT;
-    case (rformat::R16_UNORM):
-        return VK_FORMAT_R16_UNORM;
-    case (rformat::R16_SNORM):
-        return VK_FORMAT_R16_SNORM;
-    case (rformat::R16_UINT):
-        return VK_FORMAT_R16_UINT;
-    case (rformat::R16_SINT):
-        return VK_FORMAT_R16_SINT;
-    case (rformat::RGBA32_SFLOAT):
-        return VK_FORMAT_R32G32B32A32_SFLOAT;
-    case (rformat::RGBA32_UINT):
-        return VK_FORMAT_R32G32B32A32_UINT;
-    case (rformat::RGBA32_SINT):
-        return VK_FORMAT_R32G32B32A32_SINT;
-    case (rformat::RGB32_SFLOAT):
-        return VK_FORMAT_R32G32B32_SFLOAT;
-    case (rformat::RGB32_UINT):
-        return VK_FORMAT_R32G32B32_UINT;
-    case (rformat::RGB32_SINT):
-        return VK_FORMAT_R32G32B32_SINT;
-    case (rformat::RG32_SFLOAT):
-        return VK_FORMAT_R32G32_SFLOAT;
-    case (rformat::RG32_UINT):
-        return VK_FORMAT_R32G32_UINT;
-    case (rformat::RG32_SINT):
-        return VK_FORMAT_R32G32_SINT;
-    case (rformat::R32_SFLOAT):
-        return VK_FORMAT_R32_SFLOAT;
-    case (rformat::R32_UINT):
-        return VK_FORMAT_R32_UINT;
-    case (rformat::R32_SINT):
-        return VK_FORMAT_R32_SINT;
-    case (rformat::RGBA64_SFLOAT):
-        return VK_FORMAT_R64G64B64A64_SFLOAT;
-    case (rformat::RGBA64_UINT):
-        return VK_FORMAT_R64G64B64A64_UINT;
-    case (rformat::RGBA64_SINT):
-        return VK_FORMAT_R64G64B64A64_SINT;
-    case (rformat::RGB64_SFLOAT):
-        return VK_FORMAT_R64G64B64_SFLOAT;
-    case (rformat::RGB64_UINT):
-        return VK_FORMAT_R64G64B64_UINT;
-    case (rformat::RGB64_SINT):
-        return VK_FORMAT_R64G64B64_SINT;
-    case (rformat::RG64_SFLOAT):
-        return VK_FORMAT_R64G64_SFLOAT;
-    case (rformat::RG64_UINT):
-        return VK_FORMAT_R64G64_UINT;
-    case (rformat::RG64_SINT):
-        return VK_FORMAT_R64G64_SINT;
-    case (rformat::R64_SFLOAT):
-        return VK_FORMAT_R64_SFLOAT;
-    case (rformat::R64_UINT):
-        return VK_FORMAT_R64_UINT;
-    case (rformat::R64_SINT):
-        return VK_FORMAT_R64_SINT;
-    case (rformat::D16_UNORM):
-        return VK_FORMAT_D16_UNORM;
-    case (rformat::D16_UNORM_S8_UINT):
-        return VK_FORMAT_D16_UNORM_S8_UINT;
-    case (rformat::D32_SFLOAT):
-        return VK_FORMAT_D32_SFLOAT;
-    case (rformat::D24_UNORM_S8_UINT):
-        return VK_FORMAT_D24_UNORM_S8_UINT;
-    case (rformat::D32_SFLOAT_S8_UINT):
-        return VK_FORMAT_D32_SFLOAT_S8_UINT;
-    case (rformat::SWAPCHAIN):
-        return vk->inst.device.swapchain.format;
-    default:
-        return VK_FORMAT_UNDEFINED;
-    }
-}
-
 u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
@@ -1394,7 +1236,7 @@ rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo)
     ti.name[SMALL_STR_LEN - 1] = 0;
 
     vkr_image_cfg cfg{};
-    cfg.format = get_vk_format(&rndr->vk, ctinfo.format);
+    cfg.format = vkr_get_format(&rndr->vk, ctinfo.format);
     asrt(cfg.format != VK_FORMAT_UNDEFINED && "Forgot to add vk support to rformat type");
     cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     cfg.dims = ctinfo.dims;
@@ -1459,7 +1301,7 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
     tref.item->flags = ci.flags;
 
     // If parameter not here its cause I want to leave at default on purpose
-    tref.item->cfg.format = get_vk_format(&rndr->vk, ci.format);
+    tref.item->cfg.format = vkr_get_format(&rndr->vk, ci.format);
     bool is_color = (ci.type == RTARGET_TEXTURE_TYPE_COLOR || ci.type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
     tref.item->cfg.usage =
         VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -1557,16 +1399,17 @@ intern rmanifest *create_manifest(renderer *rndr)
     return m;
 }
 
-intern int get_fif_ind(renderer *rndr)
+intern u32 get_fif_ind(renderer *rndr)
 {
     return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
 }
 
-intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif) {
+intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
+{
     if (window_resized_this_frame(rndr->vk.cfg.window)) {
         cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
     }
-    
+
     if (cur_fif->swapchain_resize > 0.0f) {
         cur_fif->swapchain_resize -= rndr->pt.dt;
         if (cur_fif->swapchain_resize > 0.0f) {
@@ -1585,9 +1428,9 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     auto dev = &rndr->vk.inst.device;
 
     // Update finished frames which is used to get the current frame
-    int fif = get_fif_ind(rndr);
+    u32 fif = get_fif_ind(rndr);
     auto *cur_fif = &rndr->fifs[fif];
-    
+
     // Window resize
     if (!window_resize_continue_check(rndr, cur_fif)) {
         return nullptr;
@@ -1660,13 +1503,121 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
     return m;
 }
 
+#if defined USE_IMGUI
+void draw_imgui(const render_job_cb_params &p, void *)
+{
+    auto img_data = ImGui::GetDrawData();
+    ImGui_ImplVulkan_RenderDrawData(img_data, (VkCommandBuffer)p.cmd_buf);
+}
+#endif
+
+void draw_geometry(const render_job_cb_params &, void *);
+
+// Create a framebuffer key from the passed in pass attachments and slot assignments. This key is used to get or create
+// framebuffers with this specific set of image views, allowing us to lazily create them
+intern void setup_framebuffer_key(vkr_framebuffer_key_data *fb_kd,
+                                  VkRenderPass vk_rpass,
+                                  const mpass &mp,
+                                  const rbp_pass &rbp_pass,
+                                  const rmanifest &m,
+                                  u32 fif)
+{
+    u32 att_cnt{};
+    fb_kd->layers = 1;
+    fb_kd->rpass = vk_rpass;
+    for (u32 si = 0; si < mp.slot_assignments.size; ++si) {
+        auto cur_sl = &mp.slot_assignments[si];
+        bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t);
+        bool b_cond = cur_sl->type == mslot_target_type::BUFFER && is_valid(cur_sl->b);
+        asrt(t_cond || b_cond);
+
+        // If is attachment, we add to framebuffer
+        u32 att_ind = rbp_pass.slots[si].att_ind;
+        if (is_valid(att_ind)) {
+            asrt(att_ind < fb_kd->atts.capacity);
+            auto tview = m.textures[cur_sl->t.index].frames[fif].view;
+            auto tex_dims = m.textures[cur_sl->t.index].frames[fif].image.dims.xy;
+
+            // The frame buffer can only be as big as the smallest texture - so that's what we set it to
+            if (fb_kd->dims.x == 0 || tex_dims.x < fb_kd->dims.x) {
+                fb_kd->dims.x = tex_dims.x;
+            }
+            if (fb_kd->dims.y == 0 || tex_dims.y < fb_kd->dims.y) {
+                fb_kd->dims.y = tex_dims.y;
+            }
+
+            // Resize only if cur att ind is less than or equal our size - we have no guarentees
+            // that the slot order will necessarily match the attachment order
+            if (att_ind >= fb_kd->atts.size) {
+                arr_resize(&fb_kd->atts, att_ind + 1);
+            }
+            fb_kd->atts[att_ind] = tview;
+            ++att_cnt;
+        }
+    }
+    asrt(fb_kd->atts.size == att_cnt);
+}
+
+intern void execute_manifest(const rmanifest &m, VkCommandBuffer buf, u32 fif)
+{
+    for (u32 rji = 0; rji < m.jobs.size; ++rji) {
+        auto rbp = get_render_blueprint(m.rndr, m.rbp);
+        auto cur_rj = &m.jobs[rji];
+        auto mp = &m.passes[cur_rj->pid];
+        auto rbp_pass = &rbp->passes[mp->rbp_pid];
+        auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
+        auto mview = &m.views[cur_rj->vid];
+
+        // Must have all slots assigned
+        asrt(rbp_pass->slots.size == mp->slot_assignments.size);
+
+        VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
+
+        vkr_framebuffer_key_data fb_kd{};
+        setup_framebuffer_key(&fb_kd, vk_rpass, *mp, *rbp_pass, m, fif);
+
+        auto fb = get_or_create_framebuffer(&m.rndr->fb_cache, fb_kd, &m.rndr->vk);
+
+        VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? vkr_get_rect_from_normalized(mp->norm_render_area, fb->kd.dims)
+                                                                       : vkr_get_rect(mp->render_area);
+        vkr_cmd_begin_rpass(buf, vk_rpass, fb, ra, att_clear_vals, 2);
+
+        VkViewport viewport = (mview->vp_size_mode == rect_size_mode::NORMALIZED)
+                                  ? vkr_get_viewport(mview->vp, mview->vp_depth_min_max, fb->kd.dims)
+                                  : vkr_get_viewport(mview->vp, mview->vp_depth_min_max);
+        vkCmdSetViewport(buf, 0, 1, &viewport);
+
+        VkRect2D scissor = (mview->scissor_size_mode == rect_size_mode::NORMALIZED)
+                               ? vkr_get_rect_from_normalized(mview->norm_scissor, fb->kd.dims)
+                               : vkr_get_rect(mview->scissor);
+        vkCmdSetScissor(buf, 0, 1, &scissor);
+
+        if (cur_rj->cb) {
+            render_job_cb_params p{};
+            p.cmd_buf = (u64)buf;
+            p.draw_calls = &cur_rj->draw_calls;
+            cur_rj->cb(p, cur_rj->cb_user);
+        }
+        else {
+            wlog("No draw function assigned for render-job %d (pass-id:%u view-id:%u rbp-pass:%s vkpass:%p blueprint:%s)",
+                 rji,
+                 cur_rj->pid,
+                 cur_rj->vid,
+                 rbp_pass->name,
+                 rbp_pass->vk_handle,
+                 rbp->name);
+        }
+        vkr_cmd_end_rpass(buf);
+    }
+}
+
 int end_render_frame(rmanifest *m)
 {
     PROFILE_SCOPE("end_render_frame");
     asrt(m);
     asrt(is_valid(m->rbp));
     auto dev = &m->rndr->vk.inst.device;
-    int fif = get_fif_ind(m->rndr);
+    u32 fif = get_fif_ind(m->rndr);
     auto *cur_frame = &m->rndr->fifs[fif];
 
 // Finalize IM GUI data - not dependent on our render stuff currently
@@ -1685,84 +1636,9 @@ int end_render_frame(rmanifest *m)
     ////////////////////////////
     // Just use buf 0 for now
     auto buf = cur_frame->thread_pools[0].buf;
-    for (u32 rji = 0; rji < m->jobs.size; ++rji) {
-        int err = vkr_begin_cmd_buf(buf, {});
-        if (err != err_code::VKR_NO_ERROR) {
-            continue;
-        }
-        auto rbp = get_render_blueprint(m->rndr, m->rbp);
-        auto cur_rj = &m->jobs[rji];
-        auto mpass = &m->passes[cur_rj->pid];
-        auto rbp_pass = &rbp->passes[mpass->rbp_pid];
-        auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
-        auto mview = &m->views[cur_rj->vid];
-
-        // Must have all slots assigned
-        asrt(rbp_pass->slots.size == mpass->slot_assignments.size);
-
-        VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
-
-        u32 att_cnt{};
-        vkr_framebuffer_key_data fb_kd{};
-        fb_kd.layers = 1;
-        fb_kd.rpass = vk_rpass;
-        for (u32 si = 0; si < mpass->slot_assignments.size; ++si) {
-            auto cur_sl = &mpass->slot_assignments[si];
-            bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t);
-            bool b_cond = cur_sl->type == mslot_target_type::BUFFER && is_valid(cur_sl->b);
-            asrt(t_cond || b_cond);
-
-            // If is attachment, we add to framebuffer
-            u32 att_ind = rbp_pass->slots[si].att_ind;
-            if (is_valid(att_ind)) {
-                asrt(att_ind < fb_kd.atts.capacity);
-                auto tview = m->textures[cur_sl->t.index].frames[fif].view;
-                auto tex_dims = m->textures[cur_sl->t.index].frames[fif].image.dims.xy;
-                if (fb_kd.dims.x < tex_dims.x) {
-                    fb_kd.dims.x = tex_dims.x;
-                }
-                if (fb_kd.dims.y < tex_dims.y) {
-                    fb_kd.dims.y = tex_dims.y;
-                }
-
-                // Resize only if cur att ind is less than or equal our size - we have no guarentees
-                // that the slot order will necessarily match the attachment order
-                if (att_ind >= fb_kd.atts.size) {
-                    arr_resize(&fb_kd.atts, att_ind + 1);
-                }
-                fb_kd.atts[att_ind] = tview;
-                ++att_cnt;
-            }
-        }
-        asrt(fb_kd.atts.size == att_cnt);
-
-        auto fb = get_or_create_framebuffer(&m->rndr->fb_cache, fb_kd, &m->rndr->vk);
-        vkr_cmd_begin_rpass(buf, vk_rpass, fb, att_clear_vals, 2);
-
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = (float)fb->kd.dims.w;
-        viewport.height = (float)fb->kd.dims.h;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(buf, 0, 1, &viewport);
-
-        VkRect2D scissor{};
-        scissor.offset = {0, 0};
-        scissor.extent = {fb->kd.dims.w, fb->kd.dims.h};
-        vkCmdSetScissor(buf, 0, 1, &scissor);
-
-#ifdef USE_IMGUI
-        if ((VkRenderPass)rbp_pass->vk_handle == m->rndr->imgui.rpass) {
-            auto img_data = ImGui::GetDrawData();
-            ImGui_ImplVulkan_RenderDrawData(img_data, buf);
-        }
-#endif
-
-        vkr_cmd_end_rpass(buf);
-        vkr_end_cmd_buf(buf);
-    }
+    int err = vkr_begin_cmd_buf(buf, {});
+    execute_manifest(*m, buf, fif);
+    vkr_end_cmd_buf(buf);
 
     //////////////////////////////////
     // Submit command buffer to GPU //

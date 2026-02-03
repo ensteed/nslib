@@ -3,7 +3,7 @@
 #include "math/matrix4.h"
 #include "profile_timer.h"
 #include "containers/slot_pool.h"
-#include "vk_context.h"
+#include "vkr_context.h"
 #include "render_blueprint.h"
 #include "rformat.h"
 
@@ -14,7 +14,7 @@ namespace nslib
 struct camera;
 struct transform;
 struct rmanifest;
-
+struct render_job_cb_params;
 struct rsubgeom_range
 {
     // Indice offset
@@ -475,13 +475,18 @@ struct init_renderer_params
     sizet frame_linear_size;
 };
 
+// DRAW FUNCTIONS
+#if defined USE_IMGUI
+void draw_imgui(const render_job_cb_params &, void*);
+#endif
+void draw_geometry(const render_job_cb_params &, void*);
+
+
 int init_renderer(renderer *rndr, const init_renderer_params &p);
 void terminate_renderer(renderer *rndr);
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
-
-VkFormat get_vk_format(const vkr_context *vk, rformat fmt);
 
 u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 

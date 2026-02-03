@@ -1,5 +1,6 @@
 #include "json_archive.h"
 #include "renderer.h"
+#include "vkr_utils.h"
 #include "render_blueprint.h"
 #include "logging.h"
 
@@ -138,16 +139,21 @@ intern VkSubpassDependency get_bookend_dependency(const rbp_pass &pass, u32 subp
 {
     VkSubpassDependency dep{};
     bool is_front_bookend = (subpass_ind == 0);
-    bool is_back_bookend = (subpass_ind == pass.subpasses.size - 1);
+    bool is_back_bookend = (subpass_ind == pass.subpasses.size);
     asrt(is_front_bookend || is_back_bookend);
 
+    // We use subpass ind equal to size to indicate a back bookend
+    if (is_back_bookend) {
+        --subpass_ind;
+        dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        dep.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        // In case we have zero subpasses that is logical no recovery type of problem
+        asrt(subpass_ind < pass.subpasses.size);
+    }
+    
     dep.srcSubpass = is_front_bookend ? VK_SUBPASS_EXTERNAL : subpass_ind;
     dep.dstSubpass = is_front_bookend ? subpass_ind : VK_SUBPASS_EXTERNAL;
     dep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-    if (!is_front_bookend) {
-        dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        dep.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    }
     for (u32 resi = 0; resi < pass.subpasses[subpass_ind].resources.size; ++resi) {
         const rbp_resource_requirement &req = pass.subpasses[subpass_ind].resources[resi];
         asrt(subpass_ind < pass.slots.size);
@@ -241,7 +247,7 @@ intern void fill_subpass_dependencies(vkr_rpass_cfg *rp_cfg, const rbp_pass &pas
     }
 
     if (pass.use_subpass_bookends) {
-        VkSubpassDependency back_bookend = get_bookend_dependency(pass, pass.subpasses.size - 1);
+        VkSubpassDependency back_bookend = get_bookend_dependency(pass, pass.subpasses.size);
         arr_push_back(&rp_cfg->subpass_dependencies, back_bookend);
     }
 }
@@ -415,7 +421,7 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
                 // Use format to tell if attachment hasn't been set yet - if it hasn't we set it as this is the first
                 // resource using that attachment
                 if (att->format == VK_FORMAT_UNDEFINED) {
-                    att->format = get_vk_format(&rndr->vk, slot.format);
+                    att->format = vkr_get_format(&rndr->vk, slot.format);
                     asrt(att->format != VK_FORMAT_UNDEFINED);
                     att->samples = VK_SAMPLE_COUNT_1_BIT;
                     att->loadOp = use_stencil ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : get_requirement_load_op(req);

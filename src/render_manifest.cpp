@@ -24,10 +24,10 @@ mpass_id push_pass(rmanifest *m, rbp_pass_id pid, rpass_slot_assignment *assignm
     return pind;
 }
 
-mview_id push_view(rmanifest *m, const mat4 &proj, const mat4 &cam)
+mview_id push_view(rmanifest *m, const mview &view)
 {
     mview_id ind = (mview_id)m->views.size;
-    arr_emplace_back(&m->views, proj, cam);
+    arr_push_back(&m->views, view);
     return ind;
 }
 

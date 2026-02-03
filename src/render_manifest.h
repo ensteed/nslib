@@ -1,6 +1,7 @@
 #pragma once
 #include "containers/slot_pool.h"
 #include "render_defs.h"
+#include "math/primitives.h"
 #include "math/matrix4.h"
 
 namespace nslib
@@ -31,6 +32,8 @@ struct mdraw_call
     gpu_handle pipeline;
     static_array<rtexture_handle, RMATERIAL_TEXTURE_COUNT> textures;
     instance_id iid;
+    // Mostly for UI
+    vec4 scissor_override{};
 };
 
 enum struct mslot_target_type
@@ -38,6 +41,11 @@ enum struct mslot_target_type
     INVALID,
     TEXTURE,
     BUFFER
+};
+
+enum struct rect_size_mode {
+    NORMALIZED,
+    ABSOLUTE
 };
 
 struct rpass_slot_assignment
@@ -55,18 +63,40 @@ struct mpass
     // These need to match exactly in size with the rbp slot count
     static_array<rpass_slot_assignment, MAX_BP_PASS_SLOT_COUNT> slot_assignments;
     rbp_pass_id rbp_pid;
+
+    // Coordinates x,y and width/height of the render area normalized to the framebuffer size
+    // Anything outside this area has no render operation
+    rect_size_mode ra_size_mode{rect_size_mode::NORMALIZED};
+    union {
+        rect norm_render_area{0.0f, 0.0f, 1.0f, 1.0f};
+        srect render_area;
+    };
 };
 
 struct mview
 {
     mat4 proj;
     mat4 cam;
+    
+    // Coordinates x,y and width/height of the viewport normalized to the framebuffer size
+    // The scene is "squished" to fit
+    rect_size_mode vp_size_mode{rect_size_mode::NORMALIZED};
+    rect vp{0.0f, 0.0f, 1.0f, 1.0f};
+    // How do we map the NDC to the depth buffer
+    vec2 vp_depth_min_max{0.0f, 1.0f};
+
+    // Coordinates x,y and width/height of a scissor normalized to the framebuffer size
+    // The scene is cut off by the rasterizer to fit in this window
+    rect_size_mode scissor_size_mode{rect_size_mode::NORMALIZED};
+    union {
+        rect norm_scissor{0.0f, 0.0f, 1.0f, 1.0f};
+        srect scissor;
+    };
 };
 
 struct render_job_cb_params
 {
-    mpass_id pid;
-    mview_id vid;
+    u64 cmd_buf;
     const array<mdraw_call> *draw_calls;
 };
 
@@ -101,7 +131,7 @@ struct rmanifest
 
 mpass_id push_pass(rmanifest *m, rbp_pass_id pid, rpass_slot_assignment *assignments, sizet assignment_count);
 mpass_id push_pass(rmanifest *m, rbp_pass_id pid);
-mview_id push_view(rmanifest *m, const mat4 &proj, const mat4 &cam);
+mview_id push_view(rmanifest *m, const mview &view);
 mrender_job_id push_render_job(rmanifest *m, mpass_id pass, mview_id view, render_job_cb *cb, void *cb_params);
 u32 push_draw(rmanifest *m, const mdraw_params &dp);
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "model.h"
-#include "render_defs.h"
 
 namespace nslib
 {

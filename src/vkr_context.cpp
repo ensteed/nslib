@@ -1,6 +1,6 @@
 #include <cstring>
 
-#include "vk_context.h"
+#include "vkr_context.h"
 #include "platform.h"
 #include "SDL3/SDL_vulkan.h"
 #include "logging.h"
@@ -1864,6 +1864,7 @@ sizet vkr_uniform_buffer_offset_alignment(vkr_context *vk, sizet uniform_block_s
 void vkr_cmd_begin_rpass(VkCommandBuffer cmd_buf,
                          VkRenderPass rpass,
                          const vkr_framebuffer *fb,
+                         const VkRect2D &render_area,
                          const VkClearValue *att_clear_vals,
                          sizet clear_val_size)
 {
@@ -1871,16 +1872,9 @@ void vkr_cmd_begin_rpass(VkCommandBuffer cmd_buf,
     info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     info.renderPass = rpass;
     info.framebuffer = fb->hndl;
-    info.renderArea.extent = {fb->kd.dims.w, fb->kd.dims.h};
-
-    // TODO: Figure out what all these different things are with regards to screen size...
-    // Viewport.. ImageView extent.. framebuffer size.. render area..
-    info.renderArea.offset = {0, 0};
-
-    // Set the clear values
-    info.clearValueCount = (u32)clear_val_size;
+    info.renderArea = render_area;
     info.pClearValues = att_clear_vals;
-
+    info.clearValueCount = (u32)clear_val_size;
     vkCmdBeginRenderPass(cmd_buf, &info, VK_SUBPASS_CONTENTS_INLINE);
 }
 
