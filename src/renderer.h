@@ -308,7 +308,7 @@ struct rtexture_target
     // We need to store this so we can resize the image
     vkr_image_cfg cfg{};
     vkr_image_view_cfg iv_cfg{};
-    
+
     rtexture_target_frame_fif frames[MAX_FRAMES_IN_FLIGHT];
 };
 
@@ -343,36 +343,36 @@ struct rtexture_target_desc
     u32 flags;
 };
 
-#define TEXTURE_TARGET_COLOR_HDR(name)                                                                                                     \
+#define TEXTURE_TARGET_COLOR_HDR(pname)                                                                                                    \
     {                                                                                                                                      \
-        .name = name,                                                                                                                      \
+        .name = pname,                                                                                                                     \
         .format = rformat::RGBA16_SFLOAT,                                                                                                  \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
     }
 
-#define TEXTURE_TARGET_COLOR(name)                                                                                                         \
+#define TEXTURE_TARGET_COLOR(pname)                                                                                                        \
     {                                                                                                                                      \
-        .name = name,                                                                                                                      \
-        .format = rformat::RGBA8_SFLOAT,                                                                                                   \
+        .name = pname,                                                                                                                     \
+        .format = rformat::RGBA8_SRGB,                                                                                                     \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
     }
 
-#define TEXTURE_TARGET_DEPTH(pnm)                                                                                                          \
+#define TEXTURE_TARGET_DEPTH(pname)                                                                                                        \
     {                                                                                                                                      \
-        .name = pnm,                                                                                                                       \
+        .name = pname,                                                                                                                     \
         .format = rformat::D32_SFLOAT,                                                                                                     \
         .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
     }
 
-#define TEXTURE_TARGET_SHADOW_MAP(name)                                                                                                    \
+#define TEXTURE_TARGET_SHADOW_MAP(pname)                                                                                                   \
     {                                                                                                                                      \
-        .name = name,                                                                                                                      \
+        .name = pname,                                                                                                                     \
         .format = rformat::D32_SFLOAT,                                                                                                     \
         .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
         .dims = DEFAULT_SHADOW_MAP_SIZE,                                                                                                   \

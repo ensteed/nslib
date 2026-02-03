@@ -14,6 +14,18 @@ using namespace nslib;
     #include "imgui/imgui.h"
 #endif
 
+intern constexpr const char * MAIN_PASS_COLOR_NAME = "main-pass-color";
+intern const rres_id MAIN_PASS_COLOR_ID = hash_type("main-pass-color");
+
+intern constexpr const char * MAIN_PASS_DEPTH_NAME = "main-pass-depth";
+intern const rres_id MAIN_PASS_DEPTH_ID = hash_type("main-pass-depth");
+
+intern constexpr const char * MAIN_PASS_NAME = "main-pass";
+intern const rres_id MAIN_PASS_ID = hash_type("main-pass");
+
+intern constexpr const char * IMGUI_PASS_NAME = "imgui-pass";
+intern const rres_id IMGUI_PASS_ID = hash_type("imgui-pass");
+
 struct rdev_app_ctxt
 {
     renderer rndr;
@@ -166,10 +178,12 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     // First, create the needed target resources
     auto rbp = create_render_blueprint(rndr, "fwd-pbr");
 
-    auto pass_id = add_rbp_pass(rbp.item, {.name = "main-pass", .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
+    auto pass_id = add_rbp_pass(rbp.item, {.name = MAIN_PASS_NAME, .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
+    auto imgui_pass_id = add_rbp_pass(rbp.item, {.name = IMGUI_PASS_NAME, .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
 
+    // Main geometry pass
     rbp_slot_id col_slot_ind = add_rbp_resource_slot(
-        rbp.item, pass_id, {.name = "color", .format = rformat::SWAPCHAIN, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
+        rbp.item, pass_id, {.name = "color", .format = rformat::RGBA8_SRGB, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
     rbp_slot_id depth_slot_ind = add_rbp_resource_slot(
         rbp.item, pass_id, {.name = "depth", .format = rformat::D32_SFLOAT, .usage = rbp_resource_usage::DEPTH_ATTACHMENT});
 
@@ -177,14 +191,25 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
                                  pass_id,
                                  {.slot_ind = col_slot_ind,
                                   .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
-                                  .visibility = VISIBILITY_FRAGMENT,
-                                  .option_mask = RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR});
+                                  .visibility = VISIBILITY_FRAGMENT});
 
     add_rbp_resource_requirement(rbp.item,
                                  pass_id,
                                  {.slot_ind = depth_slot_ind,
                                   .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
                                   .visibility = VISIBILITY_FRAGMENT});
+
+    // I'm gui will double as the place we render UI and the place where our layout conversion happens - no depth buffer
+    // needed for imgui
+    rbp_slot_id imgui_col_slot_ind = add_rbp_resource_slot(
+        rbp.item, imgui_pass_id, {.name = "color", .format = rformat::SWAPCHAIN, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
+
+    add_rbp_resource_requirement(rbp.item,
+                                 imgui_pass_id,
+                                 {.slot_ind = imgui_col_slot_ind,
+                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_READ,
+                                  .visibility = VISIBILITY_FRAGMENT,
+                                  .option_mask = RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR});
 
     dlog("Blueprint: %s", ls(to_json(*rbp.item)));
     compile_render_blueprint(rndr, rbp.item);
@@ -220,7 +245,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     auto rbp = build_and_compile_render_blueprint(&app->rndr, app);
 
 #ifdef USE_IMGUI
-    auto pass_id = find_rbp_pass(rbp.item, hash_type("main-pass"));
+    auto pass_id = find_rbp_pass(rbp.item, IMGUI_PASS_ID);
     init_imgui(&app->rndr, rbp.item->passes[pass_id]);
 #endif
 
@@ -228,7 +253,8 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
 
     // Create render targets
-    create_rtexture_target(&app->rndr, TEXTURE_TARGET_DEPTH("depthy-poo"));
+    create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));
+    create_rtexture_target(&app->rndr, TEXTURE_TARGET_DEPTH(MAIN_PASS_DEPTH_NAME));
 
     // Create our sim region aka scene
     init_sim_region(&app->rgn, get_global_arena());
@@ -284,16 +310,25 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 
 intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
 {
+    auto bp = get_render_blueprint(m->rndr, m->rbp);
+    auto bp_main_pass = find_rbp_pass(bp, MAIN_PASS_ID);
+    auto imgui_pass = find_rbp_pass(bp, IMGUI_PASS_ID);
+        
     rpass_slot_assignment assignments[] = {
-        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, SWAPCHAIN_ID)}},
-        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, hash_type("depthy-poo"))}},
+        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, MAIN_PASS_COLOR_ID)}},
+        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID)}},
     };
-    auto mp_id = push_pass(m, 0, assignments, 2);
+    auto mp_id = push_pass(m, bp_main_pass, assignments, 2);
+
+    assignments[0].t = find_rtexture_target(m->rndr, SWAPCHAIN_ID);
+    auto imgui_id = push_pass(m, imgui_pass, assignments, 1);
 
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
     auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
     auto view_id = push_view(m, cam->proj, cam->view);
     push_render_job(m, mp_id, view_id, nullptr, nullptr);
+    push_render_job(m, imgui_id, view_id, nullptr, nullptr);
+    
 }
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
@@ -316,7 +351,7 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     if (!m) {
         return true;
     }
-    
+
     build_manifest(m, app);
 
 // Gather visible items and do stuff
