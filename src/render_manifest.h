@@ -125,7 +125,7 @@ struct mpass_slot_assignment
         .t = hndl,                                                                                                                         \
         .clear_val{                                                                                                                        \
             .type = COLOR_TYPE_SINT,                                                                                                       \
-            .fc{clear_col_signed_int},                                                                                                     \
+            .sc{clear_col_signed_int},                                                                                                     \
             .depth = clear_depth,                                                                                                          \
             .stencil = clear_stencil,                                                                                                      \
         },                                                                                                                                 \
@@ -140,7 +140,7 @@ struct mpass_slot_assignment
         .t = hndl,                                                                                                                         \
         .clear_val{                                                                                                                        \
             .type = COLOR_TYPE_UINT,                                                                                                       \
-            .fc{clear_col_unsigned_int},                                                                                                   \
+            .uc{clear_col_unsigned_int},                                                                                                   \
             .depth = clear_depth,                                                                                                          \
             .stencil = clear_stencil,                                                                                                      \
         },                                                                                                                                 \

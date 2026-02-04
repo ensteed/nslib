@@ -1579,7 +1579,8 @@ intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd
             fb_kd->atts[att_ind] = tview;
 
             // Set clear value
-            cv[*cv_size] = get_vk_clear_value(cur_sl->clear_val);
+            rformat tex_format = get_rformat(cur_t->frames[fif].image.format);
+            cv[*cv_size] = get_vk_clear_value(cur_sl->clear_val, tex_format);
             ++(*cv_size);
 
             ++att_cnt;

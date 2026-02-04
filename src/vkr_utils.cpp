@@ -140,18 +140,31 @@ VkClearValue get_vk_clear_value(const mpass_clear_value &cv, rformat tex_format)
     VkClearValue ret{};
     ret.depthStencil.depth = cv.depth;
     ret.depthStencil.stencil = cv.stencil;
+    auto vkf = get_vk_format(tex_format);
+    if (is_depth_stencil(vkf)) {
+        return ret;
+    }
+
     if (cv.type == mpass_clear_value::COLOR_TYPE_FLOAT) {
+        if (!is_floating_point_type(vkf)) {
+            wlog("Rformat %d is not floating point despite clear color floating point", tex_format);
+        }
         memcpy(ret.color.float32, cv.fc.data, sizeof(vec4));
     }
     else if (cv.type == mpass_clear_value::COLOR_TYPE_SINT) {
+        if (!is_sint_type(vkf)) {
+            wlog("Rformat %d is not signed int despite clear color signed int", tex_format);
+        }
         memcpy(ret.color.int32, cv.sc.data, sizeof(svec4));
     }
     else if (cv.type == mpass_clear_value::COLOR_TYPE_SINT) {
+        if (!is_uint_type(vkf)) {
+            wlog("Rformat %d is not unsigned int despite clear color unsigned int", tex_format);
+        }
         memcpy(ret.color.uint32, cv.uc.data, sizeof(uvec4));
     }
     return ret;
 }
-
 
 VkRect2D get_vk_rect(const svec2 &pos, const uvec2 &dims)
 {
@@ -232,6 +245,5 @@ VkViewport get_vk_viewport(const rect &norm_vp, const vec2 &depth_min_max, const
         .maxDepth = std::clamp(depth_min_max.y, 0.0f, 1.0f),
     };
 }
-
 
 } // namespace nslib

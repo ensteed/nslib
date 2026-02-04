@@ -498,7 +498,7 @@ constexpr bool is_uint_type(VkFormat format)
     }
 }
 
-constexpr bool is_int_type(VkFormat format)
+constexpr bool is_sint_type(VkFormat format)
 {
     switch (format) {
     case VK_FORMAT_R8G8B8A8_SINT:
@@ -520,6 +520,21 @@ constexpr bool is_int_type(VkFormat format)
     case VK_FORMAT_R64G64B64_SINT:
     case VK_FORMAT_R64G64_SINT:
     case VK_FORMAT_R64_SINT:
+        return true;
+    default:
+        return false;
+    }
+}
+
+constexpr bool is_depth_stencil(VkFormat format) {
+    switch (format) {
+    case VK_FORMAT_D16_UNORM:
+    case VK_FORMAT_D32_SFLOAT:
+    case VK_FORMAT_X8_D24_UNORM_PACK32:
+    case VK_FORMAT_S8_UINT:
+    case VK_FORMAT_D16_UNORM_S8_UINT:
+    case VK_FORMAT_D24_UNORM_S8_UINT:
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
         return true;
     default:
         return false;
