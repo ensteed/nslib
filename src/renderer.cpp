@@ -446,7 +446,7 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
             auto cur_attrib_layout = &layout->vert_layout.attribs[atti + layout_attrib_offset];
 
             cur_attrib_layout->binding = cur_binding->binding;
-            cur_attrib_layout->format = vkr_get_format(vk, cur_attrib_desc->fmt);
+            cur_attrib_layout->format = get_format(vk, cur_attrib_desc->fmt);
             cur_attrib_layout->location = cur_attrib_desc->shader_location;
             cur_attrib_layout->offset = cur_binding->stride;
 
@@ -1235,7 +1235,7 @@ rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo)
     ti.name[SMALL_STR_LEN - 1] = 0;
 
     vkr_image_cfg cfg{};
-    cfg.format = vkr_get_format(&rndr->vk, ctinfo.format);
+    cfg.format = get_format(&rndr->vk, ctinfo.format);
     asrt(cfg.format != VK_FORMAT_UNDEFINED && "Forgot to add vk support to rformat type");
     cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     cfg.dims = ctinfo.dims;
@@ -1300,7 +1300,7 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
     tref.item->flags = ci.flags;
 
     // If parameter not here its cause I want to leave at default on purpose
-    tref.item->cfg.format = vkr_get_format(&rndr->vk, ci.format);
+    tref.item->cfg.format = get_format(&rndr->vk, ci.format);
     bool is_color = (ci.type == RTARGET_TEXTURE_TYPE_COLOR || ci.type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
     tref.item->cfg.usage =
         VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -1557,38 +1557,231 @@ intern void setup_framebuffer_key(vkr_framebuffer_key_data *fb_kd,
     asrt(fb_kd->atts.size == att_cnt);
 }
 
-intern void execute_manifest(const rmanifest &m, VkCommandBuffer buf, u32 fif)
+struct rbp_slot_usage_info
 {
-    for (u32 rji = 0; rji < m.jobs.size; ++rji) {
-        auto rbp = get_render_blueprint(m.rndr, m.rbp);
-        auto cur_rj = &m.jobs[rji];
-        auto mp = &m.passes[cur_rj->pid];
+    const rbp_resource_requirement *first{};
+    const rbp_resource_requirement *last{};
+};
+
+intern void gather_pass_slot_usage_info(rbp_slot_usage_info *infos, const rbp_pass &rbp_pass)
+{
+    // Record first/last requirement per slot so we can place a single pre-pass barrier and finalize state post-pass.
+    for (u32 subi = 0; subi < rbp_pass.subpasses.size; ++subi) {
+        const rbp_subpass *sub = &rbp_pass.subpasses[subi];
+        for (u32 resi = 0; resi < sub->resources.size; ++resi) {
+            const rbp_resource_requirement *req = &sub->resources[resi];
+            asrt(req->slot_ind < rbp_pass.slots.size);
+            rbp_slot_usage_info *info = &infos[req->slot_ind];
+            if (!info->first) {
+                info->first = req;
+            }
+            info->last = req;
+        }
+    }
+}
+
+intern rtexture_state get_pre_pass_texture_state(const rbp_pass &rbp_pass, const rbp_resource_requirement &req)
+{
+    rtexture_state desired{};
+    if (is_usage_attachment(rbp_pass.slots[req.slot_ind].usage)) {
+        // Attachments can be cleared by the render pass; in that case we can treat old contents as undefined.
+        VkImageLayout init_layout = get_baked_initial_layout(rbp_pass, req);
+        if (init_layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+            desired.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            desired.access = VK_ACCESS_NONE;
+            desired.stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        }
+        else {
+            desired.layout = init_layout;
+            desired.access = get_access_from_requirement(rbp_pass, req);
+            desired.stage = get_stage_from_requirement(rbp_pass, req);
+        }
+    }
+    else {
+        desired.layout = get_layout_from_requirement(rbp_pass, req, false);
+        desired.access = get_access_from_requirement(rbp_pass, req);
+        desired.stage = get_stage_from_requirement(rbp_pass, req);
+    }
+    return desired;
+}
+
+intern rtexture_state get_post_pass_texture_state(const rbp_pass &rbp_pass, const rbp_resource_requirement &req)
+{
+    rtexture_state desired{};
+    bool is_attachment = is_usage_attachment(rbp_pass.slots[req.slot_ind].usage);
+    desired.layout = get_layout_from_requirement(rbp_pass, req, is_attachment);
+    desired.access = get_access_from_requirement(rbp_pass, req);
+    desired.stage = get_stage_from_requirement(rbp_pass, req);
+    return desired;
+}
+
+intern rbuffer_state get_pass_buffer_state(const rbp_pass &rbp_pass, const rbp_resource_requirement &req)
+{
+    rbuffer_state desired{};
+    desired.access = get_access_from_requirement(rbp_pass, req);
+    desired.stage = get_stage_from_requirement(rbp_pass, req);
+    return desired;
+}
+
+intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, const mpass &mp, VkCommandBuffer buf, u32 fif)
+{
+    rbp_slot_usage_info slot_usage[MAX_BP_PASS_SLOT_COUNT]{};
+    gather_pass_slot_usage_info(slot_usage, rbp_pass);
+
+    static_array<VkImageMemoryBarrier, MAX_BP_PASS_SLOT_COUNT> image_barriers{};
+    static_array<VkBufferMemoryBarrier, MAX_BP_PASS_SLOT_COUNT> buffer_barriers{};
+    VkPipelineStageFlags src_stage_mask = 0;
+    VkPipelineStageFlags dst_stage_mask = 0;
+
+    for (u32 slot_ind = 0; slot_ind < rbp_pass.slots.size; ++slot_ind) {
+        const rbp_resource_requirement *first = slot_usage[slot_ind].first;
+        if (!first) {
+            continue;
+        }
+
+        const rpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
+        if (assignment.type == mslot_target_type::TEXTURE) {
+            asrt(is_valid(assignment.t));
+            asrt(assignment.t.index < m->textures.size);
+            rtexture_state desired = get_pre_pass_texture_state(rbp_pass, *first);
+            auto cur_t = &m->textures[assignment.t.index];
+            rtexture_state *cur_state = &cur_t->frames[fif].state;
+
+            bool use_bookends = rbp_pass.use_subpass_bookends && is_usage_attachment(rbp_pass.slots[slot_ind].usage);
+            bool layout_mismatch = cur_state->layout != desired.layout;
+            bool access_stage_mismatch = cur_state->access != desired.access || cur_state->stage != desired.stage;
+            // Bookend dependencies cover external memory visibility for attachments. We still need a barrier
+            // for layout transitions when the current layout doesn't match the render pass initial layout.
+            if (layout_mismatch || (!use_bookends && access_stage_mismatch)) {
+                ilog("%s: ca:%d da:%d  cs:%d ds:%d", cur_t->name, cur_state->access, desired.access, cur_state->stage, desired.stage);
+
+                // Single barrier per resource into the first required state for this pass.
+                VkImageMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                barrier.oldLayout = cur_state->layout;
+                barrier.newLayout = desired.layout;
+                barrier.srcAccessMask = cur_state->access;
+                barrier.dstAccessMask = desired.access;
+                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.image = m->textures[assignment.t.index].frames[fif].image.hndl;
+                barrier.subresourceRange = m->textures[assignment.t.index].iv_cfg.srange;
+                arr_push_back(&image_barriers, barrier);
+
+                src_stage_mask |= normalize_stage_mask(cur_state->stage);
+                dst_stage_mask |= normalize_stage_mask(desired.stage);
+            }
+            // Keep the manifest in sync so later passes see the in-pass state even if no barrier was needed.
+            *cur_state = desired;
+        }
+        else if (assignment.type == mslot_target_type::BUFFER) {
+            asrt(is_valid(assignment.b));
+            asrt(assignment.b.index < m->buffers.size);
+            rbuffer_state desired = get_pass_buffer_state(rbp_pass, *first);
+            rbuffer_state *cur_state = &m->buffers[assignment.b.index].frames[fif].state;
+
+            if (cur_state->access != desired.access || cur_state->stage != desired.stage) {
+                // Single barrier per resource into the first required state for this pass.
+                VkBufferMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                barrier.srcAccessMask = cur_state->access;
+                barrier.dstAccessMask = desired.access;
+                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.buffer = m->buffers[assignment.b.index].frames[fif].buffer.hndl;
+                barrier.offset = 0;
+                barrier.size = VK_WHOLE_SIZE;
+                arr_push_back(&buffer_barriers, barrier);
+
+                src_stage_mask |= normalize_stage_mask(cur_state->stage);
+                dst_stage_mask |= normalize_stage_mask(desired.stage);
+            }
+            // Keep the manifest in sync so later passes see the in-pass state even if no barrier was needed.
+            *cur_state = desired;
+        }
+    }
+
+    if (image_barriers.size > 0 || buffer_barriers.size > 0) {
+        // Collapse all barriers into a single pipeline barrier for this pass.
+        if (src_stage_mask == 0) {
+            src_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        }
+        if (dst_stage_mask == 0) {
+            dst_stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        }
+        vkCmdPipelineBarrier(buf,
+                             src_stage_mask,
+                             dst_stage_mask,
+                             0,
+                             0,
+                             nullptr,
+                             (u32)buffer_barriers.size,
+                             buffer_barriers.data,
+                             (u32)image_barriers.size,
+                             image_barriers.data);
+    }
+}
+
+intern void update_manifest_pass_states(rmanifest *m, const rbp_pass &rbp_pass, const mpass &mp, u32 fif)
+{
+    rbp_slot_usage_info slot_usage[MAX_BP_PASS_SLOT_COUNT]{};
+    gather_pass_slot_usage_info(slot_usage, rbp_pass);
+
+    for (u32 slot_ind = 0; slot_ind < rbp_pass.slots.size; ++slot_ind) {
+        const rbp_resource_requirement *last = slot_usage[slot_ind].last;
+        if (!last) {
+            continue;
+        }
+        const rpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
+        if (assignment.type == mslot_target_type::TEXTURE) {
+            // Final state after the pass completes (attachments use final layout).
+            asrt(is_valid(assignment.t));
+            asrt(assignment.t.index < m->textures.size);
+            m->textures[assignment.t.index].frames[fif].state = get_post_pass_texture_state(rbp_pass, *last);
+        }
+        else if (assignment.type == mslot_target_type::BUFFER) {
+            // Final buffer access/stage after the pass completes.
+            asrt(is_valid(assignment.b));
+            asrt(assignment.b.index < m->buffers.size);
+            m->buffers[assignment.b.index].frames[fif].state = get_pass_buffer_state(rbp_pass, *last);
+        }
+    }
+}
+
+intern void execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
+{
+    for (u32 rji = 0; rji < m->jobs.size; ++rji) {
+        auto rbp = get_render_blueprint(m->rndr, m->rbp);
+        auto cur_rj = &m->jobs[rji];
+        auto mp = &m->passes[cur_rj->pid];
         auto rbp_pass = &rbp->passes[mp->rbp_pid];
         auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
-        auto mview = &m.views[cur_rj->vid];
+        auto mview = &m->views[cur_rj->vid];
 
         // Must have all slots assigned
         asrt(rbp_pass->slots.size == mp->slot_assignments.size);
 
+        emit_manifest_pass_barriers(m, *rbp_pass, *mp, buf, fif);
+
         VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
 
         vkr_framebuffer_key_data fb_kd{};
-        setup_framebuffer_key(&fb_kd, vk_rpass, *mp, *rbp_pass, m, fif);
+        setup_framebuffer_key(&fb_kd, vk_rpass, *mp, *rbp_pass, *m, fif);
 
-        auto fb = get_or_create_framebuffer(&m.rndr->fb_cache, fb_kd, &m.rndr->vk);
+        auto fb = get_or_create_framebuffer(&m->rndr->fb_cache, fb_kd, &m->rndr->vk);
 
-        VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? vkr_get_rect_from_normalized(mp->norm_render_area, fb->kd.dims)
-                                                                       : vkr_get_rect(mp->render_area);
+        VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? get_rect_from_normalized(mp->norm_render_area, fb->kd.dims)
+                                                                       : get_rect(mp->render_area);
         vkr_cmd_begin_rpass(buf, vk_rpass, fb, ra, att_clear_vals, 2);
 
         VkViewport viewport = (mview->vp_size_mode == rect_size_mode::NORMALIZED)
-                                  ? vkr_get_viewport(mview->vp, mview->vp_depth_min_max, fb->kd.dims)
-                                  : vkr_get_viewport(mview->vp, mview->vp_depth_min_max);
+                                  ? get_viewport(mview->vp, mview->vp_depth_min_max, fb->kd.dims)
+                                  : get_viewport(mview->vp, mview->vp_depth_min_max);
         vkCmdSetViewport(buf, 0, 1, &viewport);
 
         VkRect2D scissor = (mview->scissor_size_mode == rect_size_mode::NORMALIZED)
-                               ? vkr_get_rect_from_normalized(mview->norm_scissor, fb->kd.dims)
-                               : vkr_get_rect(mview->scissor);
+                               ? get_rect_from_normalized(mview->norm_scissor, fb->kd.dims)
+                               : get_rect(mview->scissor);
         vkCmdSetScissor(buf, 0, 1, &scissor);
 
         if (cur_rj->cb) {
@@ -1607,6 +1800,8 @@ intern void execute_manifest(const rmanifest &m, VkCommandBuffer buf, u32 fif)
                  rbp->name);
         }
         vkr_cmd_end_rpass(buf);
+
+        update_manifest_pass_states(m, *rbp_pass, *mp, fif);
     }
 }
 
@@ -1636,7 +1831,7 @@ int end_render_frame(rmanifest *m)
     // Just use buf 0 for now
     auto buf = cur_frame->thread_pools[0].buf;
     int err = vkr_begin_cmd_buf(buf, {});
-    execute_manifest(*m, buf, fif);
+    execute_manifest(m, buf, fif);
     vkr_end_cmd_buf(buf);
 
     //////////////////////////////////

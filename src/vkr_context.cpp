@@ -1484,7 +1484,7 @@ int vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg)
     alloc_info.preferredFlags = cfg.preferred_flags;
     alloc_info.priority = cfg.priority;
     alloc_info.pUserData = cfg.user_data;
-
+    
     image->format = cinfo.format;
     image->dims = cfg.dims;
 

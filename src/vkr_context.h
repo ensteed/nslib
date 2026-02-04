@@ -241,7 +241,8 @@ struct vkr_phys_device
     VkPhysicalDeviceMemoryProperties mem_properties{};
 };
 
-struct vkr_framebuffer_key_data {
+struct vkr_framebuffer_key_data
+{
     VkRenderPass rpass{VK_NULL_HANDLE};
     uvec2 dims{};
     u32 layers{};
@@ -269,13 +270,15 @@ struct vkr_swapchain
     VkSwapchainKHR swapchain;
 };
 
-struct vkr_alloc_cmd_bufs_cfg {
+struct vkr_alloc_cmd_bufs_cfg
+{
     VkCommandPool pool{VK_NULL_HANDLE};
     sizet count{1};
     VkCommandBufferLevel level{VK_COMMAND_BUFFER_LEVEL_PRIMARY};
 };
 
-struct vkr_alloc_desc_sets_cfg {
+struct vkr_alloc_desc_sets_cfg
+{
     VkDescriptorPool pool{VK_NULL_HANDLE};
     const VkDescriptorSetLayout *set_layouts{nullptr};
     sizet set_count{1};
@@ -288,7 +291,7 @@ struct vkr_rpass_cfg_subpass
     static_array<VkAttachmentReference, 16> input_attachments;
     static_array<VkAttachmentReference, 16> resolve_attachments;
     static_array<u32, 16> preserve_attachments;
-    VkAttachmentReference depth_stencil_attachment{.attachment=VK_ATTACHMENT_UNUSED};
+    VkAttachmentReference depth_stencil_attachment{.attachment = VK_ATTACHMENT_UNUSED};
 };
 
 struct vkr_rpass_cfg
@@ -471,7 +474,7 @@ struct vkr_cfg
     int log_verbosity;
     void *window;
     VkInstanceCreateFlags inst_create_flags;
-    
+
     // Array of additional instance extension names - besides defaults determined by window
     const char *const *extra_instance_extension_names;
     u32 extra_instance_extension_count;
@@ -531,7 +534,7 @@ void vkr_terminate_desc_pool(VkDescriptorPool hndl, const vkr_context *vk);
 
 // Descriptor sets
 
-//int vkr_alloc_descriptor
+// int vkr_alloc_descriptor
 int vkr_allot_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, const vkr_context *vk);
 void vkr_free_desc_sets(const VkDescriptorSet *sets, sizet set_count, VkDescriptorPool pool, const vkr_context *vk);
 

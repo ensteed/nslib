@@ -7,133 +7,6 @@
 namespace nslib
 {
 
-intern VkPipelineStageFlags get_stage_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &req)
-{
-    // 1. If it's a Compute pass, everything happens in the Compute Shader stage.
-    if (pass.type == rbp_pass_type::PASS_TYPE_COMPUTE) {
-        return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-    }
-
-    // 2. If it's a Graphics pass, determine stage by usage.
-    switch (pass.slots[req.slot_ind].usage) {
-    case rbp_resource_usage::COLOR_ATTACHMENT:
-        return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    case rbp_resource_usage::DEPTH_ATTACHMENT:
-    case rbp_resource_usage::STENCIL_ATTACHMENT:
-    case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
-        // Combine both test stages to be safe
-        return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    case rbp_resource_usage::INPUT_ATTACHMENT:
-        return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    case rbp_resource_usage::SAMPLED_IMAGE:
-    case rbp_resource_usage::STORAGE_BUFFER: {
-        // Use the visibility flags to determine the specific shader stages
-        VkPipelineStageFlags stages = 0;
-        if (req.visibility & VISIBILITY_VERTEX) stages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-        if (req.visibility & VISIBILITY_FRAGMENT) stages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        // Fallback if no visibility is set
-        return (stages != 0) ? stages : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    }
-    default:
-        return VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    }
-}
-
-intern VkAccessFlags get_access_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r)
-{
-    VkAccessFlags access = 0;
-    bool is_read = (r.access_mask & RESOURCE_REQUIREMENT_ACCESS_READ);
-    bool is_write = (r.access_mask & RESOURCE_REQUIREMENT_ACCESS_WRITE);
-
-    switch (pass.slots[r.slot_ind].usage) {
-    case rbp_resource_usage::COLOR_ATTACHMENT:
-        if (is_read) access |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-        if (is_write) access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        break;
-    case rbp_resource_usage::DEPTH_ATTACHMENT:
-    case rbp_resource_usage::STENCIL_ATTACHMENT:
-    case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
-        if (is_read) access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        if (is_write) access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        break;
-    case rbp_resource_usage::INPUT_ATTACHMENT:
-        asrt(is_read);
-        if (is_read) access |= VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
-        break;
-    case rbp_resource_usage::SAMPLED_IMAGE:
-        asrt(is_read);
-        // Sampled images are effectively read-only in the shader
-        if (is_read) access |= VK_ACCESS_SHADER_READ_BIT;
-        break;
-    case rbp_resource_usage::STORAGE_BUFFER:
-        // Storage buffers/images can be both
-        if (is_read) access |= VK_ACCESS_SHADER_READ_BIT;
-        if (is_write) access |= VK_ACCESS_SHADER_WRITE_BIT;
-        break;
-    case rbp_resource_usage::UNDEFINED:
-        // Do nothing - leave at 0
-        break;
-    }
-    return access;
-}
-
-intern VkImageLayout get_layout_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r, bool is_final)
-{
-    bool is_write = test_flags(r.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE);
-    bool is_present_khr = test_flags(r.option_mask, RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR);
-    rbp_resource_usage usage = pass.slots[r.slot_ind].usage;
-    assert(!is_present_khr || usage == rbp_resource_usage::COLOR_ATTACHMENT);
-    switch (usage) {
-    case rbp_resource_usage::COLOR_ATTACHMENT:
-        // There isn't really a common "Read Only" color attachment layout
-        // used during a render pass (usually it's sampled instead).
-        return (is_final && is_present_khr) ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    case rbp_resource_usage::DEPTH_ATTACHMENT:
-    case rbp_resource_usage::STENCIL_ATTACHMENT:
-    case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
-        return is_write ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    case rbp_resource_usage::SAMPLED_IMAGE:
-        asrt(!is_write);
-        return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    case rbp_resource_usage::INPUT_ATTACHMENT:
-        return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    case rbp_resource_usage::STORAGE_BUFFER:
-        return VK_IMAGE_LAYOUT_GENERAL;
-    default:
-        return VK_IMAGE_LAYOUT_UNDEFINED;
-    }
-}
-
-intern VkImageLayout get_baked_initial_layout(const rbp_pass &pass, const rbp_resource_requirement &req)
-{
-    // Make sure we can't have both CLEAR and READ set
-    asrt(!test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) || !test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_READ));
-
-    // Optimization: If we are clearing and don't care about previous contents,
-    // we tell the render pass to ignore the current layout and just treat it as undefined.
-    return test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) ? VK_IMAGE_LAYOUT_UNDEFINED
-                                                                          : get_layout_from_requirement(pass, req, false);
-}
-
-intern VkAttachmentLoadOp get_requirement_load_op(const rbp_resource_requirement &req)
-{
-    if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_READ)) {
-        return VK_ATTACHMENT_LOAD_OP_LOAD;
-    }
-    if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR)) {
-        return VK_ATTACHMENT_LOAD_OP_CLEAR;
-    }
-    return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-}
-
-intern VkAttachmentStoreOp get_requirement_store_op(const rbp_resource_requirement &req)
-{
-    if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE)) {
-        return VK_ATTACHMENT_STORE_OP_STORE;
-    }
-    return VK_ATTACHMENT_STORE_OP_DONT_CARE;
-}
-
 // Assumes subpass dependency is zeroed out on passing in
 intern VkSubpassDependency get_bookend_dependency(const rbp_pass &pass, u32 subpass_ind)
 {
@@ -263,7 +136,7 @@ intern u32 get_next_att_ind(const rbp_pass &pass, sizet slot_size)
     return ind;
 }
 
-intern bool is_usage_attachment(rbp_resource_usage usage)
+bool is_usage_attachment(rbp_resource_usage usage)
 {
     return (usage < rbp_resource_usage::SAMPLED_IMAGE);
 }
@@ -421,7 +294,7 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
                 // Use format to tell if attachment hasn't been set yet - if it hasn't we set it as this is the first
                 // resource using that attachment
                 if (att->format == VK_FORMAT_UNDEFINED) {
-                    att->format = vkr_get_format(&rndr->vk, slot.format);
+                    att->format = get_format(&rndr->vk, slot.format);
                     asrt(att->format != VK_FORMAT_UNDEFINED);
                     att->samples = VK_SAMPLE_COUNT_1_BIT;
                     att->loadOp = use_stencil ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : get_requirement_load_op(req);

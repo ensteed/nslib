@@ -157,6 +157,7 @@ inline bool is_valid(const rbp_resource_slot_info &si)
 }
 
 u32 get_rbp_attachment_count(rbp_pass *rbp);
+bool is_usage_attachment(rbp_resource_usage usage);
 
 rbp_slot_id add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_slot_desc &desc);
 rbp_resource_req_id add_rbp_resource_requirement(render_blueprint *rbp,
