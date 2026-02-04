@@ -50,10 +50,9 @@ intern void *imgui_mem_alloc(sizet sz, void *usr)
     return mem_alloc(sz, (mem_arena *)usr, SIMD_MIN_ALIGNMENT);
 }
 
-intern void check_vk_result(VkResult err)
+intern void check_vk_result(VkResult result)
 {
-    if (err != VK_SUCCESS) wlog("vulkan err: %d", err);
-    asrt(err >= 0);
+    asrt(result == VK_SUCCESS);
 }
 
 #ifdef USE_IMGUI
