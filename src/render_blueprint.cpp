@@ -285,7 +285,7 @@ rbp_slot_id add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_id pid, const 
     auto ind = pass->slots.size++;
     asrt(ind < pass->slots.capacity);
     auto slot = &pass->slots[ind];
-    memcpy(slot->name, desc.name, SMALL_STR_LEN - 1);
+    strncpy(slot->name, desc.name, SMALL_STR_LEN - 1);
     slot->format = desc.format;
     slot->usage = desc.usage;
     // don't include the current slot we just made

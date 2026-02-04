@@ -49,7 +49,7 @@ enum resource_requirement_option_flag : u32
 
 struct rbp_resource_slot_info
 {
-    small_str name;
+    small_str name{};
     rformat format{rformat::INVALID};
     rbp_resource_usage usage{rbp_resource_usage::UNDEFINED};
     // Only valid if slot corresponds with attachment (not necessarily true for sampled images and storage buffers)
@@ -93,7 +93,7 @@ pup_func(rbp_subpass)
 struct rbp_pass
 {
     // Set while building
-    small_str name;
+    small_str name{};
     rres_id id;
 
     rbp_pass_type type;
@@ -137,7 +137,7 @@ struct rbp_resource_slot_desc
 
 struct render_blueprint
 {
-    small_str name;
+    small_str name{};
     rres_id id;
     static_array<rbp_pass, MAX_BP_PASS_COUNT> passes{};
     hmap<rres_id, rbp_pass_id> pass_idmap{};
