@@ -190,13 +190,13 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     add_rbp_resource_requirement(rbp.item,
                                  pass_id,
                                  {.slot_ind = col_slot_ind,
-                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
+                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE,
                                   .visibility = VISIBILITY_FRAGMENT});
 
     add_rbp_resource_requirement(rbp.item,
                                  pass_id,
                                  {.slot_ind = depth_slot_ind,
-                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
+                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE,
                                   .visibility = VISIBILITY_FRAGMENT});
 
     // I'm gui will double as the place we render UI and the place where our layout conversion happens - no depth buffer
@@ -207,7 +207,7 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     add_rbp_resource_requirement(rbp.item,
                                  imgui_pass_id,
                                  {.slot_ind = imgui_col_slot_ind,
-                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_READ,
+                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
                                   .visibility = VISIBILITY_FRAGMENT,
                                   .option_mask = RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR});
 

@@ -1685,7 +1685,14 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, 
             // Bookend dependencies cover external memory visibility for attachments. We still need a barrier
             // for layout transitions when the current layout doesn't match the render pass initial layout.
             if (layout_mismatch || (!use_bookends && access_stage_mismatch)) {
-                ilog("%s: ca:%d da:%d  cs:%d ds:%d", cur_t->name, cur_state->access, desired.access, cur_state->stage, desired.stage);
+                ilog("%s: cur[l:%d a:%d s:%d]  des[l:%d a:%d s:%d",
+                     cur_t->name,
+                     cur_state->layout,
+                     cur_state->access,
+                     cur_state->stage,
+                     desired.layout,
+                     desired.access,
+                     desired.stage);
 
                 // Single barrier per resource into the first required state for this pass.
                 VkImageMemoryBarrier barrier{};
