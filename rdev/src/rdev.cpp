@@ -178,8 +178,8 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     // First, create the needed target resources
     auto rbp = create_render_blueprint(rndr, "fwd-pbr");
 
-    auto pass_id = add_rbp_pass(rbp.item, {.name = MAIN_PASS_NAME, .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = false});
-    auto imgui_pass_id = add_rbp_pass(rbp.item, {.name = IMGUI_PASS_NAME, .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = false});
+    auto pass_id = add_rbp_pass(rbp.item, {.name = MAIN_PASS_NAME, .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
+    auto imgui_pass_id = add_rbp_pass(rbp.item, {.name = IMGUI_PASS_NAME, .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
 
     // Main geometry pass
     rbp_slot_id col_slot_ind = add_rbp_resource_slot(
