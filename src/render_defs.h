@@ -50,6 +50,9 @@ inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
 // Cannot be constexpr since hash_type is not
 inline const u64 SWAPCHAIN_ID = hash_type("swapchain");
 
+inline constexpr f32 DEFAULT_DEPTH_CLEAR = 1.0f;
+inline constexpr u32 DEFAULT_STENCIL_CLEAR = 0;
+
 // Indice type
 using ind_t = u16;
 

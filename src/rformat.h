@@ -101,9 +101,13 @@ enum struct rformat
     D24_UNORM_S8_UINT, // 4 bytes
     D32_SFLOAT_S8_UINT, // 8 bytes
     // Whatever format the swapchain is
-    SWAPCHAIN,
     INVALID,
 };
+
+sizet get_bytes_per_component(rformat format);
+bool is_floating_point_type(rformat format);
+bool is_uint_type(rformat format);
+bool is_sint_type(rformat format);
 
 template<typename T>
 struct type_info

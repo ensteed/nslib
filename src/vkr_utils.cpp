@@ -1,10 +1,11 @@
 #include "vkr_utils.h"
+#include "render_manifest.h"
 #include "render_blueprint.h"
 
 namespace nslib
 {
 
-VkImageLayout get_layout_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &req, bool is_final)
+VkImageLayout get_vk_layout_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &req, bool is_final)
 {
     bool is_write = test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE);
     bool is_present_khr = test_flags(req.option_mask, RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR);
@@ -29,7 +30,7 @@ VkImageLayout get_layout_from_requirement(const rbp_pass &pass, const rbp_resour
     }
 }
 
-VkAccessFlags get_access_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r)
+VkAccessFlags get_vk_access_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r)
 {
     VkAccessFlags access = 0;
     bool is_read = (r.access_mask & RESOURCE_REQUIREMENT_ACCESS_READ);
@@ -67,7 +68,7 @@ VkAccessFlags get_access_from_requirement(const rbp_pass &pass, const rbp_resour
     return access;
 }
 
-VkPipelineStageFlags get_stage_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &req)
+VkPipelineStageFlags get_vk_stage_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &req)
 {
     // 1. If it's a Compute pass, everything happens in the Compute Shader stage.
     if (pass.type == rbp_pass_type::PASS_TYPE_COMPUTE) {
@@ -99,7 +100,7 @@ VkPipelineStageFlags get_stage_from_requirement(const rbp_pass &pass, const rbp_
     }
 }
 
-VkImageLayout get_baked_initial_layout(const rbp_pass &pass, const rbp_resource_requirement &req)
+VkImageLayout get_baked_initial_vk_layout(const rbp_pass &pass, const rbp_resource_requirement &req)
 {
     // Make sure we can't have both CLEAR and READ set
     asrt(!test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) || !test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_READ));
@@ -107,10 +108,10 @@ VkImageLayout get_baked_initial_layout(const rbp_pass &pass, const rbp_resource_
     // Optimization: If we are clearing and don't care about previous contents,
     // we tell the render pass to ignore the current layout and just treat it as undefined.
     return test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) ? VK_IMAGE_LAYOUT_UNDEFINED
-                                                                          : get_layout_from_requirement(pass, req, false);
+                                                                          : get_vk_layout_from_requirement(pass, req, false);
 }
 
-VkAttachmentLoadOp get_requirement_load_op(const rbp_resource_requirement &req)
+VkAttachmentLoadOp get_requirement_vk_load_op(const rbp_resource_requirement &req)
 {
     if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_READ)) {
         return VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -121,7 +122,7 @@ VkAttachmentLoadOp get_requirement_load_op(const rbp_resource_requirement &req)
     return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 }
 
-VkAttachmentStoreOp get_requirement_store_op(const rbp_resource_requirement &req)
+VkAttachmentStoreOp get_requirement_vk_store_op(const rbp_resource_requirement &req)
 {
     if (test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_WRITE)) {
         return VK_ATTACHMENT_STORE_OP_STORE;
@@ -129,12 +130,30 @@ VkAttachmentStoreOp get_requirement_store_op(const rbp_resource_requirement &req
     return VK_ATTACHMENT_STORE_OP_DONT_CARE;
 }
 
-VkPipelineStageFlags normalize_stage_mask(VkPipelineStageFlags stage)
+VkPipelineStageFlags normalize_vk_stage_mask(VkPipelineStageFlags stage)
 {
     return stage == 0 ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : stage;
 }
 
-VkRect2D get_rect(const svec2 &pos, const uvec2 &dims)
+VkClearValue get_vk_clear_value(const mpass_clear_value &cv)
+{
+    VkClearValue ret{};
+    ret.depthStencil.depth = cv.depth;
+    ret.depthStencil.stencil = cv.stencil;
+    if (cv.type == mpass_clear_value::COLOR_TYPE_FLOAT) {
+        memcpy(ret.color.float32, cv.fc.data, sizeof(vec4));
+    }
+    else if (cv.type == mpass_clear_value::COLOR_TYPE_SINT) {
+        memcpy(ret.color.int32, cv.sc.data, sizeof(svec4));
+    }
+    else if (cv.type == mpass_clear_value::COLOR_TYPE_SINT) {
+        memcpy(ret.color.uint32, cv.uc.data, sizeof(uvec4));
+    }
+    return ret;
+}
+
+
+VkRect2D get_vk_rect(const svec2 &pos, const uvec2 &dims)
 {
     return {
         .offset{
@@ -148,7 +167,7 @@ VkRect2D get_rect(const svec2 &pos, const uvec2 &dims)
     };
 }
 
-VkRect2D get_rect(const srect &r)
+VkRect2D get_vk_rect(const srect &r)
 {
     return {
         .offset{
@@ -162,7 +181,7 @@ VkRect2D get_rect(const srect &r)
     };
 }
 
-VkRect2D get_rect(const urect &r)
+VkRect2D get_vk_rect(const urect &r)
 {
     return {
         .offset{
@@ -176,7 +195,7 @@ VkRect2D get_rect(const urect &r)
     };
 }
 
-VkRect2D get_rect_from_normalized(const rect &norm, const uvec2 &dims)
+VkRect2D get_vk_rect_from_normalized(const rect &norm, const uvec2 &dims)
 {
     return {
         .offset{
@@ -190,7 +209,7 @@ VkRect2D get_rect_from_normalized(const rect &norm, const uvec2 &dims)
     };
 }
 
-VkViewport get_viewport(const rect &vp, const vec2 &depth_min_max)
+VkViewport get_vk_viewport(const rect &vp, const vec2 &depth_min_max)
 {
     return {
         .x = vp.x,
@@ -202,7 +221,7 @@ VkViewport get_viewport(const rect &vp, const vec2 &depth_min_max)
     };
 }
 
-VkViewport get_viewport(const rect &norm_vp, const vec2 &depth_min_max, const uvec2 &dims)
+VkViewport get_vk_viewport(const rect &norm_vp, const vec2 &depth_min_max, const uvec2 &dims)
 {
     return {
         .x = norm_vp.x * dims.x,
@@ -214,168 +233,5 @@ VkViewport get_viewport(const rect &norm_vp, const vec2 &depth_min_max, const uv
     };
 }
 
-VkFormat get_format(const vkr_context *vk, rformat fmt)
-{
-    switch (fmt) {
-    case (rformat::RGBA8_SRGB):
-        return VK_FORMAT_R8G8B8A8_SRGB;
-    case (rformat::RGBA8_SRGB_COMPRESSED):
-        return VK_FORMAT_BC7_SRGB_BLOCK;
-    case (rformat::RGBA8_UNORM):
-        return VK_FORMAT_R8G8B8A8_UNORM;
-    case (rformat::RGBA8_UNORM_COMPRESSED):
-        return VK_FORMAT_BC7_UNORM_BLOCK;
-    case (rformat::RGBA8_SNORM):
-        return VK_FORMAT_R8G8B8A8_SNORM;
-    case (rformat::RGBA8_UINT):
-        return VK_FORMAT_R8G8B8A8_UINT;
-    case (rformat::RGBA8_SINT):
-        return VK_FORMAT_R8G8B8A8_SINT;
-    case (rformat::RGB8_SRGB):
-        return VK_FORMAT_R8G8B8_SRGB;
-    case (rformat::RGB8_SRGB_COMPRESSED):
-        return VK_FORMAT_BC1_RGB_SRGB_BLOCK;
-    case (rformat::RGB8_UNORM):
-        return VK_FORMAT_R8G8B8_UNORM;
-    case (rformat::RGB8_UNORM_COMPRESSED):
-        return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
-    case (rformat::RGB8_SNORM):
-        return VK_FORMAT_R8G8B8_SNORM;
-    case (rformat::RGB8_UINT):
-        return VK_FORMAT_R8G8B8_UINT;
-    case (rformat::RGB8_SINT):
-        return VK_FORMAT_R8G8B8_SINT;
-    case (rformat::RG8_SRGB):
-        return VK_FORMAT_R8G8_SRGB;
-    case (rformat::RG8_UNORM):
-        return VK_FORMAT_R8G8_UNORM;
-    case (rformat::RG8_UNORM_COMPRESSED):
-        return VK_FORMAT_BC5_UNORM_BLOCK;
-    case (rformat::RG8_SNORM):
-        return VK_FORMAT_R8G8_SNORM;
-    case (rformat::RG8_SNORM_COMPRESSED):
-        return VK_FORMAT_BC5_SNORM_BLOCK;
-    case (rformat::RG8_UINT):
-        return VK_FORMAT_R8G8_UINT;
-    case (rformat::RG8_SINT):
-        return VK_FORMAT_R8G8_SINT;
-    case (rformat::R8_SRGB):
-        return VK_FORMAT_R8_SRGB;
-    case (rformat::R8_UNORM):
-        return VK_FORMAT_R8_UNORM;
-    case (rformat::R8_UNORM_COMPRESSED):
-        return VK_FORMAT_BC4_UNORM_BLOCK;
-    case (rformat::R8_SNORM):
-        return VK_FORMAT_R8_SNORM;
-    case (rformat::R8_SNORM_COMPRESSED):
-        return VK_FORMAT_BC4_SNORM_BLOCK;
-    case (rformat::R8_UINT):
-        return VK_FORMAT_R8_UINT;
-    case (rformat::R8_SINT):
-        return VK_FORMAT_R8_SINT;
-    case (rformat::RGBA16_SFLOAT):
-        return VK_FORMAT_R16G16B16A16_SFLOAT;
-    case (rformat::RGBA16_UNORM):
-        return VK_FORMAT_R16G16B16A16_UNORM;
-    case (rformat::RGBA16_SNORM):
-        return VK_FORMAT_R16G16B16A16_SNORM;
-    case (rformat::RGBA16_UINT):
-        return VK_FORMAT_R16G16B16A16_UINT;
-    case (rformat::RGBA16_SINT):
-        return VK_FORMAT_R16G16B16A16_SINT;
-    case (rformat::RGB16_SFLOAT):
-        return VK_FORMAT_R16G16B16_SFLOAT;
-    case (rformat::RGB16_UNORM):
-        return VK_FORMAT_R16G16B16_UNORM;
-    case (rformat::RGB16_SNORM):
-        return VK_FORMAT_R16G16B16_SNORM;
-    case (rformat::RGB16_UINT):
-        return VK_FORMAT_R16G16B16_UINT;
-    case (rformat::RGB16_SINT):
-        return VK_FORMAT_R16G16B16_SINT;
-    case (rformat::RG16_SFLOAT):
-        return VK_FORMAT_R16G16_SFLOAT;
-    case (rformat::RG16_UNORM):
-        return VK_FORMAT_R16G16_UNORM;
-    case (rformat::RG16_SNORM):
-        return VK_FORMAT_R16G16_SNORM;
-    case (rformat::RG16_UINT):
-        return VK_FORMAT_R16G16_UINT;
-    case (rformat::RG16_SINT):
-        return VK_FORMAT_R16G16_SINT;
-    case (rformat::R16_SFLOAT):
-        return VK_FORMAT_R16_SFLOAT;
-    case (rformat::R16_UNORM):
-        return VK_FORMAT_R16_UNORM;
-    case (rformat::R16_SNORM):
-        return VK_FORMAT_R16_SNORM;
-    case (rformat::R16_UINT):
-        return VK_FORMAT_R16_UINT;
-    case (rformat::R16_SINT):
-        return VK_FORMAT_R16_SINT;
-    case (rformat::RGBA32_SFLOAT):
-        return VK_FORMAT_R32G32B32A32_SFLOAT;
-    case (rformat::RGBA32_UINT):
-        return VK_FORMAT_R32G32B32A32_UINT;
-    case (rformat::RGBA32_SINT):
-        return VK_FORMAT_R32G32B32A32_SINT;
-    case (rformat::RGB32_SFLOAT):
-        return VK_FORMAT_R32G32B32_SFLOAT;
-    case (rformat::RGB32_UINT):
-        return VK_FORMAT_R32G32B32_UINT;
-    case (rformat::RGB32_SINT):
-        return VK_FORMAT_R32G32B32_SINT;
-    case (rformat::RG32_SFLOAT):
-        return VK_FORMAT_R32G32_SFLOAT;
-    case (rformat::RG32_UINT):
-        return VK_FORMAT_R32G32_UINT;
-    case (rformat::RG32_SINT):
-        return VK_FORMAT_R32G32_SINT;
-    case (rformat::R32_SFLOAT):
-        return VK_FORMAT_R32_SFLOAT;
-    case (rformat::R32_UINT):
-        return VK_FORMAT_R32_UINT;
-    case (rformat::R32_SINT):
-        return VK_FORMAT_R32_SINT;
-    case (rformat::RGBA64_SFLOAT):
-        return VK_FORMAT_R64G64B64A64_SFLOAT;
-    case (rformat::RGBA64_UINT):
-        return VK_FORMAT_R64G64B64A64_UINT;
-    case (rformat::RGBA64_SINT):
-        return VK_FORMAT_R64G64B64A64_SINT;
-    case (rformat::RGB64_SFLOAT):
-        return VK_FORMAT_R64G64B64_SFLOAT;
-    case (rformat::RGB64_UINT):
-        return VK_FORMAT_R64G64B64_UINT;
-    case (rformat::RGB64_SINT):
-        return VK_FORMAT_R64G64B64_SINT;
-    case (rformat::RG64_SFLOAT):
-        return VK_FORMAT_R64G64_SFLOAT;
-    case (rformat::RG64_UINT):
-        return VK_FORMAT_R64G64_UINT;
-    case (rformat::RG64_SINT):
-        return VK_FORMAT_R64G64_SINT;
-    case (rformat::R64_SFLOAT):
-        return VK_FORMAT_R64_SFLOAT;
-    case (rformat::R64_UINT):
-        return VK_FORMAT_R64_UINT;
-    case (rformat::R64_SINT):
-        return VK_FORMAT_R64_SINT;
-    case (rformat::D16_UNORM):
-        return VK_FORMAT_D16_UNORM;
-    case (rformat::D16_UNORM_S8_UINT):
-        return VK_FORMAT_D16_UNORM_S8_UINT;
-    case (rformat::D32_SFLOAT):
-        return VK_FORMAT_D32_SFLOAT;
-    case (rformat::D24_UNORM_S8_UINT):
-        return VK_FORMAT_D24_UNORM_S8_UINT;
-    case (rformat::D32_SFLOAT_S8_UINT):
-        return VK_FORMAT_D32_SFLOAT_S8_UINT;
-    case (rformat::SWAPCHAIN):
-        return vk->inst.device.swapchain.format;
-    default:
-        return VK_FORMAT_UNDEFINED;
-    }
-}
 
 } // namespace nslib

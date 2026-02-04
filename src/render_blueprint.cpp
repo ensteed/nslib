@@ -32,8 +32,8 @@ intern VkSubpassDependency get_bookend_dependency(const rbp_pass &pass, u32 subp
         asrt(subpass_ind < pass.slots.size);
 
         if (is_front_bookend) {
-            dep.dstStageMask |= get_stage_from_requirement(pass, req);
-            dep.dstAccessMask |= get_access_from_requirement(pass, req);
+            dep.dstStageMask |= get_vk_stage_from_requirement(pass, req);
+            dep.dstAccessMask |= get_vk_access_from_requirement(pass, req);
 
             // Can't have read and clear set - assert both are
             asrt(!test_flags(req.access_mask, RESOURCE_REQUIREMENT_ACCESS_CLEAR) || !(req.access_mask & RESOURCE_REQUIREMENT_ACCESS_READ));
@@ -49,8 +49,8 @@ intern VkSubpassDependency get_bookend_dependency(const rbp_pass &pass, u32 subp
             }
         }
         else {
-            dep.srcStageMask |= get_stage_from_requirement(pass, req);
-            dep.srcAccessMask |= get_access_from_requirement(pass, req);
+            dep.srcStageMask |= get_vk_stage_from_requirement(pass, req);
+            dep.srcAccessMask |= get_vk_access_from_requirement(pass, req);
         }
     }
     return dep;
@@ -92,11 +92,11 @@ intern void add_dependencies_for_subpass(vkr_rpass_cfg *rp_cfg, const rbp_pass &
                     needs_dependency = true;
 
                     // Accumulate masks for ALL resources involved in the transition
-                    dep.srcStageMask |= get_stage_from_requirement(pass, req_src);
-                    dep.srcAccessMask |= get_access_from_requirement(pass, req_src);
+                    dep.srcStageMask |= get_vk_stage_from_requirement(pass, req_src);
+                    dep.srcAccessMask |= get_vk_access_from_requirement(pass, req_src);
 
-                    dep.dstStageMask |= get_stage_from_requirement(pass, req_dst);
-                    dep.dstAccessMask |= get_access_from_requirement(pass, req_dst);
+                    dep.dstStageMask |= get_vk_stage_from_requirement(pass, req_dst);
+                    dep.dstAccessMask |= get_vk_access_from_requirement(pass, req_dst);
                 }
             }
         }
@@ -294,12 +294,12 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
                 // Use format to tell if attachment hasn't been set yet - if it hasn't we set it as this is the first
                 // resource using that attachment
                 if (att->format == VK_FORMAT_UNDEFINED) {
-                    att->format = get_format(&rndr->vk, slot.format);
+                    att->format = get_vk_format(slot.format);
                     asrt(att->format != VK_FORMAT_UNDEFINED);
                     att->samples = VK_SAMPLE_COUNT_1_BIT;
-                    att->loadOp = use_stencil ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : get_requirement_load_op(req);
-                    att->stencilLoadOp = use_stencil ? get_requirement_load_op(req) : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-                    att->initialLayout = get_baked_initial_layout(*pass, req);
+                    att->loadOp = use_stencil ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : get_requirement_vk_load_op(req);
+                    att->stencilLoadOp = use_stencil ? get_requirement_vk_load_op(req) : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                    att->initialLayout = get_baked_initial_vk_layout(*pass, req);
                 }
                 else {
                     // If an subpass has already referenced this attachment, we should make sure it's final layout is
@@ -308,13 +308,13 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
                 }
 
                 // Set this every time
-                att->storeOp = use_stencil ? VK_ATTACHMENT_STORE_OP_DONT_CARE : get_requirement_store_op(req);
-                att->stencilStoreOp = use_stencil ? get_requirement_store_op(req) : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-                att->finalLayout = get_layout_from_requirement(*pass, req, true);
+                att->storeOp = use_stencil ? VK_ATTACHMENT_STORE_OP_DONT_CARE : get_requirement_vk_store_op(req);
+                att->stencilStoreOp = use_stencil ? get_requirement_vk_store_op(req) : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+                att->finalLayout = get_vk_layout_from_requirement(*pass, req, true);
 
                 VkAttachmentReference att_ref{};
                 att_ref.attachment = slot.att_ind;
-                att_ref.layout = get_layout_from_requirement(*pass, req, false);
+                att_ref.layout = get_vk_layout_from_requirement(*pass, req, false);
                 switch (slot.usage) {
                 case rbp_resource_usage::COLOR_ATTACHMENT:
                     arr_push_back(&subpass.color_attachments, att_ref);

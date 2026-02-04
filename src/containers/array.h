@@ -154,9 +154,6 @@ typename T::iterator arr_end(T *arrobj)
     // NOTE: When data is null (no storage), this returns null. Callers must not do
     // pointer arithmetic or dereference on a null iterator. This is a deliberate
     // contract to avoid allocating sentinel storage for empty arrays.
-    if (!arrobj->data) {
-        return nullptr;
-    }
     return arrobj->data + arrobj->size;
 }
 
@@ -166,9 +163,6 @@ typename T::const_iterator arr_begin(const T *arrobj)
     // NOTE: When data is null (no storage), this returns null. Callers must not do
     // pointer arithmetic or dereference on a null iterator. This is a deliberate
     // contract to avoid allocating sentinel storage for empty arrays.
-    if (!arrobj->data) {
-        return nullptr;
-    }
     return arrobj->data;
 }
 
@@ -178,9 +172,6 @@ typename T::const_iterator arr_end(const T *arrobj)
     // NOTE: When data is null (no storage), this returns null. Callers must not do
     // pointer arithmetic or dereference on a null iterator. This is a deliberate
     // contract to avoid allocating sentinel storage for empty arrays.
-    if (!arrobj->data) {
-        return nullptr;
-    }
     return arrobj->data + arrobj->size;
 }
 

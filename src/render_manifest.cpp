@@ -6,18 +6,29 @@ namespace nslib
 
 mpass_id push_pass(rmanifest *m, rbp_pass_id pid)
 {
-    auto bp = get_render_blueprint(m->rndr, m->rbp);
     mpass_id ind = (mpass_id)m->passes.size;
     arr_resize(&m->passes, ind + 1);
-    arr_resize(&m->passes[ind].slot_assignments, bp->passes[pid].slots.size);
     m->passes[ind].rbp_pid = pid;
     return ind;
 }
 
-mpass_id push_pass(rmanifest *m, rbp_pass_id pid, rpass_slot_assignment *assignments, sizet assignment_count)
+u32 push_slot_assignment(rmanifest *m, mpass_id pid, const mpass_slot_assignment &sa)
 {
+    // We cannot add more assignments than slots!
+    auto bp = get_render_blueprint(m->rndr, m->rbp);
+    asrt(m->passes[pid].slot_assignments.size < bp->passes[m->passes[pid].rbp_pid].slots.size);
+
+    u32 sa_ind = m->passes[pid].slot_assignments.size++;
+    m->passes[pid].slot_assignments[sa_ind] = sa;
+    return sa_ind;
+}
+
+mpass_id push_pass(rmanifest *m, rbp_pass_id pid, mpass_slot_assignment *assignments, sizet assignment_count)
+{
+    auto bp = get_render_blueprint(m->rndr, m->rbp);
     auto pind = push_pass(m, pid);
-    asrt(assignment_count == m->passes[pind].slot_assignments.size);
+    asrt(assignment_count == bp->passes[pid].slots.size);
+    arr_resize(&m->passes[pind].slot_assignments, assignment_count);
     for (sizet i = 0; i < m->passes[pind].slot_assignments.size; ++i) {
         m->passes[pind].slot_assignments[i] = assignments[i];
     }

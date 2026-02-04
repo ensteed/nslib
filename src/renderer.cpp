@@ -446,7 +446,7 @@ intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
             auto cur_attrib_layout = &layout->vert_layout.attribs[atti + layout_attrib_offset];
 
             cur_attrib_layout->binding = cur_binding->binding;
-            cur_attrib_layout->format = get_format(vk, cur_attrib_desc->fmt);
+            cur_attrib_layout->format = get_vk_format(cur_attrib_desc->fmt);
             cur_attrib_layout->location = cur_attrib_desc->shader_location;
             cur_attrib_layout->offset = cur_binding->stride;
 
@@ -1235,7 +1235,7 @@ rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo)
     ti.name[SMALL_STR_LEN - 1] = 0;
 
     vkr_image_cfg cfg{};
-    cfg.format = get_format(&rndr->vk, ctinfo.format);
+    cfg.format = get_vk_format(ctinfo.format);
     asrt(cfg.format != VK_FORMAT_UNDEFINED && "Forgot to add vk support to rformat type");
     cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     cfg.dims = ctinfo.dims;
@@ -1288,6 +1288,11 @@ rmaterial_handle create_material(renderer *rndr, const rmaterial_desc &ctinfo)
     return {};
 }
 
+rformat get_swapchain_format(renderer *rnd)
+{
+    return rformat::RGBA8_SRGB;
+}
+
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci)
 {
     rtexture_target_ref tref = acquire_slot(&rndr->rtargets.textures);
@@ -1300,7 +1305,7 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
     tref.item->flags = ci.flags;
 
     // If parameter not here its cause I want to leave at default on purpose
-    tref.item->cfg.format = get_format(&rndr->vk, ci.format);
+    tref.item->cfg.format = get_vk_format(ci.format);
     bool is_color = (ci.type == RTARGET_TEXTURE_TYPE_COLOR || ci.type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
     tref.item->cfg.usage =
         VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -1514,12 +1519,14 @@ void draw_geometry(const render_job_cb_params &, void *);
 
 // Create a framebuffer key from the passed in pass attachments and slot assignments. This key is used to get or create
 // framebuffers with this specific set of image views, allowing us to lazily create them
-intern void setup_framebuffer_key(vkr_framebuffer_key_data *fb_kd,
-                                  VkRenderPass vk_rpass,
-                                  const mpass &mp,
-                                  const rbp_pass &rbp_pass,
-                                  const rmanifest &m,
-                                  u32 fif)
+intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd,
+                                                 VkClearValue *cv,
+                                                 sizet *cv_size,
+                                                 VkRenderPass vk_rpass,
+                                                 const mpass &mp,
+                                                 const rbp_pass &rbp_pass,
+                                                 const rmanifest &m,
+                                                 u32 fif)
 {
     u32 att_cnt{};
     fb_kd->layers = 1;
@@ -1534,8 +1541,12 @@ intern void setup_framebuffer_key(vkr_framebuffer_key_data *fb_kd,
         u32 att_ind = rbp_pass.slots[si].att_ind;
         if (is_valid(att_ind)) {
             asrt(att_ind < fb_kd->atts.capacity);
-            auto tview = m.textures[cur_sl->t.index].frames[fif].view;
-            auto tex_dims = m.textures[cur_sl->t.index].frames[fif].image.dims.xy;
+            const rtexture_target *cur_t = &m.textures[cur_sl->t.index];
+            VkImageView tview = cur_t->frames[fif].view;
+
+            // Can't use the value from cfg - swapchain images don't have correct data in the cfg field as they were
+            // never actually created..
+            uvec2 tex_dims = cur_t->frames[fif].image.dims.xy;
 
             // The frame buffer can only be as big as the smallest texture - so that's what we set it to
             if (fb_kd->dims.x == 0 || tex_dims.x < fb_kd->dims.x) {
@@ -1551,6 +1562,11 @@ intern void setup_framebuffer_key(vkr_framebuffer_key_data *fb_kd,
                 arr_resize(&fb_kd->atts, att_ind + 1);
             }
             fb_kd->atts[att_ind] = tview;
+
+            // Set clear value
+            cv[*cv_size] = get_vk_clear_value(cur_sl->clear_val);
+            ++(*cv_size);
+
             ++att_cnt;
         }
     }
@@ -1585,7 +1601,7 @@ intern rtexture_state get_pre_pass_texture_state(const rbp_pass &rbp_pass, const
     rtexture_state desired{};
     if (is_usage_attachment(rbp_pass.slots[req.slot_ind].usage)) {
         // Attachments can be cleared by the render pass; in that case we can treat old contents as undefined.
-        VkImageLayout init_layout = get_baked_initial_layout(rbp_pass, req);
+        VkImageLayout init_layout = get_baked_initial_vk_layout(rbp_pass, req);
         if (init_layout == VK_IMAGE_LAYOUT_UNDEFINED) {
             desired.layout = VK_IMAGE_LAYOUT_UNDEFINED;
             desired.access = VK_ACCESS_NONE;
@@ -1593,14 +1609,14 @@ intern rtexture_state get_pre_pass_texture_state(const rbp_pass &rbp_pass, const
         }
         else {
             desired.layout = init_layout;
-            desired.access = get_access_from_requirement(rbp_pass, req);
-            desired.stage = get_stage_from_requirement(rbp_pass, req);
+            desired.access = get_vk_access_from_requirement(rbp_pass, req);
+            desired.stage = get_vk_stage_from_requirement(rbp_pass, req);
         }
     }
     else {
-        desired.layout = get_layout_from_requirement(rbp_pass, req, false);
-        desired.access = get_access_from_requirement(rbp_pass, req);
-        desired.stage = get_stage_from_requirement(rbp_pass, req);
+        desired.layout = get_vk_layout_from_requirement(rbp_pass, req, false);
+        desired.access = get_vk_access_from_requirement(rbp_pass, req);
+        desired.stage = get_vk_stage_from_requirement(rbp_pass, req);
     }
     return desired;
 }
@@ -1609,17 +1625,17 @@ intern rtexture_state get_post_pass_texture_state(const rbp_pass &rbp_pass, cons
 {
     rtexture_state desired{};
     bool is_attachment = is_usage_attachment(rbp_pass.slots[req.slot_ind].usage);
-    desired.layout = get_layout_from_requirement(rbp_pass, req, is_attachment);
-    desired.access = get_access_from_requirement(rbp_pass, req);
-    desired.stage = get_stage_from_requirement(rbp_pass, req);
+    desired.layout = get_vk_layout_from_requirement(rbp_pass, req, is_attachment);
+    desired.access = get_vk_access_from_requirement(rbp_pass, req);
+    desired.stage = get_vk_stage_from_requirement(rbp_pass, req);
     return desired;
 }
 
 intern rbuffer_state get_pass_buffer_state(const rbp_pass &rbp_pass, const rbp_resource_requirement &req)
 {
     rbuffer_state desired{};
-    desired.access = get_access_from_requirement(rbp_pass, req);
-    desired.stage = get_stage_from_requirement(rbp_pass, req);
+    desired.access = get_vk_access_from_requirement(rbp_pass, req);
+    desired.stage = get_vk_stage_from_requirement(rbp_pass, req);
     return desired;
 }
 
@@ -1639,7 +1655,7 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, 
             continue;
         }
 
-        const rpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
+        const mpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
         if (assignment.type == mslot_target_type::TEXTURE) {
             asrt(is_valid(assignment.t));
             asrt(assignment.t.index < m->textures.size);
@@ -1668,8 +1684,8 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, 
                 barrier.subresourceRange = m->textures[assignment.t.index].iv_cfg.srange;
                 arr_push_back(&image_barriers, barrier);
 
-                src_stage_mask |= normalize_stage_mask(cur_state->stage);
-                dst_stage_mask |= normalize_stage_mask(desired.stage);
+                src_stage_mask |= normalize_vk_stage_mask(cur_state->stage);
+                dst_stage_mask |= normalize_vk_stage_mask(desired.stage);
             }
             // Keep the manifest in sync so later passes see the in-pass state even if no barrier was needed.
             *cur_state = desired;
@@ -1693,8 +1709,8 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, 
                 barrier.size = VK_WHOLE_SIZE;
                 arr_push_back(&buffer_barriers, barrier);
 
-                src_stage_mask |= normalize_stage_mask(cur_state->stage);
-                dst_stage_mask |= normalize_stage_mask(desired.stage);
+                src_stage_mask |= normalize_vk_stage_mask(cur_state->stage);
+                dst_stage_mask |= normalize_vk_stage_mask(desired.stage);
             }
             // Keep the manifest in sync so later passes see the in-pass state even if no barrier was needed.
             *cur_state = desired;
@@ -1732,7 +1748,7 @@ intern void update_manifest_pass_states(rmanifest *m, const rbp_pass &rbp_pass, 
         if (!last) {
             continue;
         }
-        const rpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
+        const mpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
         if (assignment.type == mslot_target_type::TEXTURE) {
             // Final state after the pass completes (attachments use final layout).
             asrt(is_valid(assignment.t));
@@ -1761,27 +1777,30 @@ intern void execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
         // Must have all slots assigned
         asrt(rbp_pass->slots.size == mp->slot_assignments.size);
 
+        // Create all needed barriers for the current pass resources (according to what we have for the current state)
         emit_manifest_pass_barriers(m, *rbp_pass, *mp, buf, fif);
 
-        VkClearValue att_clear_vals[] = {{.color{{0.05f, 0.05f, 0.05f, 1.0f}}}, {.depthStencil{1.0f, 0}}};
-
+        // Setup framebuffer and clear vals by looping over slots
+        static_array<VkClearValue, MAX_BP_PASS_SLOT_COUNT> att_clear_vals{};
         vkr_framebuffer_key_data fb_kd{};
-        setup_framebuffer_key(&fb_kd, vk_rpass, *mp, *rbp_pass, *m, fif);
-
+        setup_framebuffer_key_and_clear_vals(&fb_kd, att_clear_vals.data, &att_clear_vals.size, vk_rpass, *mp, *rbp_pass, *m, fif);
         auto fb = get_or_create_framebuffer(&m->rndr->fb_cache, fb_kd, &m->rndr->vk);
 
-        VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? get_rect_from_normalized(mp->norm_render_area, fb->kd.dims)
-                                                                       : get_rect(mp->render_area);
-        vkr_cmd_begin_rpass(buf, vk_rpass, fb, ra, att_clear_vals, 2);
+        // RENDER AREA
+        VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? get_vk_rect_from_normalized(mp->norm_render_area, fb->kd.dims)
+                                                                       : get_vk_rect(mp->render_area);
+        vkr_cmd_begin_rpass(buf, vk_rpass, fb, ra, att_clear_vals.data, att_clear_vals.size);
 
+        // VIEWPORT
         VkViewport viewport = (mview->vp_size_mode == rect_size_mode::NORMALIZED)
-                                  ? get_viewport(mview->vp, mview->vp_depth_min_max, fb->kd.dims)
-                                  : get_viewport(mview->vp, mview->vp_depth_min_max);
+                                  ? get_vk_viewport(mview->vp, mview->vp_depth_min_max, fb->kd.dims)
+                                  : get_vk_viewport(mview->vp, mview->vp_depth_min_max);
         vkCmdSetViewport(buf, 0, 1, &viewport);
 
+        // SCISSOR
         VkRect2D scissor = (mview->scissor_size_mode == rect_size_mode::NORMALIZED)
-                               ? get_rect_from_normalized(mview->norm_scissor, fb->kd.dims)
-                               : get_rect(mview->scissor);
+                               ? get_vk_rect_from_normalized(mview->norm_scissor, fb->kd.dims)
+                               : get_vk_rect(mview->scissor);
         vkCmdSetScissor(buf, 0, 1, &scissor);
 
         if (cur_rj->cb) {
@@ -1801,6 +1820,8 @@ intern void execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
         }
         vkr_cmd_end_rpass(buf);
 
+        // Update our working copy manifest states - we will copy these over to our renderer states once done executing
+        // the manifest
         update_manifest_pass_states(m, *rbp_pass, *mp, fif);
     }
 }

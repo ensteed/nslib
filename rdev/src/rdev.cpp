@@ -17,13 +17,13 @@ using namespace nslib;
 // intern constexpr const char * MAIN_PASS_COLOR_NAME = "main-pass-color";
 // intern const rres_id MAIN_PASS_COLOR_ID = hash_type("main-pass-color");
 
-intern constexpr const char * MAIN_PASS_DEPTH_NAME = "main-pass-depth";
+intern constexpr const char *MAIN_PASS_DEPTH_NAME = "main-pass-depth";
 intern const rres_id MAIN_PASS_DEPTH_ID = hash_type("main-pass-depth");
 
-intern constexpr const char * MAIN_PASS_NAME = "main-pass";
+intern constexpr const char *MAIN_PASS_NAME = "main-pass";
 intern const rres_id MAIN_PASS_ID = hash_type("main-pass");
 
-intern constexpr const char * IMGUI_PASS_NAME = "imgui-pass";
+intern constexpr const char *IMGUI_PASS_NAME = "imgui-pass";
 intern const rres_id IMGUI_PASS_ID = hash_type("imgui-pass");
 
 struct rdev_app_ctxt
@@ -183,7 +183,7 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
 
     // Main geometry pass
     rbp_slot_id col_slot_ind = add_rbp_resource_slot(
-        rbp.item, pass_id, {.name = "color", .format = rformat::SWAPCHAIN, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
+        rbp.item, pass_id, {.name = "color", .format = get_swapchain_format(rndr), .usage = rbp_resource_usage::COLOR_ATTACHMENT});
     rbp_slot_id depth_slot_ind = add_rbp_resource_slot(
         rbp.item, pass_id, {.name = "depth", .format = rformat::D32_SFLOAT, .usage = rbp_resource_usage::DEPTH_ATTACHMENT});
 
@@ -202,7 +202,7 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     // I'm gui will double as the place we render UI and the place where our layout conversion happens - no depth buffer
     // needed for imgui
     rbp_slot_id imgui_col_slot_ind = add_rbp_resource_slot(
-        rbp.item, imgui_pass_id, {.name = "color", .format = rformat::SWAPCHAIN, .usage = rbp_resource_usage::COLOR_ATTACHMENT});
+        rbp.item, imgui_pass_id, {.name = "color", .format = get_swapchain_format(rndr), .usage = rbp_resource_usage::COLOR_ATTACHMENT});
 
     add_rbp_resource_requirement(rbp.item,
                                  imgui_pass_id,
@@ -313,25 +313,24 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     auto bp = get_render_blueprint(m->rndr, m->rbp);
     auto bp_main_pass = find_rbp_pass(bp, MAIN_PASS_ID);
     auto imgui_pass = find_rbp_pass(bp, IMGUI_PASS_ID);
-        
-    rpass_slot_assignment assignments[] = {
-        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, SWAPCHAIN_ID)}},
-        {.type = mslot_target_type::TEXTURE, .t{find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID)}},
+
+    mpass_slot_assignment assignments[] = {
+        MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0, 1.0, 0.0, 1.0)),
+        MPASS_TEXTURE_SA_DS(find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID), 1.0f, 0),
     };
     auto mp_id = push_pass(m, bp_main_pass, assignments, 2);
     auto imgui_id = push_pass(m, imgui_pass, assignments, 1);
 
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
     auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
-    
+
     mview gui_view{cam->proj, cam->view};
     gui_view.norm_scissor = {0.25, 0.25, 0.5, 0.5};
-    
-    
+
     auto view_id = push_view(m, {cam->proj, cam->view});
     auto gui_view_id = push_view(m, gui_view);
-    
-    push_render_job(m, mp_id, view_id, [](const render_job_cb_params&, void*){}, nullptr);
+
+    push_render_job(m, mp_id, view_id, [](const render_job_cb_params &, void *) {}, nullptr);
     push_render_job(m, imgui_id, gui_view_id, draw_imgui, nullptr);
 }
 

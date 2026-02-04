@@ -507,6 +507,8 @@ void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool
     push_geometry_attribute(stream, {.shader_location = shader_location, .fmt = get_rformat_for_type<T>(normalize_in_shader)});
 }
 
+rformat get_swapchain_format(renderer *rnd);
+
 rgeom_handle create_geometry(renderer *rndr, const rgeom_desc &ci);
 rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo);
