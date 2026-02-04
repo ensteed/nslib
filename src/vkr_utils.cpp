@@ -135,7 +135,7 @@ VkPipelineStageFlags normalize_vk_stage_mask(VkPipelineStageFlags stage)
     return stage == 0 ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : stage;
 }
 
-VkClearValue get_vk_clear_value(const mpass_clear_value &cv)
+VkClearValue get_vk_clear_value(const mpass_clear_value &cv, rformat tex_format)
 {
     VkClearValue ret{};
     ret.depthStencil.depth = cv.depth;

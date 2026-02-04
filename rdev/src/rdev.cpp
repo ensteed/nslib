@@ -315,7 +315,7 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     auto imgui_pass = find_rbp_pass(bp, IMGUI_PASS_ID);
 
     mpass_slot_assignment assignments[] = {
-        MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0, 1.0, 0.0, 1.0)),
+        MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0, 1.0, 1.0, 1.0)),
         MPASS_TEXTURE_SA_DS(find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID), 1.0f, 0),
     };
     auto mp_id = push_pass(m, bp_main_pass, assignments, 2);

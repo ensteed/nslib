@@ -344,6 +344,16 @@ intern u32 get_format_byte_size(rformat format)
     case rformat::RGBA8_SNORM:
     case rformat::RGBA8_UINT:
     case rformat::RGBA8_SINT:
+    case rformat::BGRA8_SRGB:
+    case rformat::BGRA8_UNORM:
+    case rformat::BGRA8_SNORM:
+    case rformat::BGRA8_UINT:
+    case rformat::BGRA8_SINT:
+    case rformat::ABGR8_SRGB:
+    case rformat::ABGR8_UNORM:
+    case rformat::ABGR8_SNORM:
+    case rformat::ABGR8_UINT:
+    case rformat::ABGR8_SINT:
     case rformat::RG16_SFLOAT:
     case rformat::RG16_UNORM:
     case rformat::RG16_SNORM:
@@ -360,6 +370,11 @@ intern u32 get_format_byte_size(rformat format)
     case rformat::RGB8_SNORM:
     case rformat::RGB8_UINT:
     case rformat::RGB8_SINT:
+    case rformat::BGR8_SRGB:
+    case rformat::BGR8_UNORM:
+    case rformat::BGR8_SNORM:
+    case rformat::BGR8_UINT:
+    case rformat::BGR8_SINT:
         return 3;
 
     // 16-bit formats (2 bytes per pixel)
@@ -1290,7 +1305,7 @@ rmaterial_handle create_material(renderer *rndr, const rmaterial_desc &ctinfo)
 
 rformat get_swapchain_format(renderer *rnd)
 {
-    return rformat::RGBA8_SRGB;
+    return get_rformat(rnd->vk.inst.device.swapchain.format);
 }
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci)

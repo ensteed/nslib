@@ -15,7 +15,7 @@ VkImageLayout get_baked_initial_vk_layout(const rbp_pass &pass, const rbp_resour
 VkAttachmentLoadOp get_requirement_vk_load_op(const rbp_resource_requirement &req);
 VkAttachmentStoreOp get_requirement_vk_store_op(const rbp_resource_requirement &req);
 VkPipelineStageFlags normalize_vk_stage_mask(VkPipelineStageFlags stage);
-VkClearValue get_vk_clear_value(const mpass_clear_value &cv);
+VkClearValue get_vk_clear_value(const mpass_clear_value &cv, rformat tex_format);
 
 VkRect2D get_vk_rect_from_normalized(const rect &norm, const uvec2 &dims);
 VkRect2D get_vk_rect(const svec2 &pos, const uvec2 &dims);
@@ -42,6 +42,26 @@ constexpr rformat get_rformat(VkFormat format)
         return rformat::RGBA8_UINT;
     case VK_FORMAT_R8G8B8A8_SINT:
         return rformat::RGBA8_SINT;
+    case VK_FORMAT_B8G8R8A8_SRGB:
+        return rformat::BGRA8_SRGB;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+        return rformat::BGRA8_UNORM;
+    case VK_FORMAT_B8G8R8A8_SNORM:
+        return rformat::BGRA8_SNORM;
+    case VK_FORMAT_B8G8R8A8_UINT:
+        return rformat::BGRA8_UINT;
+    case VK_FORMAT_B8G8R8A8_SINT:
+        return rformat::BGRA8_SINT;
+    case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+        return rformat::ABGR8_SRGB;
+    case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+        return rformat::ABGR8_UNORM;
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+        return rformat::ABGR8_SNORM;
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+        return rformat::ABGR8_UINT;
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+        return rformat::ABGR8_SINT;
     case VK_FORMAT_R8G8B8_SRGB:
         return rformat::RGB8_SRGB;
     case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
@@ -56,6 +76,16 @@ constexpr rformat get_rformat(VkFormat format)
         return rformat::RGB8_UINT;
     case VK_FORMAT_R8G8B8_SINT:
         return rformat::RGB8_SINT;
+    case VK_FORMAT_B8G8R8_SRGB:
+        return rformat::BGR8_SRGB;
+    case VK_FORMAT_B8G8R8_UNORM:
+        return rformat::BGR8_UNORM;
+    case VK_FORMAT_B8G8R8_SNORM:
+        return rformat::BGR8_SNORM;
+    case VK_FORMAT_B8G8R8_UINT:
+        return rformat::BGR8_UINT;
+    case VK_FORMAT_B8G8R8_SINT:
+        return rformat::BGR8_SINT;
     case VK_FORMAT_R8G8_SRGB:
         return rformat::RG8_SRGB;
     case VK_FORMAT_R8G8_UNORM:
@@ -204,6 +234,26 @@ constexpr VkFormat get_vk_format(rformat format)
         return VK_FORMAT_R8G8B8A8_UINT;
     case (rformat::RGBA8_SINT):
         return VK_FORMAT_R8G8B8A8_SINT;
+    case (rformat::BGRA8_SRGB):
+        return VK_FORMAT_B8G8R8A8_SRGB;
+    case (rformat::BGRA8_UNORM):
+        return VK_FORMAT_B8G8R8A8_UNORM;
+    case (rformat::BGRA8_SNORM):
+        return VK_FORMAT_B8G8R8A8_SNORM;
+    case (rformat::BGRA8_UINT):
+        return VK_FORMAT_B8G8R8A8_UINT;
+    case (rformat::BGRA8_SINT):
+        return VK_FORMAT_B8G8R8A8_SINT;
+    case (rformat::ABGR8_SRGB):
+        return VK_FORMAT_A8B8G8R8_SRGB_PACK32;
+    case (rformat::ABGR8_UNORM):
+        return VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+    case (rformat::ABGR8_SNORM):
+        return VK_FORMAT_A8B8G8R8_SNORM_PACK32;
+    case (rformat::ABGR8_UINT):
+        return VK_FORMAT_A8B8G8R8_UINT_PACK32;
+    case (rformat::ABGR8_SINT):
+        return VK_FORMAT_A8B8G8R8_SINT_PACK32;
     case (rformat::RGB8_SRGB):
         return VK_FORMAT_R8G8B8_SRGB;
     case (rformat::RGB8_SRGB_COMPRESSED):
@@ -218,6 +268,16 @@ constexpr VkFormat get_vk_format(rformat format)
         return VK_FORMAT_R8G8B8_UINT;
     case (rformat::RGB8_SINT):
         return VK_FORMAT_R8G8B8_SINT;
+    case (rformat::BGR8_SRGB):
+        return VK_FORMAT_B8G8R8_SRGB;
+    case (rformat::BGR8_UNORM):
+        return VK_FORMAT_B8G8R8_UNORM;
+    case (rformat::BGR8_SNORM):
+        return VK_FORMAT_B8G8R8_SNORM;
+    case (rformat::BGR8_UINT):
+        return VK_FORMAT_B8G8R8_UINT;
+    case (rformat::BGR8_SINT):
+        return VK_FORMAT_B8G8R8_SINT;
     case (rformat::RG8_SRGB):
         return VK_FORMAT_R8G8_SRGB;
     case (rformat::RG8_UNORM):
@@ -358,11 +418,20 @@ constexpr bool is_floating_point_type(VkFormat format)
     case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_BC7_UNORM_BLOCK:
     case VK_FORMAT_R8G8B8A8_SNORM:
+    case VK_FORMAT_B8G8R8A8_SRGB:
+    case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_B8G8R8A8_SNORM:
+    case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+    case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
     case VK_FORMAT_R8G8B8_SRGB:
     case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
     case VK_FORMAT_R8G8B8_UNORM:
     case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
     case VK_FORMAT_R8G8B8_SNORM:
+    case VK_FORMAT_B8G8R8_SRGB:
+    case VK_FORMAT_B8G8R8_UNORM:
+    case VK_FORMAT_B8G8R8_SNORM:
     case VK_FORMAT_R8G8_SRGB:
     case VK_FORMAT_R8G8_UNORM:
     case VK_FORMAT_BC5_UNORM_BLOCK:
@@ -405,7 +474,10 @@ constexpr bool is_uint_type(VkFormat format)
 {
     switch (format) {
     case VK_FORMAT_R8G8B8A8_UINT:
+    case VK_FORMAT_B8G8R8A8_UINT:
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
     case VK_FORMAT_R8G8B8_UINT:
+    case VK_FORMAT_B8G8R8_UINT:
     case VK_FORMAT_R8G8_UINT:
     case VK_FORMAT_R8_UINT:
     case VK_FORMAT_R16G16B16A16_UINT:
@@ -430,7 +502,10 @@ constexpr bool is_int_type(VkFormat format)
 {
     switch (format) {
     case VK_FORMAT_R8G8B8A8_SINT:
+    case VK_FORMAT_B8G8R8A8_SINT:
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
     case VK_FORMAT_R8G8B8_SINT:
+    case VK_FORMAT_B8G8R8_SINT:
     case VK_FORMAT_R8G8_SINT:
     case VK_FORMAT_R8_SINT:
     case VK_FORMAT_R16G16B16A16_SINT:
@@ -511,11 +586,26 @@ constexpr sizet get_bytes_per_component(VkFormat format)
     case VK_FORMAT_R8G8B8A8_SNORM:
     case VK_FORMAT_R8G8B8A8_UINT:
     case VK_FORMAT_R8G8B8A8_SINT:
+    case VK_FORMAT_B8G8R8A8_SRGB:
+    case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_B8G8R8A8_SNORM:
+    case VK_FORMAT_B8G8R8A8_UINT:
+    case VK_FORMAT_B8G8R8A8_SINT:
+    case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+    case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
     case VK_FORMAT_R8G8B8_SRGB:
     case VK_FORMAT_R8G8B8_UNORM:
     case VK_FORMAT_R8G8B8_SNORM:
     case VK_FORMAT_R8G8B8_UINT:
     case VK_FORMAT_R8G8B8_SINT:
+    case VK_FORMAT_B8G8R8_SRGB:
+    case VK_FORMAT_B8G8R8_UNORM:
+    case VK_FORMAT_B8G8R8_SNORM:
+    case VK_FORMAT_B8G8R8_UINT:
+    case VK_FORMAT_B8G8R8_SINT:
     case VK_FORMAT_R8G8_SRGB:
     case VK_FORMAT_R8G8_UNORM:
     case VK_FORMAT_R8G8_SNORM:

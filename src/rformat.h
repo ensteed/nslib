@@ -14,6 +14,18 @@ enum struct rformat
     RGBA8_SNORM,
     RGBA8_UINT,
     RGBA8_SINT,
+    // BGRA
+    BGRA8_SRGB,
+    BGRA8_UNORM,
+    BGRA8_SNORM,
+    BGRA8_UINT,
+    BGRA8_SINT,
+    // ABGR
+    ABGR8_SRGB,
+    ABGR8_UNORM,
+    ABGR8_SNORM,
+    ABGR8_UINT,
+    ABGR8_SINT,
     // RGB
     RGB8_SRGB,
     RGB8_SRGB_COMPRESSED,
@@ -22,6 +34,12 @@ enum struct rformat
     RGB8_SNORM,
     RGB8_UINT,
     RGB8_SINT,
+    // BGR
+    BGR8_SRGB,
+    BGR8_UNORM,
+    BGR8_SNORM,
+    BGR8_UINT,
+    BGR8_SINT,
     // RG
     RG8_SRGB,
     RG8_UNORM,
