@@ -314,12 +314,12 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     auto bp_main_pass = find_rbp_pass(bp, MAIN_PASS_ID);
     auto imgui_pass = find_rbp_pass(bp, IMGUI_PASS_ID);
 
-    mpass_slot_assignment assignments[] = {
-        MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0, 1.0, 1.0, 1.0)),
-        MPASS_TEXTURE_SA_DS(find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID), 1.0f, 0),
-    };
-    auto mp_id = push_pass(m, bp_main_pass, assignments, 2);
-    auto imgui_id = push_pass(m, imgui_pass, assignments, 1);
+    auto mp_id = push_pass(m, bp_main_pass);
+    push_slot_assignment(m, mp_id, MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0f, 1.0f, 1.0f, 1.0f)));
+    push_slot_assignment(m, mp_id, MPASS_TEXTURE_SA_DS(find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID), 1.0f, 0));
+
+    auto imgui_id = push_pass(m, imgui_pass);
+    push_slot_assignment(m, imgui_id, MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0f, 1.0f, 1.0f, 1.0f)));
 
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
     auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);

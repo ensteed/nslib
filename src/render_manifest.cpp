@@ -4,12 +4,36 @@
 namespace nslib
 {
 
-mpass_id push_pass(rmanifest *m, rbp_pass_id pid)
+mpass_id push_pass_helper(rmanifest *m, rbp_pass_id pid, mpass_slot_assignment *assignments, sizet assignment_count)
 {
-    mpass_id ind = (mpass_id)m->passes.size;
-    arr_resize(&m->passes, ind + 1);
-    m->passes[ind].rbp_pid = pid;
-    return ind;
+    mpass_id pind = (mpass_id)m->passes.size;
+    arr_resize(&m->passes, pind + 1);
+    m->passes[pind].rbp_pid = pid;
+    if (assignment_count && assignment_count != 0) {
+        auto bp = get_render_blueprint(m->rndr, m->rbp);
+        asrt(assignment_count == bp->passes[pid].slots.size);
+        arr_resize(&m->passes[pind].slot_assignments, assignment_count);
+        for (sizet i = 0; i < m->passes[pind].slot_assignments.size; ++i) {
+            m->passes[pind].slot_assignments[i] = assignments[i];
+        }
+    }
+    return pind;
+}
+
+mpass_id push_pass(rmanifest *m, rbp_pass_id pid, const rect &norm_render_area, mpass_slot_assignment *assignments, sizet assignment_count)
+{
+    auto pind = push_pass_helper(m, pid, assignments, assignment_count);
+    m->passes[pind].ra_size_mode = rect_size_mode::NORMALIZED;
+    m->passes[pind].norm_render_area = norm_render_area;
+    return pind;
+}
+
+mpass_id push_pass(rmanifest *m, rbp_pass_id pid, const srect &render_area, mpass_slot_assignment *assignments, sizet assignment_count) {
+    auto pind = push_pass_helper(m, pid, assignments, assignment_count);
+    m->passes[pind].ra_size_mode = rect_size_mode::ABSOLUTE;
+    m->passes[pind].render_area = render_area;
+    return pind;
+    
 }
 
 u32 push_slot_assignment(rmanifest *m, mpass_id pid, const mpass_slot_assignment &sa)
@@ -21,18 +45,6 @@ u32 push_slot_assignment(rmanifest *m, mpass_id pid, const mpass_slot_assignment
     u32 sa_ind = m->passes[pid].slot_assignments.size++;
     m->passes[pid].slot_assignments[sa_ind] = sa;
     return sa_ind;
-}
-
-mpass_id push_pass(rmanifest *m, rbp_pass_id pid, mpass_slot_assignment *assignments, sizet assignment_count)
-{
-    auto bp = get_render_blueprint(m->rndr, m->rbp);
-    auto pind = push_pass(m, pid);
-    asrt(assignment_count == bp->passes[pid].slots.size);
-    arr_resize(&m->passes[pind].slot_assignments, assignment_count);
-    for (sizet i = 0; i < m->passes[pind].slot_assignments.size; ++i) {
-        m->passes[pind].slot_assignments[i] = assignments[i];
-    }
-    return pind;
 }
 
 mview_id push_view(rmanifest *m, const mview &view)

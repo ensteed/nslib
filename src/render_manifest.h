@@ -238,8 +238,16 @@ struct rmanifest
     array<mrender_job> jobs;
 };
 
-mpass_id push_pass(rmanifest *m, rbp_pass_id pid);
-mpass_id push_pass(rmanifest *m, rbp_pass_id pid, mpass_slot_assignment *assignments, sizet assignment_count);
+mpass_id push_pass(rmanifest *m,
+                   rbp_pass_id pid,
+                   const rect &norm_render_area = {0.0f, 0.0f, 1.0f, 1.0f},
+                   mpass_slot_assignment *assignments = nullptr,
+                   sizet assignment_count = 0);
+mpass_id push_pass(rmanifest *m,
+                   rbp_pass_id pid,
+                   const srect &render_area,
+                   mpass_slot_assignment *assignments = nullptr,
+                   sizet assignment_count = 0);
 u32 push_slot_assignment(rmanifest *m, mpass_id pid, const mpass_slot_assignment &sa);
 mview_id push_view(rmanifest *m, const mview &view);
 mrender_job_id push_render_job(rmanifest *m, mpass_id pass, mview_id view, render_job_cb *cb, void *cb_params);

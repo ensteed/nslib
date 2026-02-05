@@ -1647,9 +1647,11 @@ intern rbuffer_state get_updated_buffer_state(const rbp_pass &rbpp, const rbp_re
     return updated;
 }
 
-intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mpass_id mpid, VkCommandBuffer buf, u32 fif)
+intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mrender_job_id rjid, VkCommandBuffer buf, u32 fif)
 {
-    const mpass &mp = m->passes[mpid];
+    const mrender_job &rj = m->jobs[rjid];
+    const mpass &mp = m->passes[rj.pid];
+
     rbp_slot_usage_info slot_usage[MAX_BP_PASS_SLOT_COUNT]{};
     gather_pass_slot_usage_info(slot_usage, rbpp);
 
@@ -1679,7 +1681,7 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mpas
             // for layout transitions when the current layout doesn't match the render pass initial layout.
             if (layout_mismatch || (!use_bookends && access_stage_mismatch)) {
 #ifdef LOG_IMAGE_MEM_BARRIER
-                ilog("%s: cur[l:%d a:%d s:%d]  des[l:%d a:%d s:%d",
+                ilog("%s: cur{l:%d a:%d s:%d}  req{l:%d a:%d s:%d}",
                      cur_t->name,
                      cur_st->layout,
                      cur_st->access,
@@ -1717,7 +1719,7 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mpas
 
             if (cur_st->access != req_st.access || cur_st->stage != req_st.stage) {
 #ifdef LOG_BUFFER_MEM_BARRIER
-                ilog("%s: cur[a:%d s:%d]  des[a:%d s:%d", cur_b->name, cur_st->access, cur_st->stage, req_st.access, req_st.stage);
+                ilog("%s: cur{a:%d s:%d}  req{a:%d s:%d}", cur_b->name, cur_st->access, cur_st->stage, req_st.access, req_st.stage);
 #endif
 
                 // Single barrier per resource into the first required state for this pass.
@@ -1749,9 +1751,10 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mpas
             dst_stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
         }
 #if defined(LOG_PIPELINE_BARRIER)
-        ilog("Emit pre pass %u (type %s) barrier with %u im and %u buf barriers (src:%d dst:%d)",
-             mpid,
+        ilog("Emit pre pass barrier (pi %u from type %s) for rj %u with %u im and %u buf barriers (src:%d dst:%d)",
+             rj.pid,
              rbpp.name,
+             rjid,
              image_barriers.size,
              buffer_barriers.size,
              src_stage_mask,
