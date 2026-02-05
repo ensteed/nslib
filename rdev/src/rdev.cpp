@@ -351,9 +351,7 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     PROFILE_END();
 
     rmanifest *m = begin_render_frame(&app->rndr, find_render_blueprint(&app->rndr, hash_type("fwd-pbr")));
-    if (!m) {
-        return true;
-    }
+    if (!m) return true;
 
     build_manifest(m, app);
 
