@@ -337,7 +337,7 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
         // Some basic validation on attachments..
         for (u32 i = 0; i < rp_cfg.attachments.size; ++i) {
             auto cur = &rp_cfg.attachments[i];
-            asrt(cur->format != VK_FORMAT_UNDEFINED);
+            asrt(cur->format != VK_FORMAT_UNDEFINED && "All slots must be referenced at least once by subpass requirements");
             asrt(cur->initialLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
         }
 

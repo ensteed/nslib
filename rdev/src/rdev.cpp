@@ -362,7 +362,7 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     ImGui::ShowDebugLogWindow();
 #endif
 
-    int res = end_render_frame(m);
+    bool res = end_render_frame(m);
     end_platform_frame(ctxt);
 
     PROFILE_END_FRAME();
@@ -374,7 +374,7 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
         frame_count_goal += GLOBAL_PROFILING_CONTEXT[0]->avg_window;
     }
 #endif
-    return res == err_code::RENDER_NO_ERROR;
+    return res;
 }
 
 intern void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)

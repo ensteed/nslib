@@ -8,6 +8,8 @@ namespace nslib
 {
 
 struct renderer;
+struct rbuffer_target_fif;
+struct rtexture_target_fif;
 
 struct rtexture_assignment
 {
@@ -229,8 +231,8 @@ struct rmanifest
 {
     renderer *rndr;
     render_blueprint_handle rbp;
-    array<rbuffer_target> buffers;
-    array<rtexture_target> textures;
+    array<rbuffer_target_fif> buffers;
+    array<rtexture_target_fif> textures;
 
     mframe_params fp;
     array<mpass> passes;

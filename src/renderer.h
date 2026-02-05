@@ -275,6 +275,7 @@ struct rbuffer_target_fif
 {
     vkr_buffer buffer;
     rbuffer_state state;
+    const vkr_buffer_cfg *cfg;
 };
 
 struct rbuffer_target
@@ -282,16 +283,18 @@ struct rbuffer_target
     // Set during build
     small_str name;
     rres_id id;
-
+    vkr_buffer_cfg cfg{};
     // Filled in during compile
     rbuffer_target_fif frames[MAX_FRAMES_IN_FLIGHT];
 };
 
-struct rtexture_target_frame_fif
+struct rtexture_target_fif
 {
     vkr_image image;
     VkImageView view;
     rtexture_state state;
+    const vkr_image_cfg *cfg;
+    const vkr_image_view_cfg *iv_cfg;
 };
 
 enum rtarget_texture_flag
@@ -308,8 +311,7 @@ struct rtexture_target
     // We need to store this so we can resize the image
     vkr_image_cfg cfg{};
     vkr_image_view_cfg iv_cfg{};
-
-    rtexture_target_frame_fif frames[MAX_FRAMES_IN_FLIGHT];
+    rtexture_target_fif frames[MAX_FRAMES_IN_FLIGHT];
 };
 
 struct rresource_target_registry
@@ -477,10 +479,9 @@ struct init_renderer_params
 
 // DRAW FUNCTIONS
 #if defined USE_IMGUI
-void draw_imgui(const render_job_cb_params &, void*);
+void draw_imgui(const render_job_cb_params &, void *);
 #endif
-void draw_geometry(const render_job_cb_params &, void*);
-
+void draw_geometry(const render_job_cb_params &, void *);
 
 int init_renderer(renderer *rndr, const init_renderer_params &p);
 void terminate_renderer(renderer *rndr);
@@ -523,6 +524,6 @@ rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
 rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
 
 rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp);
-int end_render_frame(rmanifest *m);
+bool end_render_frame(rmanifest *m);
 
 } // namespace nslib
