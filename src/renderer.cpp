@@ -11,6 +11,11 @@
     #include "SDL3/SDL_events.h"
 #endif
 
+// This will emit a log for image barriers which kills perfomance but useful to see sometimes
+// #define LOG_IMAGE_MEM_BARRIER
+// #define LOG_BUFFER_MEM_BARRIER
+// #define LOG_PIPELINE_BARRIER
+
 namespace nslib
 {
 
@@ -1548,7 +1553,7 @@ intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd
     fb_kd->rpass = vk_rpass;
     for (u32 si = 0; si < mp.slot_assignments.size; ++si) {
         auto cur_sl = &mp.slot_assignments[si];
-        bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t);
+        bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t.hndl);
         bool b_cond = cur_sl->type == mslot_target_type::BUFFER && is_valid(cur_sl->b);
         asrt(t_cond || b_cond);
 
@@ -1556,7 +1561,7 @@ intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd
         u32 att_ind = rbp_pass.slots[si].att_ind;
         if (is_valid(att_ind)) {
             asrt(att_ind < fb_kd->atts.capacity);
-            const rtexture_target *cur_t = &m.textures[cur_sl->t.index];
+            const rtexture_target *cur_t = &m.textures[cur_sl->t.hndl.index];
             VkImageView tview = cur_t->frames[fif].view;
 
             // Can't use the value from cfg - swapchain images don't have correct data in the cfg field as they were
@@ -1580,7 +1585,7 @@ intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd
 
             // Set clear value
             rformat tex_format = get_rformat(cur_t->frames[fif].image.format);
-            cv[*cv_size] = get_vk_clear_value(cur_sl->clear_val, tex_format);
+            cv[*cv_size] = get_vk_clear_value(cur_sl->t.clear_val, tex_format);
             ++(*cv_size);
 
             ++att_cnt;
@@ -1595,14 +1600,14 @@ struct rbp_slot_usage_info
     const rbp_resource_requirement *last{};
 };
 
-intern void gather_pass_slot_usage_info(rbp_slot_usage_info *infos, const rbp_pass &rbp_pass)
+intern void gather_pass_slot_usage_info(rbp_slot_usage_info *infos, const rbp_pass &rbpp)
 {
     // Record first/last requirement per slot so we can place a single pre-pass barrier and finalize state post-pass.
-    for (u32 subi = 0; subi < rbp_pass.subpasses.size; ++subi) {
-        const rbp_subpass *sub = &rbp_pass.subpasses[subi];
+    for (u32 subi = 0; subi < rbpp.subpasses.size; ++subi) {
+        const rbp_subpass *sub = &rbpp.subpasses[subi];
         for (u32 resi = 0; resi < sub->resources.size; ++resi) {
             const rbp_resource_requirement *req = &sub->resources[resi];
-            asrt(req->slot_ind < rbp_pass.slots.size);
+            asrt(req->slot_ind < rbpp.slots.size);
             rbp_slot_usage_info *info = &infos[req->slot_ind];
             if (!info->first) {
                 info->first = req;
@@ -1612,60 +1617,48 @@ intern void gather_pass_slot_usage_info(rbp_slot_usage_info *infos, const rbp_pa
     }
 }
 
-intern rtexture_state get_pre_pass_texture_state(const rbp_pass &rbp_pass, const rbp_resource_requirement &req)
+intern rtexture_state get_required_texture_state(const rbp_pass &rbpp, const rbp_resource_requirement &req, const rtexture_state &cur_st)
 {
-    rtexture_state desired{};
-    if (is_usage_attachment(rbp_pass.slots[req.slot_ind].usage)) {
-        // Attachments can be cleared by the render pass; in that case we can treat old contents as undefined.
-        VkImageLayout init_layout = get_baked_initial_vk_layout(rbp_pass, req);
-        if (init_layout == VK_IMAGE_LAYOUT_UNDEFINED) {
-            desired.layout = VK_IMAGE_LAYOUT_UNDEFINED;
-            desired.access = VK_ACCESS_NONE;
-            desired.stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        }
-        else {
-            desired.layout = init_layout;
-            desired.access = get_vk_access_from_requirement(rbp_pass, req);
-            desired.stage = get_vk_stage_from_requirement(rbp_pass, req);
-        }
-    }
-    else {
-        desired.layout = get_vk_layout_from_requirement(rbp_pass, req, false);
-        desired.access = get_vk_access_from_requirement(rbp_pass, req);
-        desired.stage = get_vk_stage_from_requirement(rbp_pass, req);
-    }
-    return desired;
+    rtexture_state req_st{};
+    bool is_att = is_usage_attachment(rbpp.slots[req.slot_ind].usage);
+    req_st.layout = is_att ? get_baked_initial_vk_layout(rbpp, req) : get_vk_layout_from_requirement(rbpp, req, false);
+    bool undef = (req_st.layout == VK_IMAGE_LAYOUT_UNDEFINED);
+    if (undef) req_st.layout = cur_st.layout;
+    req_st.access = (is_att && undef) ? VK_ACCESS_NONE : get_vk_access_from_requirement(rbpp, req);
+    req_st.stage = (is_att && undef) ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : get_vk_stage_from_requirement(rbpp, req);
+    return req_st;
 }
 
-intern rtexture_state get_post_pass_texture_state(const rbp_pass &rbp_pass, const rbp_resource_requirement &req)
+intern rtexture_state get_updated_texture_state(const rbp_pass &rbpp, const rbp_resource_requirement &req)
 {
-    rtexture_state desired{};
-    bool is_attachment = is_usage_attachment(rbp_pass.slots[req.slot_ind].usage);
-    desired.layout = get_vk_layout_from_requirement(rbp_pass, req, is_attachment);
-    desired.access = get_vk_access_from_requirement(rbp_pass, req);
-    desired.stage = get_vk_stage_from_requirement(rbp_pass, req);
-    return desired;
+    rtexture_state updated{};
+    bool is_attachment = is_usage_attachment(rbpp.slots[req.slot_ind].usage);
+    updated.layout = get_vk_layout_from_requirement(rbpp, req, is_attachment);
+    updated.access = get_vk_access_from_requirement(rbpp, req);
+    updated.stage = get_vk_stage_from_requirement(rbpp, req);
+    return updated;
 }
 
-intern rbuffer_state get_pass_buffer_state(const rbp_pass &rbp_pass, const rbp_resource_requirement &req)
+intern rbuffer_state get_updated_buffer_state(const rbp_pass &rbpp, const rbp_resource_requirement &req)
 {
-    rbuffer_state desired{};
-    desired.access = get_vk_access_from_requirement(rbp_pass, req);
-    desired.stage = get_vk_stage_from_requirement(rbp_pass, req);
-    return desired;
+    rbuffer_state updated{};
+    updated.access = get_vk_access_from_requirement(rbpp, req);
+    updated.stage = get_vk_stage_from_requirement(rbpp, req);
+    return updated;
 }
 
-intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, const mpass &mp, VkCommandBuffer buf, u32 fif)
+intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mpass_id mpid, VkCommandBuffer buf, u32 fif)
 {
+    const mpass &mp = m->passes[mpid];
     rbp_slot_usage_info slot_usage[MAX_BP_PASS_SLOT_COUNT]{};
-    gather_pass_slot_usage_info(slot_usage, rbp_pass);
+    gather_pass_slot_usage_info(slot_usage, rbpp);
 
     static_array<VkImageMemoryBarrier, MAX_BP_PASS_SLOT_COUNT> image_barriers{};
     static_array<VkBufferMemoryBarrier, MAX_BP_PASS_SLOT_COUNT> buffer_barriers{};
     VkPipelineStageFlags src_stage_mask = 0;
     VkPipelineStageFlags dst_stage_mask = 0;
 
-    for (u32 slot_ind = 0; slot_ind < rbp_pass.slots.size; ++slot_ind) {
+    for (u32 slot_ind = 0; slot_ind < rbpp.slots.size; ++slot_ind) {
         const rbp_resource_requirement *first = slot_usage[slot_ind].first;
         if (!first) {
             continue;
@@ -1673,58 +1666,65 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, 
 
         const mpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
         if (assignment.type == mslot_target_type::TEXTURE) {
-            asrt(is_valid(assignment.t));
-            asrt(assignment.t.index < m->textures.size);
-            rtexture_state desired = get_pre_pass_texture_state(rbp_pass, *first);
-            auto cur_t = &m->textures[assignment.t.index];
-            rtexture_state *cur_state = &cur_t->frames[fif].state;
+            asrt(is_valid(assignment.t.hndl));
+            asrt(assignment.t.hndl.index < m->textures.size);
+            auto cur_t = &m->textures[assignment.t.hndl.index];
+            rtexture_state *cur_st = &cur_t->frames[fif].state;
+            rtexture_state req_st = get_required_texture_state(rbpp, *first, *cur_st);
 
-            bool use_bookends = rbp_pass.use_subpass_bookends && is_usage_attachment(rbp_pass.slots[slot_ind].usage);
-            bool layout_mismatch = cur_state->layout != desired.layout;
-            bool access_stage_mismatch = cur_state->access != desired.access || cur_state->stage != desired.stage;
+            bool use_bookends = rbpp.use_subpass_bookends && is_usage_attachment(rbpp.slots[slot_ind].usage);
+            bool layout_mismatch = cur_st->layout != req_st.layout && req_st.layout != VK_IMAGE_LAYOUT_UNDEFINED;
+            bool access_stage_mismatch = cur_st->access != req_st.access || cur_st->stage != req_st.stage;
             // Bookend dependencies cover external memory visibility for attachments. We still need a barrier
             // for layout transitions when the current layout doesn't match the render pass initial layout.
             if (layout_mismatch || (!use_bookends && access_stage_mismatch)) {
+#ifdef LOG_IMAGE_MEM_BARRIER
                 ilog("%s: cur[l:%d a:%d s:%d]  des[l:%d a:%d s:%d",
                      cur_t->name,
-                     cur_state->layout,
-                     cur_state->access,
-                     cur_state->stage,
-                     desired.layout,
-                     desired.access,
-                     desired.stage);
+                     cur_st->layout,
+                     cur_st->access,
+                     cur_st->stage,
+                     req_st.layout,
+                     req_st.access,
+                     req_st.stage);
+#endif
 
                 // Single barrier per resource into the first required state for this pass.
                 VkImageMemoryBarrier barrier{};
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                barrier.oldLayout = cur_state->layout;
-                barrier.newLayout = desired.layout;
-                barrier.srcAccessMask = cur_state->access;
-                barrier.dstAccessMask = desired.access;
+                barrier.oldLayout = cur_st->layout;
+                barrier.newLayout = req_st.layout;
+                barrier.srcAccessMask = cur_st->access;
+                barrier.dstAccessMask = req_st.access;
                 barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrier.image = m->textures[assignment.t.index].frames[fif].image.hndl;
-                barrier.subresourceRange = m->textures[assignment.t.index].iv_cfg.srange;
+                barrier.image = m->textures[assignment.t.hndl.index].frames[fif].image.hndl;
+                barrier.subresourceRange = m->textures[assignment.t.hndl.index].iv_cfg.srange;
                 arr_push_back(&image_barriers, barrier);
 
-                src_stage_mask |= normalize_vk_stage_mask(cur_state->stage);
-                dst_stage_mask |= normalize_vk_stage_mask(desired.stage);
+                src_stage_mask |= normalize_vk_stage_mask(cur_st->stage);
+                dst_stage_mask |= normalize_vk_stage_mask(req_st.stage);
             }
             // Keep the manifest in sync so later passes see the in-pass state even if no barrier was needed.
-            *cur_state = desired;
+            *cur_st = req_st;
         }
         else if (assignment.type == mslot_target_type::BUFFER) {
             asrt(is_valid(assignment.b));
             asrt(assignment.b.index < m->buffers.size);
-            rbuffer_state desired = get_pass_buffer_state(rbp_pass, *first);
-            rbuffer_state *cur_state = &m->buffers[assignment.b.index].frames[fif].state;
+            auto cur_b = &m->buffers[assignment.b.index];
+            rbuffer_state *cur_st = &cur_b->frames[fif].state;
+            rbuffer_state req_st = get_updated_buffer_state(rbpp, *first);
 
-            if (cur_state->access != desired.access || cur_state->stage != desired.stage) {
+            if (cur_st->access != req_st.access || cur_st->stage != req_st.stage) {
+#ifdef LOG_BUFFER_MEM_BARRIER
+                ilog("%s: cur[a:%d s:%d]  des[a:%d s:%d", cur_b->name, cur_st->access, cur_st->stage, req_st.access, req_st.stage);
+#endif
+
                 // Single barrier per resource into the first required state for this pass.
                 VkBufferMemoryBarrier barrier{};
                 barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                barrier.srcAccessMask = cur_state->access;
-                barrier.dstAccessMask = desired.access;
+                barrier.srcAccessMask = cur_st->access;
+                barrier.dstAccessMask = req_st.access;
                 barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 barrier.buffer = m->buffers[assignment.b.index].frames[fif].buffer.hndl;
@@ -1732,11 +1732,11 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, 
                 barrier.size = VK_WHOLE_SIZE;
                 arr_push_back(&buffer_barriers, barrier);
 
-                src_stage_mask |= normalize_vk_stage_mask(cur_state->stage);
-                dst_stage_mask |= normalize_vk_stage_mask(desired.stage);
+                src_stage_mask |= normalize_vk_stage_mask(cur_st->stage);
+                dst_stage_mask |= normalize_vk_stage_mask(req_st.stage);
             }
             // Keep the manifest in sync so later passes see the in-pass state even if no barrier was needed.
-            *cur_state = desired;
+            *cur_st = req_st;
         }
     }
 
@@ -1748,6 +1748,15 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbp_pass, 
         if (dst_stage_mask == 0) {
             dst_stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
         }
+#if defined(LOG_PIPELINE_BARRIER)
+        ilog("Emit pre pass %u (type %s) barrier with %u im and %u buf barriers (src:%d dst:%d)",
+             mpid,
+             rbpp.name,
+             image_barriers.size,
+             buffer_barriers.size,
+             src_stage_mask,
+             dst_stage_mask);
+#endif
         vkCmdPipelineBarrier(buf,
                              src_stage_mask,
                              dst_stage_mask,
@@ -1774,15 +1783,15 @@ intern void update_manifest_pass_states(rmanifest *m, const rbp_pass &rbp_pass, 
         const mpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
         if (assignment.type == mslot_target_type::TEXTURE) {
             // Final state after the pass completes (attachments use final layout).
-            asrt(is_valid(assignment.t));
-            asrt(assignment.t.index < m->textures.size);
-            m->textures[assignment.t.index].frames[fif].state = get_post_pass_texture_state(rbp_pass, *last);
+            asrt(is_valid(assignment.t.hndl));
+            asrt(assignment.t.hndl.index < m->textures.size);
+            m->textures[assignment.t.hndl.index].frames[fif].state = get_updated_texture_state(rbp_pass, *last);
         }
         else if (assignment.type == mslot_target_type::BUFFER) {
             // Final buffer access/stage after the pass completes.
             asrt(is_valid(assignment.b));
             asrt(assignment.b.index < m->buffers.size);
-            m->buffers[assignment.b.index].frames[fif].state = get_pass_buffer_state(rbp_pass, *last);
+            m->buffers[assignment.b.index].frames[fif].state = get_updated_buffer_state(rbp_pass, *last);
         }
     }
 }
@@ -1801,7 +1810,7 @@ intern void execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
         asrt(rbp_pass->slots.size == mp->slot_assignments.size);
 
         // Create all needed barriers for the current pass resources (according to what we have for the current state)
-        emit_manifest_pass_barriers(m, *rbp_pass, *mp, buf, fif);
+        emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->pid, buf, fif);
 
         // Setup framebuffer and clear vals by looping over slots
         static_array<VkClearValue, MAX_BP_PASS_SLOT_COUNT> att_clear_vals{};

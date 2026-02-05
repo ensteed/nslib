@@ -72,6 +72,12 @@ struct mpass_clear_value
     u32 stencil{DEFAULT_STENCIL_CLEAR};
 };
 
+struct rtexture_target_meta
+{
+    rtexture_target_handle hndl;
+    mpass_clear_value clear_val{};
+};
+
 struct mpass_slot_assignment
 {
     // Is this a buffer or texture assignment
@@ -79,37 +85,37 @@ struct mpass_slot_assignment
     // This specifies the value any attachments set to clear on load will be cleared to.
     union
     {
-        struct
-        {
-            rtexture_target_handle t;
-            mpass_clear_value clear_val{};
-        };
+        rtexture_target_meta t{};
         rbuffer_target_handle b;
     };
 };
 
-#define MPASS_TEXTURE_SA_CCF_DS(hndl, clear_col_float, clear_depth, clear_stencil)                                                         \
+#define MPASS_TEXTURE_SA_CCF_DS(phndl, clear_col_float, clear_depth, clear_stencil)                                                        \
     {                                                                                                                                      \
         .type = mslot_target_type::TEXTURE,                                                                                                \
-        .t = hndl,                                                                                                                         \
-        .clear_val{                                                                                                                        \
-            .type = mpass_clear_value::COLOR_TYPE_FLOAT,                                                                                   \
-            .fc{clear_col_float},                                                                                                          \
-            .depth = clear_depth,                                                                                                          \
-            .stencil = clear_stencil,                                                                                                      \
+        .t{                                                                                                                                \
+            .hndl = phndl,                                                                                                                 \
+            .clear_val{                                                                                                                    \
+                .type = mpass_clear_value::COLOR_TYPE_FLOAT,                                                                               \
+                .fc{clear_col_float},                                                                                                      \
+                .depth = clear_depth,                                                                                                      \
+                .stencil = clear_stencil,                                                                                                  \
+            },                                                                                                                             \
         },                                                                                                                                 \
     }
 
 #define MPASS_TEXTURE_SA_CCF(hndl, clear_col_float)                                                                                        \
     MPASS_TEXTURE_SA_CCF_DS(hndl, clear_col_float, DEFAULT_DEPTH_CLEAR, DEFAULT_STENCIL_CLEAR)
 
-#define MPASS_TEXTURE_SA_DS(hndl, clear_depth, clear_stencil)                                                                              \
+#define MPASS_TEXTURE_SA_DS(phndl, clear_depth, clear_stencil)                                                                             \
     {                                                                                                                                      \
         .type = mslot_target_type::TEXTURE,                                                                                                \
-        .t = hndl,                                                                                                                         \
-        .clear_val{                                                                                                                        \
-            .depth = clear_depth,                                                                                                          \
-            .stencil = clear_stencil,                                                                                                      \
+        .t{                                                                                                                                \
+            .hndl = phndl,                                                                                                                 \
+            .clear_val{                                                                                                                    \
+                .depth = clear_depth,                                                                                                      \
+                .stencil = clear_stencil,                                                                                                  \
+            },                                                                                                                             \
         },                                                                                                                                 \
     }
 
@@ -119,30 +125,34 @@ struct mpass_slot_assignment
         .t = hndl,                                                                                                                         \
     }
 
-#define MPASS_TEXTURE_SA_CCS_DS(hndl, clear_col_signed_int, clear_depth, clear_stencil)                                                    \
+#define MPASS_TEXTURE_SA_CCS_DS(phndl, clear_col_signed_int, clear_depth, clear_stencil)                                                   \
     {                                                                                                                                      \
         .type = mslot_target_type::TEXTURE,                                                                                                \
-        .t = hndl,                                                                                                                         \
-        .clear_val{                                                                                                                        \
-            .type = COLOR_TYPE_SINT,                                                                                                       \
-            .sc{clear_col_signed_int},                                                                                                     \
-            .depth = clear_depth,                                                                                                          \
-            .stencil = clear_stencil,                                                                                                      \
+        .t{                                                                                                                                \
+            .t = phndl,                                                                                                                    \
+            .clear_val{                                                                                                                    \
+                .type = COLOR_TYPE_SINT,                                                                                                   \
+                .sc{clear_col_signed_int},                                                                                                 \
+                .depth = clear_depth,                                                                                                      \
+                .stencil = clear_stencil,                                                                                                  \
+            },                                                                                                                             \
         },                                                                                                                                 \
     }
 
 #define MPASS_TEXTURE_SA_CCS(hndl, clear_col_signed_int)                                                                                   \
     MPASS_TEXTURE_SA_CCS_DS(hndl, clear_col_signed_int, DEFAULT_DEPTH_CLEAR, DEFAULT_STENCIL_CLEAR)
 
-#define MPASS_TEXTURE_SA_CCU_DS(hndl, clear_col_unsigned_int, clear_depth, clear_stencil)                                                  \
+#define MPASS_TEXTURE_SA_CCU_DS(phndl, clear_col_unsigned_int, clear_depth, clear_stencil)                                                 \
     {                                                                                                                                      \
         .type = mslot_target_type::TEXTURE,                                                                                                \
-        .t = hndl,                                                                                                                         \
-        .clear_val{                                                                                                                        \
-            .type = COLOR_TYPE_UINT,                                                                                                       \
-            .uc{clear_col_unsigned_int},                                                                                                   \
-            .depth = clear_depth,                                                                                                          \
-            .stencil = clear_stencil,                                                                                                      \
+        .t{                                                                                                                                \
+            .t = phndl,                                                                                                                    \
+            .clear_val{                                                                                                                    \
+                .type = COLOR_TYPE_UINT,                                                                                                   \
+                .uc{clear_col_unsigned_int},                                                                                               \
+                .depth = clear_depth,                                                                                                      \
+                .stencil = clear_stencil,                                                                                                  \
+            },                                                                                                                             \
         },                                                                                                                                 \
     }
 
