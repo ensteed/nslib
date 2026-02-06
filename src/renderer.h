@@ -38,8 +38,26 @@ struct rtexture_desc
     u32 flags;
 };
 
+struct vert_layout_info {
+    // Which stream group does this pipeline use? All vert buffers within a stream group share a single indice buffer,
+    // but there can be multiple groups of vert buffers. Each group of vert buffers are allocated together, and use the
+    // first buffer in the group's allocation/free offsets for all of the other buffers in the group
+    rres_id geom_streams_group;
+    // Which set of vert buffers 
+    u32 geom_buffer_layout;
+};
+
+struct rtechnique_pass_desc {
+    rgeom_topology topology;
+    vert_layout_info vl_info;
+    
+};
+
 struct rtechnique_desc
-{};
+{
+    const char *name;
+    
+};
 
 struct rmaterial_desc
 {
@@ -207,7 +225,7 @@ struct stream_buffer_entry
     vkr_buffer buffer;
 };
 
-struct geometry_buffer_layout_entry
+struct geom_buffer_layout_entry
 {
     vkr_vertex_layout vert_layout;
     VmaVirtualBlock vert_block;
@@ -219,7 +237,7 @@ struct geom_streams_group
 {
     // The name is stored in the stream buffer entry for indices - the id is generated from that name
     rres_id id{INVALID_IND};
-    static_array<geometry_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
+    static_array<geom_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
     stream_buffer_entry indice_stream;
 };
@@ -513,7 +531,7 @@ rformat get_swapchain_format(renderer *rnd);
 rgeom_handle create_geometry(renderer *rndr, const rgeom_desc &ci);
 rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo);
-rmaterial_handle create_material(renderer *rndr, const rmaterial_desc &ctinfo);
+rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);

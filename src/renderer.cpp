@@ -428,7 +428,7 @@ intern u32 get_format_byte_size(rformat format)
     }
 }
 
-intern bool fill_geometry_layout_entry(geometry_buffer_layout_entry *layout,
+intern bool fill_geometry_layout_entry(geom_buffer_layout_entry *layout,
                                        sizet cur_buffer_offset,
                                        const geometry_vert_layout_desc &desc,
                                        const vkr_context *vk)
@@ -1303,7 +1303,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinf
     return {};
 }
 
-rmaterial_handle create_material(renderer *rndr, const rmaterial_desc &ctinfo)
+rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo)
 {
     return {};
 }

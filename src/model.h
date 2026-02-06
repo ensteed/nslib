@@ -16,7 +16,12 @@ enum mat_sampler_slot
 
 enum struct mesh_topology : u8
 {
-    TRIANGLE_STRIP
+    POINT_LIST,
+    LINE_LIST,
+    LINE_STRIP,
+    TRIANGLE_LIST,
+    TRIANGLE_STRIP,
+    TRIANGLE_FAN
 };
 
 enum struct texture_usage : u8

@@ -34,7 +34,6 @@ inline constexpr u8 MAX_TEXTURE_RRESOURCE_COUNT = 16;
 // Max number of rendering buffer resources supported
 inline constexpr u8 MAX_BUFFER_RRESOURCE_COUNT = 16;
 
-
 // Max subpasses supported in a blueprint pass
 inline constexpr u8 MAX_BP_SUBPASS_COUNT = 16;
 // Max number of blueprint passes in a render blueprint
@@ -124,7 +123,12 @@ enum rsampler_type : u32
 
 enum struct rgeom_topology : u8
 {
+    RMESH_TOPOLOGY_POINT_LIST,
+    RMESH_TOPOLOGY_LINE_LIST,
+    RMESH_TOPOLOGY_LINE_STRIP,
+    RMESH_TOPOLOGY_TRIANGLE_LIST,
     RMESH_TOPOLOGY_TRIANGLE_STRIP,
+    RMESH_TOPOLOGY_TRIANGLE_FAN,
 };
 
 enum rdesc_set_layout : u32
@@ -136,6 +140,5 @@ enum rdesc_set_layout : u32
     // Count
     RDESC_SET_LAYOUT_COUNT,
 };
-
 
 } // namespace nslib
