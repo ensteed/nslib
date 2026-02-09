@@ -50,6 +50,7 @@ inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
 inline const u64 SWAPCHAIN_ID = hash_type("swapchain");
 
 inline constexpr f32 DEFAULT_DEPTH_CLEAR = 1.0f;
+
 inline constexpr u32 DEFAULT_STENCIL_CLEAR = 0;
 
 // Indice type
@@ -102,7 +103,76 @@ using pipeline_key = u64;
 using framebuffer_key = u64;
 using instance_id = u32;
 
-enum rmaterial_texture_slot
+enum rshader_stage : u8
+{
+    RSHADER_STAGE_VERT,
+    RSHADER_STAGE_FRAG,
+    RSHADER_STAGE_COUNT,
+};
+
+enum rpolygon_mode
+{
+    RPOLYGON_MODE_FILL,
+    RPOLYGON_MODE_LINE,
+    RPOLYGON_MODE_POINT,
+};
+
+enum rtechnique_flags
+{
+    RTECHNIQUE_FLAG_PRIMITIVE_RESTART_ENABLED,
+    RTECHNIQUE_FLAG_CULL_BACK,
+    RTECHNIQUE_FLAG_CULL_FRONT,
+    RTECHNIQUE_FLAG_CLAMP_DEPTH,
+    RTECHNIQUE_FLAG_DISCARD_RASTERIZER,
+    RTECHNIQUE_FLAG_SAMPLE_SHADING,
+    RTECHNIQUE_FLAG_MS_ALPHA_TO_COVERAGE,
+    RTECHNIQUE_FLAG_MS_ALPHA_TO_ONE,
+    RTECHNIQUE_FLAG_DEPTH_TEST,
+    RTECHNIQUE_FLAG_DEPTH_WRITE,
+    RTECHNIQUE_FLAG_DEPTH_BOUNDS_TEST,
+    RTECHNIQUE_FLAG_STENCIL_TEST,
+};
+
+enum rcompare_op
+{
+    RCOMPARE_OP_NEVER = 0,
+    RCOMPARE_OP_LESS = 1,
+    RCOMPARE_OP_EQUAL = 2,
+    RCOMPARE_OP_LESS_OR_EQUAL = 3,
+    RCOMPARE_OP_GREATER = 4,
+    RCOMPARE_OP_NOT_EQUAL = 5,
+    RCOMPARE_OP_GREATER_OR_EQUAL = 6,
+    RCOMPARE_OP_ALWAYS = 7,
+};
+
+enum rstencil_op
+{
+    RTENCIL_OP_KEEP = 0,
+    RTENCIL_OP_ZERO = 1,
+    RTENCIL_OP_REPLACE = 2,
+    RTENCIL_OP_INCREMENT_AND_CLAMP = 3,
+    RTENCIL_OP_DECREMENT_AND_CLAMP = 4,
+    RTENCIL_OP_INVERT = 5,
+    RTENCIL_OP_INCREMENT_AND_WRAP = 6,
+    RTENCIL_OP_DECREMENT_AND_WRAP = 7,
+};
+
+enum rfront_face_winding
+{
+    RFRONT_FACE_WINDING_CCW,
+    RFRONT_FACE_WINDING_CW,
+};
+
+enum rsample_count : u8
+{
+    RSAMPLE_COUNT_1X,
+    RSAMPLE_COUNT_2X,
+    RSAMPLE_COUNT_4X,
+    RSAMPLE_COUNT_8X,
+    RSAMPLE_COUNT_16X
+};
+
+enum rmaterial_texture_slot : u8
 {
     RMATERIAL_TEXTURE0,
     RMATERIAL_TEXTURE1,

@@ -317,9 +317,11 @@ struct vkr_pipeline_cfg_raster
     bool depth_clamp_enable;
     bool rasterizer_discard_enable;
     VkPolygonMode polygon_mode;
-    float line_width;
+    // We don't really need this - rarely supported well - use other methods to change line width (triangle strip ribbons)
+    float line_width{1.0f};
     VkCullModeFlags cull_mode;
     VkFrontFace front_face;
+    // Do dynamically
     bool depth_bias_enable;
     float depth_bias_constant_factor{0.0f};
     float depth_bias_clamp{0.0f};
@@ -340,6 +342,10 @@ struct vkr_pipeline_cfg_input_assembly
 {
     bool primitive_restart_enable{};
     VkPrimitiveTopology primitive_topology{};
+};
+
+struct vkr_pipeline_cfg_tessellation_state {
+    u32 patch_control_points;
 };
 
 struct vkr_pipeline_cfg_color_blending
@@ -396,6 +402,9 @@ struct vkr_pipeline_cfg
 
     // Input assembly
     vkr_pipeline_cfg_input_assembly input_assembly;
+
+    // Tessellation State
+    vkr_pipeline_cfg_tessellation_state tessellation{};
 
     // Rasterization
     vkr_pipeline_cfg_raster raster;

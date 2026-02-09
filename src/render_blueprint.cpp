@@ -193,6 +193,11 @@ rbp_pass_id add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
     pass->use_subpass_bookends = pdesc.use_subpass_bookends;
     pass->type = pdesc.type;
     pass->subpasses.size = 1;
+    pass->geom_streams_group = pdesc.geom_streams_group;
+    // Only enable override for MS if not null
+    pass->msi.use_override = pdesc.override;
+    if (pdesc.override) pass->msi.override = *pdesc.override;
+    
     asrt(hmap_insert(&rbp->pass_idmap, pass->id, ind));
     return ind;
 }

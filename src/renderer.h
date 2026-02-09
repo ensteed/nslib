@@ -38,25 +38,57 @@ struct rtexture_desc
     u32 flags;
 };
 
-struct vert_layout_info {
-    // Which stream group does this pipeline use? All vert buffers within a stream group share a single indice buffer,
-    // but there can be multiple groups of vert buffers. Each group of vert buffers are allocated together, and use the
-    // first buffer in the group's allocation/free offsets for all of the other buffers in the group
-    rres_id geom_streams_group;
-    // Which set of vert buffers 
-    u32 geom_buffer_layout;
+struct rbp_info
+{
+    render_blueprint_handle bp;
+    rbp_pass_id pid;
+    u32 subpass_ind{0};
 };
 
-struct rtechnique_pass_desc {
+struct rstencip_op_state
+{
+    rstencil_op on_fail;
+    rstencil_op on_pass;
+    rstencil_op on_depth_fail;
+    rcompare_op comp;
+    u32 comp_mask;
+    u32 write_mask;
+    u32 ref;
+};
+
+// TODO: Add depth bias to dynamic state along with viewports and scissor
+struct rtechnique_pass_desc
+{
+    // Which set of vert buffers does this pipeline use from the rbp pass vert stream group
+    u32 geom_buffer_layout;
+
+    // Which geometry topology can this pipeline be used to draw
     rgeom_topology topology;
-    vert_layout_info vl_info;
-    
+
+    // How to rasterize polygons
+    rpolygon_mode poly_mode;
+
+    // Which winding order
+    rfront_face_winding ffw;
+
+    // Number of points per tessellation patch
+    u32 tess_patch_control_points;
+
+    rcompare_op depth_comp_op;
+    rstencip_op_state stencil_front;
+    rstencip_op_state stencil_back;
+
+    // Blueprint pass information the technique is made for
+    rbp_info bp_info{};
+    // Flags from rtechnique_flags
+    u32 flag_mask;
+    // Shader stage compiled spirv
+    const void *stages[RSHADER_STAGE_COUNT];
 };
 
 struct rtechnique_desc
 {
     const char *name;
-    
 };
 
 struct rmaterial_desc

@@ -1138,6 +1138,10 @@ int vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, const vkr_c
     vertex_input_info.vertexAttributeDescriptionCount = (u32)cfg.vert_desc.attribs.size;
     vertex_input_info.pVertexAttributeDescriptions = cfg.vert_desc.attribs.data;
 
+    VkPipelineTessellationStateCreateInfo tessellation{};
+    tessellation.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
+    tessellation.patchControlPoints = cfg.tessellation.patch_control_points;
+
     // Input assembly
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -1206,6 +1210,7 @@ int vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, const vkr_c
     pipeline_info.stageCount = (u32)actual_stagei;
     pipeline_info.pStages = stages;                       // done
     pipeline_info.pVertexInputState = &vertex_input_info; // done
+    pipeline_info.pTessellationState = &tessellation;
     pipeline_info.pInputAssemblyState = &input_assembly;
     pipeline_info.pViewportState = &viewport_state;
     pipeline_info.pRasterizationState = &rstr;

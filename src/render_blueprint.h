@@ -90,6 +90,34 @@ pup_func(rbp_subpass)
     pup_member(resources);
 }
 
+struct rmultisample_settings {
+    u32 ms_flags;
+    rsample_count sc;
+    float min_sample_shading{1.0};
+};
+
+pup_func(rmultisample_settings) {
+    pup_member(ms_flags);
+    pup_enum_member(rsample_count, u8, sc);
+}
+
+op_eq_func(rmultisample_settings) {
+    return lhs.ms_flags == rhs.ms_flags && lhs.sc == rhs.sc && fequals(lhs.min_sample_shading, rhs.min_sample_shading);
+}
+
+op_neq_func(rmultisample_settings);
+
+struct rmultisample_info {
+    bool use_override;
+    rmultisample_settings override;
+};
+
+pup_func(rmultisample_info)
+{
+    pup_member(use_override);
+    pup_member(override);
+}
+
 struct rbp_pass
 {
     // Set while building
@@ -100,7 +128,9 @@ struct rbp_pass
     bool use_subpass_bookends{false};
     static_array<rbp_resource_slot_info, MAX_BP_PASS_SLOT_COUNT> slots{};
     static_array<rbp_subpass, MAX_BP_SUBPASS_COUNT> subpasses{};
-
+    rres_id geom_streams_group;
+    rmultisample_info msi;
+    
     // Filled during compile
     gpu_handle vk_handle;
 };
@@ -113,6 +143,7 @@ pup_func(rbp_pass)
     pup_member(use_subpass_bookends);
     pup_member(slots);
     pup_member(subpasses);
+    pup_member(geom_streams_group);
 }
 
 struct rbp_pass_desc
@@ -120,6 +151,12 @@ struct rbp_pass_desc
     const char *name;
     rbp_pass_type type;
     bool use_subpass_bookends;
+    // Which stream group does this pass use? All vert buffers within a stream group share a single indice buffer,
+    // but there can be multiple groups of vert buffers. Each group of vert buffers are allocated together, and use the
+    // first buffer in the group's allocation/free offsets for all of the other buffers in the group.
+    rres_id geom_streams_group;
+    // Null if no override, other wise the override settings to use
+    const rmultisample_settings *override;
 };
 
 struct rbp_resouce_requirement_desc
