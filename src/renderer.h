@@ -56,6 +56,60 @@ struct rstencip_op_state
     u32 ref;
 };
 
+struct rblend_info
+{
+    rblend_factor src;
+    rblend_factor dst;
+    rblend_op op;
+};
+
+struct rattachment_blend_info
+{
+    b32 blend_enable;
+    rblend_info color;
+    rblend_info alpha;
+    rcolor_component_flags write_mask;
+};
+
+enum render_flag
+{
+    render_flag_none,
+    render_flag_cull_front,
+    render_flag_cull_back,
+    render_flag_depth_test,
+    render_flag_depth_write,
+    render_flag_stencil_test,
+};
+
+using render_flags = u8;
+
+enum front_face_winding
+{
+    FRONT_FACE_WINDING_CCW,
+    FRONT_FACE_WINDING_CW
+};
+
+enum blend_mode {
+    BLEND_MODE_DEFAULT,
+    BLEND_MODE_ALWAYS,
+    BLEND_MODE_EQUAL,
+    BLEND_MODE_OFF,
+};
+ 
+enum stencil_mode {
+    STENCIL_MODE_WRITE,
+    STENCIL_MODE_CLIP_INSIDE,
+    STENCIL_MODE_CLIP_OUTSIDE,
+};
+
+struct material_settings
+{
+    render_flags rmask;
+    front_face_winding ffw;
+    stencil_mode sm;
+    blend_mode bm;
+};
+
 // TODO: Add depth bias to dynamic state along with viewports and scissor
 struct rtechnique_pass_desc
 {
@@ -78,10 +132,19 @@ struct rtechnique_pass_desc
     rstencip_op_state stencil_front;
     rstencip_op_state stencil_back;
 
+    // Whether to apply logic operations or not
+    rlogic_op logic_op;
+
+    // Must match exactly the number of attachments in the blueprint or else will fail to create
+    rattachment_blend_info atts_blending[MAX_FRAMEBUFFER_ATTACHMENT_COUNT];
+
+    // Blend constants
+    vec4 blend_constants;
+
     // Blueprint pass information the technique is made for
     rbp_info bp_info{};
-    // Flags from rtechnique_flags
-    u32 flag_mask;
+    // Technique enables
+    rtechnique_flags tmask;
     // Shader stage compiled spirv
     const void *stages[RSHADER_STAGE_COUNT];
 };
