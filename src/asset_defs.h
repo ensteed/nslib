@@ -15,6 +15,8 @@ enum asset_type : u32
     ASSET_TYPE_MESH,
     ASSET_TYPE_TEXTURE,
     ASSET_TYPE_MATERIAL,
+    ASSET_TYPE_TECHNIQUE,
+    ASSET_TYPE_SHADER,
     ASSET_TYPE_USER,
 };
 
@@ -28,11 +30,15 @@ const sizet ASSET_POOL_MEMORY_BUDGETS[ASSET_TYPE_USER] = {
     1 * MB_SIZE,
     200 * MB_SIZE,
     1 * MB_SIZE,
+    1 * MB_SIZE,
+    100 * MB_SIZE,
 };
 const u32 ASSET_POOL_ITEM_BUDGETS[ASSET_TYPE_USER] = {
     256,
     20,
     256,
+    128,
+    128,
 };
 
 #define ASSET(type, ext)                                                                                                                   \
