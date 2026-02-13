@@ -68,9 +68,10 @@ using raster_state_flags = u8;
 
 enum shader_stage_type
 {
-    SHADER_STAGE_VERTEX,
-    SHADER_STAGE_FRAGMENT,
-    SHADER_STAGE_COMPUTE
+    SHADER_STAGE_TYPE_VERTEX,
+    SHADER_STAGE_TYPE_FRAGMENT,
+    SHADER_STAGE_TYPE_COMPUTE,
+    SHADER_STAGE_TYPE_COUNT,
 };
 
 enum blend_mode
@@ -100,7 +101,8 @@ enum stencil_mode
 
 struct shader_stage
 {
-    shader_stage_type type;
+    small_str entry_point;
+    shader_stage_type stype;
     byte_array src;
 };
 
@@ -253,6 +255,7 @@ void init_asset(shader *shdr);
 void release_ram_data(shader *shdr);
 void terminate_asset(shader *shdr);
 const char* load_shader(shader *shdr, const char *path);
+const char* get_shader_stage_str(shader_stage_type stype);
 
 // TECHNIQUE
 void init_asset(technique *tech);

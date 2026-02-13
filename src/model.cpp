@@ -208,12 +208,39 @@ void terminate_asset(shader *shdr)
 
 const char *load_shader(shader *shdr, const char *path)
 {
-
     arr_resize(&shdr->stages, 2);
+    shdr->stages[0].stype = SHADER_STAGE_TYPE_VERTEX;
+    shdr->stages[1].stype = SHADER_STAGE_TYPE_FRAGMENT;
     for (u32 i = 0; i < shdr->stages.size; ++i) {
-        arr_init(&shdr->stages[i].src, shdr->fl);
+        auto cur_stage = &shdr->stages[i];
+        string str(path, shdr->frame_lin);
+        str_append(&str, cur_stage->stype == SHADER_STAGE_TYPE_VERTEX ? ".vert.spv" : ".frag.spv");
+        arr_init(&cur_stage->src, shdr->fl);
+        platform_file_err_desc err;
+        read_file(str_cstr(str), &cur_stage->src, 0, &err);
+        if (err.code != err_code::file::FILE_NO_ERROR) {
+            release_ram_data(shdr);
+            return err.str;
+        }
+        else {
+            ilog("%s: loaded %s from %s", ls(shdr->name), get_shader_stage_str(cur_stage->stype), ls(str));
+        }
     }
     return nullptr;
+}
+
+const char *get_shader_stage_str(shader_stage_type stype)
+{
+    switch (stype) {
+    case (SHADER_STAGE_TYPE_VERTEX):
+        return "vertex";
+    case (SHADER_STAGE_TYPE_FRAGMENT):
+        return "fragment";
+    case (SHADER_STAGE_TYPE_COMPUTE):
+        return "compute";
+    default:
+        return "undefined";
+    }
 }
 
 void init_asset(technique *tech)

@@ -107,12 +107,21 @@ using pipeline_key = u64;
 using framebuffer_key = u64;
 using instance_id = u32;
 
+enum rshader_stage_type
+{
+    RSHADER_STAGE_TYPE_VERTEX,
+    RSHADER_STAGE_TYPE_FRAGMENT,
+    RSHADER_STAGE_TYPE_COMPUTE,
+    RSHADER_STAGE_TYPE_COUNT,
+};
+
 enum rshader_stage_flag
 {
-    RSHADER_STAGE_VERTEX_BIT = 1 << 0,
-    RSHADER_STAGE_FRAGMENT_BIT = 1 << 1,
-    RSHADER_STAGE_COMPUTE_BIT = 1 << 2,
+    RSHADER_STAGE_VERTEX_BIT = (1 << RSHADER_STAGE_TYPE_VERTEX),
+    RSHADER_STAGE_FRAGMENT_BIT = (1 << RSHADER_STAGE_TYPE_FRAGMENT),
+    RSHADER_STAGE_COMPUTE_BIT = (1 << RSHADER_STAGE_TYPE_COMPUTE),
 };
+using rshader_stage_flags = u8;
 
 enum rpolygon_mode
 {

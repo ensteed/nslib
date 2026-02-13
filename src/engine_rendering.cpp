@@ -56,7 +56,7 @@ intern rformat get_rformat_for_usage(texture_usage usage)
     }
 }
 
-bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *arena)
+bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *scratch)
 {
     ilog("Registering geom id: %s  name: %s", ls(geom->name), str_cstr(geom->name));
     asrt(geom->verts.size > 0);
@@ -73,11 +73,11 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *a
     asrt(geom->skinned_verts_info.size == cinf.vert_count || geom->skinned_verts_info.size == 0);
 
     // Allocate temporary buffers for everything
-    rsubgeom_range *tmp_sgeoms = mem_alloc<rsubgeom_range>(arena, cinf.subgeom_cnt);
-    rgeom_vert_pos_col *tmp_pos_cols = mem_alloc<rgeom_vert_pos_col>(arena, cinf.vert_count);
-    rgeom_vert_norm_tan_uv *tmp_norm_tan_uvs = mem_alloc<rgeom_vert_norm_tan_uv>(arena, cinf.vert_count);
-    rgeom_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rgeom_vert_bone_weights_ids>(arena, geom->skinned_verts_info.size);
-    ind_t *tmp_inds = mem_alloc<ind_t>(arena, cinf.ind_count);
+    rsubgeom_range *tmp_sgeoms = mem_alloc<rsubgeom_range>(scratch, cinf.subgeom_cnt);
+    rgeom_vert_pos_col *tmp_pos_cols = mem_alloc<rgeom_vert_pos_col>(scratch, cinf.vert_count);
+    rgeom_vert_norm_tan_uv *tmp_norm_tan_uvs = mem_alloc<rgeom_vert_norm_tan_uv>(scratch, cinf.vert_count);
+    rgeom_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rgeom_vert_bone_weights_ids>(scratch, geom->skinned_verts_info.size);
+    ind_t *tmp_inds = mem_alloc<ind_t>(scratch, cinf.ind_count);
 
     // Copy subgeoms
     for (u32 i = 0; i < cinf.subgeom_cnt; ++i) {
@@ -111,7 +111,7 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *a
     cinf.subgeoms = tmp_sgeoms;
     cinf.topology = (rgeom_topology)geom->topology;
 
-    geom->rhndl = create_geometry(rndr, cinf);
+    geom->rhndl = create_rgeometry(rndr, cinf);
     bool result = is_valid(geom->rhndl);
     if (result) {
         ilog("Uploaded geometry to renderer for %s", ls(geom->name));
@@ -120,25 +120,25 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *a
     else {
         wlog("Could not upload geometry to renderer for %s", ls(geom->name));
     }
-    mem_free(tmp_inds, arena);
-    mem_free(tmp_bone_weight_ids, arena);
-    mem_free(tmp_norm_tan_uvs, arena);
-    mem_free(tmp_pos_cols, arena);
-    mem_free(tmp_sgeoms, arena);
+    mem_free(tmp_inds, scratch);
+    mem_free(tmp_bone_weight_ids, scratch);
+    mem_free(tmp_norm_tan_uvs, scratch);
+    mem_free(tmp_pos_cols, scratch);
+    mem_free(tmp_sgeoms, scratch);
     return result;
 }
 
 // Great use for a stack arena - will work
-u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geometry, mem_arena *arena)
+u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geometry, mem_arena *scratch)
 {
     u32 success_count{0};
     for (auto rm = asset_pool_begin(geometry); is_valid(rm); rm = asset_pool_next(geometry, rm)) {
-        success_count += (u32)upload_geometry(rndr, stream_gp, rm.item, arena);
+        success_count += (u32)upload_geometry(rndr, stream_gp, rm.item, scratch);
     }
     return success_count;
 }
 
-void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena)
+void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch)
 {
     for (auto iter = asset_pool_begin(tex_pool); is_valid(iter); iter = asset_pool_next(tex_pool, iter)) {
         rtexture_desc ctinfo{};
@@ -147,7 +147,7 @@ void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena)
         ctinfo.data = iter.item->pixels;
         ctinfo.data_size = get_texture_memsize(iter.item);
         ctinfo.format = get_rformat_for_usage(iter.item->usage);
-        iter.item->rndr_hndl = create_texture(rndr, ctinfo);
+        iter.item->rndr_hndl = create_rtexture(rndr, ctinfo);
         if (is_valid(iter.item->rndr_hndl)) {
             ilog("Uploaded texture %s to renderer", ls(iter.item->name));
         }
@@ -156,5 +156,11 @@ void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena)
         }
     }
 }
+
+void upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch)
+{
+    ilog("Todo");
+}
+
 
 } // namespace nslib

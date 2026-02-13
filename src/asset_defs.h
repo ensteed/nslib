@@ -78,13 +78,27 @@ struct asset_pool;
 struct geometry;
 struct material;
 struct texture;
+struct technique;
+struct shader;
+
 using geometry_pool = asset_pool<geometry>;
 using geometry_handle = asset_handle<geometry>;
 using geometry_item = asset_item<geometry>;
-using material_pool = asset_pool<material>;
-using material_handle = asset_handle<material>;
-using material_item = asset_item<material>;
+
 using texture_pool = asset_pool<texture>;
 using texture_handle = asset_handle<texture>;
 using texture_item = asset_item<texture>;
+
+using material_pool = asset_pool<material>;
+using material_handle = asset_handle<material>;
+using material_item = asset_item<material>;
+
+using technique_pool = asset_pool<technique>;
+using technique_handle = asset_handle<technique>;
+using technique_item = asset_item<technique>;
+
+using shader_pool = asset_pool<shader>;
+using shader_handle = asset_handle<shader>;
+using shader_item = asset_item<shader>;
+
 } // namespace nslib

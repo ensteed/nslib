@@ -38,6 +38,18 @@ struct rtexture_desc
     u32 flags;
 };
 
+struct rshader_stage_desc {
+    const void *src;
+    sizet src_byte_size;
+    const char *entry_point;
+    rshader_stage_type stype;
+};
+
+struct rshader_desc {
+    rshader_stage_desc *stages;
+    u8 stage_cnt;
+};
+
 struct rbp_info
 {
     render_blueprint_handle bp;
@@ -196,6 +208,7 @@ struct geometry_stream_group_desc
 
 struct imgui_ctxt;
 
+
 struct rtexture_info
 {
     small_str name;
@@ -212,7 +225,7 @@ struct rmaterial_info
 {};
 
 struct rshader_info {
-    VkShaderModule sm;
+    VkShaderModule sm[RSHADER_STAGE_TYPE_COUNT];
 };
 
 struct rtechnique_pass_entry
@@ -570,8 +583,10 @@ void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool
 
 rformat get_swapchain_format(renderer *rnd);
 
-rgeom_handle create_geometry(renderer *rndr, const rgeom_desc &ci);
-rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo);
+rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
+rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
+rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
+
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 

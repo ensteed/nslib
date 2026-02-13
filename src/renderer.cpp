@@ -1131,7 +1131,7 @@ void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &a
     stream->attribs[ind] = att_desc;
 }
 
-rgeom_handle create_geometry(renderer *rndr, const rgeom_desc &ci)
+rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
 {
     // Make sure we have valid data
     asrt(ci.vert_count > 0);
@@ -1233,7 +1233,7 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_desc &ci)
     return geom_ref.hndl;
 }
 
-rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo)
+rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo)
 {
     asrt(rndr);
     asrt(ctinfo.data);

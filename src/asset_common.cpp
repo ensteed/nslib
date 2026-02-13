@@ -46,15 +46,20 @@ void init_asset_cache(asset_cache *cache, sizet overall_mem_budget, const mem_ar
     arr_init(&cache->pools, &cache->arena, ASSET_TYPE_USER);
 }
 
-intern sizet get_default_cache_budget(const sizet* mem_budgets)
+#define POOL_SIZE(type) sizeof(asset_pool<type>)
+constexpr sizet get_asset_pool_sizes()
+{
+    return POOL_SIZE(geometry) + POOL_SIZE(texture) + POOL_SIZE(material) + POOL_SIZE(technique) + POOL_SIZE(shader);
+}
+
+intern sizet get_default_cache_budget(const sizet *mem_budgets)
 {
     // Add in some overhead for each allocation - really sizeof alloc_header works to be enough - be we add some
     // alignment padding wiggle room in there too
     sizet alloc_overhead = (sizeof(alloc_header) + 32) * (ASSET_TYPE_USER * 2 + 1);
-    sizet asset_pool_sizes =
-        sizeof(asset_pool<geometry>) + sizeof(asset_pool<texture>) + sizeof(asset_pool<material>);
+    sizet asset_pool_sizes = get_asset_pool_sizes();
     sizet ret{sizeof(sizet) * ASSET_TYPE_USER + alloc_overhead + asset_pool_sizes};
-    
+
     // Add in cache budgets
     for (int i = 0; i < ASSET_TYPE_USER; ++i) {
         ret += mem_budgets[i];
@@ -62,33 +67,40 @@ intern sizet get_default_cache_budget(const sizet* mem_budgets)
     return ret;
 }
 
+#define CREATE_POOL(type) create_asset_pool<type>(cache, mem_budgets[type::type_id], item_budgets[type::type_id])
+#define DESTROY_POOL(type) destroy_asset_pool<type>(cache)
+
 void init_asset_cache_default_types(asset_cache *cache,
-                              const char *name,
-                              const mem_arena_set &upstream,
-                              const u32 *item_budgets,
-                              const sizet *mem_budgets,
-                              sizet overall_mem_budget)
+                                    const char *name,
+                                    const mem_arena_set &upstream,
+                                    const u32 *item_budgets,
+                                    const sizet *mem_budgets,
+                                    sizet overall_mem_budget)
 {
     asrt(cache);
     if (overall_mem_budget == 0) {
         overall_mem_budget = get_default_cache_budget(mem_budgets);
     }
-    
+
     init_asset_cache(cache, overall_mem_budget, upstream, name);
-    
+
     // NOTE: Manually update this on adding different asset types
-    create_asset_pool<geometry>(cache, mem_budgets[geometry::type_id], item_budgets[geometry::type_id]);
-    create_asset_pool<texture>(cache, mem_budgets[texture::type_id], item_budgets[texture::type_id]);
-    create_asset_pool<material>(cache, mem_budgets[material::type_id], item_budgets[material::type_id]);
+    CREATE_POOL(geometry);
+    CREATE_POOL(texture);
+    CREATE_POOL(material);
+    CREATE_POOL(technique);
+    CREATE_POOL(shader);
 }
 
 void terminate_asset_cache_default_types(asset_cache *cache)
 {
     asrt(cache);
     // NOTE: Manually update this on adding different asset types
-    destroy_asset_pool<geometry>(cache);
-    destroy_asset_pool<texture>(cache);
-    destroy_asset_pool<material>(cache);
+    DESTROY_POOL(geometry);
+    DESTROY_POOL(texture);
+    DESTROY_POOL(material);
+    DESTROY_POOL(technique);
+    DESTROY_POOL(shader);
     terminate_asset_cache(cache);
 }
 

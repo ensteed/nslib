@@ -215,6 +215,15 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     return rbp;
 }
 
+intern void create_shaders(shader_pool * pool) {
+    auto shdr = create_asset(pool, "fwd-diffuse");
+    const char *path = "data/shaders/fwd-diffuse";
+    const char *err = load_shader(shdr.item, path);
+    if (err) {
+        wlog("Failed to load shader at %s: %s", path, err);
+    }
+}
+
 intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     init_asset_cache_default_types(
@@ -224,9 +233,12 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     auto geom_pool = get_asset_pool<geometry>(&app->cg);
     auto tex_pool = get_asset_pool<texture>(&app->cg);
+    auto shdr_pool = get_asset_pool<shader>(&app->cg);
+    
     geometry *rect, *cube;
     create_geometry(geom_pool, &rect, &cube);
     create_textures(tex_pool);
+    create_shaders(shdr_pool);
 
     // Initialize our renderer - fail early if init fails
     init_renderer_params p{
@@ -252,7 +264,8 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     upload_geometry(&app->rndr, geom_stream_gp, geom_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
-
+    upload_shaders(&app->rndr, shdr_pool, &ctxt->arenas.stack);
+    
     // Create render targets
     // create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));
     create_rtexture_target(&app->rndr, TEXTURE_TARGET_DEPTH(MAIN_PASS_DEPTH_NAME));
