@@ -70,6 +70,10 @@ struct rmaterial_info;
 using rmaterial_handle = slot_handle<rmaterial_info>;
 using rmaterial_ref = slot_item_ref<rmaterial_info>;
 
+struct rshader_info;
+using rshader_handle = slot_handle<rshader_info>;
+using rshader_ref = slot_item_ref<rshader_info>;
+
 struct rtechnique_info;
 using rtechnique_handle = slot_handle<rtechnique_info>;
 using rtechnique_ref = slot_item_ref<rtechnique_info>;
@@ -103,11 +107,11 @@ using pipeline_key = u64;
 using framebuffer_key = u64;
 using instance_id = u32;
 
-enum rshader_stage : u8
+enum rshader_stage_flag
 {
-    RSHADER_STAGE_VERT,
-    RSHADER_STAGE_FRAG,
-    RSHADER_STAGE_COUNT,
+    RSHADER_STAGE_VERTEX_BIT = 1 << 0,
+    RSHADER_STAGE_FRAGMENT_BIT = 1 << 1,
+    RSHADER_STAGE_COMPUTE_BIT = 1 << 2,
 };
 
 enum rpolygon_mode

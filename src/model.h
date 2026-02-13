@@ -66,6 +66,13 @@ enum raster_state_flag
 };
 using raster_state_flags = u8;
 
+enum shader_stage_type
+{
+    SHADER_STAGE_VERTEX,
+    SHADER_STAGE_FRAGMENT,
+    SHADER_STAGE_COMPUTE
+};
+
 enum blend_mode
 {
     BLEND_MODE_OPAQUE,
@@ -91,17 +98,24 @@ enum stencil_mode
     STENCIL_MODE_CLIP_OUTSIDE,
 };
 
+struct shader_stage
+{
+    shader_stage_type type;
+    byte_array src;
+};
+
+struct shader
+{
+    ASSET(SHADER, efx);
+    array<shader_stage> stages;
+    rshader_handle gpu_hndl;
+};
+
 struct raster_state
 {
     raster_flags rmask;
     stencil_mode sm;
     depth_mode dm;
-};
-
-struct shader {
-    ASSET(SHADER, efx);
-    byte_array frag;
-    byte_array vert;
 };
 
 struct technique_pass
@@ -125,6 +139,7 @@ struct technique
 
     // Pass per render blueprint pass
     hmap<rres_id, technique_pass> passes;
+    rtechnique_handle gpu_hndl;
 };
 
 // Material references textures and pipelines, which both must be uploaded to GPUa
@@ -231,7 +246,17 @@ void release_ram_data(texture *tex);
 void terminate_asset(texture *tex);
 sizet get_texture_memsize(const texture *tex);
 u32 get_texture_layer_pixel_count(const texture *tex);
-bool load_texture(texture *tex, const char *path, cstr *err);
+const char* load_texture(texture *tex, const char *path);
+
+// SHADER
+void init_asset(shader *shdr);
+void release_ram_data(shader *shdr);
+void terminate_asset(shader *shdr);
+const char* load_shader(shader *shdr, const char *path);
+
+// TECHNIQUE
+void init_asset(technique *tech);
+void terminate_asset(technique *tech);
 
 // MATERIAL
 void init_asset(material *mat);

@@ -122,8 +122,7 @@ intern const u32 CUBE_INDS_TRI_LIST[] = {
 };
 
 void init_asset(texture *tex)
-{
-}
+{}
 
 void release_ram_data(texture *tex)
 {
@@ -167,37 +166,67 @@ sizet get_texture_memsize(const texture *tex)
     return get_texture_total_pixel_count(tex) * get_pixel_byte_size(tex->usage);
 }
 
-bool load_texture(texture *tex, const char *path, cstr *err)
+const char *load_texture(texture *tex, const char *path)
 {
     s32 channels{};
     auto stb_pixels = stbi_load(path, (s32 *)&tex->dims.w, (s32 *)&tex->dims.h, (s32 *)&channels, STBI_rgb_alpha);
     tex->dims.layers = 1;
-    if (stb_pixels) {
-        if (channels != STBI_rgb_alpha) {
-            ilog("Converted %s from %d to %d channels", path, channels, STBI_rgb_alpha);
-            channels = STBI_rgb_alpha;
-        }
-        tex->usage = texture_usage::ALBEDO;
-        auto sz = get_texture_memsize(tex);
-        ilog("Allocating %lu bytes for texture (%lu bytes left in arena)", sz, tex->arena->total_size - tex->arena->used);
-        tex->pixels = mem_alloc(sz, tex->arena);
-        memcpy(tex->pixels, stb_pixels, sz);
-        stbi_image_free(stb_pixels);
-        return true;
+    if (!stb_pixels) {
+        return stbi_failure_reason();
     }
-    else if (err) {
-        *err = stbi_failure_reason();
+
+    if (channels != STBI_rgb_alpha) {
+        ilog("Converted %s from %d to %d channels", path, channels, STBI_rgb_alpha);
+        channels = STBI_rgb_alpha;
     }
-    return false;
+    tex->usage = texture_usage::ALBEDO;
+    auto sz = get_texture_memsize(tex);
+    ilog("Allocating %lu bytes for texture (%lu bytes left in arena)", sz, tex->arena->total_size - tex->arena->used);
+    tex->pixels = mem_alloc(sz, tex->arena);
+    memcpy(tex->pixels, stb_pixels, sz);
+    stbi_image_free(stb_pixels);
+    return nullptr;
 }
+
+void init_asset(shader *shdr)
+{
+    arr_init(&shdr->stages, shdr->arena, 8);
+}
+
+void release_ram_data(shader *shdr)
+{
+    for (u32 i = 0; i < shdr->stages.size; ++i) {
+        arr_terminate(&shdr->stages[i].src);
+    }
+}
+
+void terminate_asset(shader *shdr)
+{
+    release_ram_data(shdr);
+    arr_terminate(&shdr->stages);
+}
+
+const char* load_shader(shader *shdr, const char *path)
+{
+    arr_resize(&shdr->stages, 2);
+    for (u32 i = 0; i < shdr->stages.size; ++i) {
+        arr_init(&shdr->stages[i].src, shdr->arena);
+        
+    }
+}
+
+
+void init_asset(technique *tech)
+{}
+
+void terminate_asset(technique *tech)
+{}
 
 void init_asset(material *mat)
-{
-}
+{}
 
 void terminate_asset(material *mat)
-{
-}
+{}
 
 void make_rect(geometry *geom)
 {

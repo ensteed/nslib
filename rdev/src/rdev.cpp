@@ -162,12 +162,11 @@ intern void create_textures(texture_pool *tex_pool)
 {
     auto daniel_face = create_asset(tex_pool, "daniel-face");
     auto maria_face = create_asset(tex_pool, "maria-face");
-    cstr err{nullptr};
-    load_texture(maria_face.item, "import/maria.png", &err);
+    cstr err = load_texture(maria_face.item, "import/maria.png");
     if (err) {
         wlog("Couldn't load texture: %s", ls(daniel_face.item->name), err);
     }
-    load_texture(daniel_face.item, "import/daniel.png", &err);
+    err = load_texture(daniel_face.item, "import/daniel.png");
     if (err) {
         wlog("Couldn't load texture %s: %s", ls(maria_face.item->name), err);
     }
@@ -191,13 +190,13 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
                                  pass_id,
                                  {.slot_ind = col_slot_ind,
                                   .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
-                                  .visibility = VISIBILITY_FRAGMENT});
+                                  .visibility = RSHADER_STAGE_FRAGMENT_BIT});
 
     add_rbp_resource_requirement(rbp.item,
                                  pass_id,
                                  {.slot_ind = depth_slot_ind,
                                   .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
-                                  .visibility = VISIBILITY_FRAGMENT});
+                                  .visibility = RSHADER_STAGE_FRAGMENT_BIT});
 
     // I'm gui will double as the place we render UI and the place where our layout conversion happens - no depth buffer
     // needed for imgui
@@ -208,7 +207,7 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
                                  imgui_pass_id,
                                  {.slot_ind = imgui_col_slot_ind,
                                   .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_READ,
-                                  .visibility = VISIBILITY_FRAGMENT,
+                                  .visibility = RSHADER_STAGE_FRAGMENT_BIT,
                                   .option_mask = RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR});
 
     dlog("Blueprint: %s", ls(to_json(*rbp.item)));

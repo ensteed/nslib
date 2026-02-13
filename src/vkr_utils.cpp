@@ -90,8 +90,8 @@ VkPipelineStageFlags get_vk_stage_from_requirement(const rbp_pass &pass, const r
     case rbp_resource_usage::STORAGE_BUFFER: {
         // Use the visibility flags to determine the specific shader stages
         VkPipelineStageFlags stages = 0;
-        if (req.visibility & VISIBILITY_VERTEX) stages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-        if (req.visibility & VISIBILITY_FRAGMENT) stages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        if (req.visibility & RSHADER_STAGE_VERTEX_BIT) stages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+        if (req.visibility & RSHADER_STAGE_FRAGMENT_BIT) stages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         // Fallback if no visibility is set
         return (stages != 0) ? stages : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     }

@@ -7,13 +7,6 @@ namespace nslib
 {
 struct renderer;
 
-enum rshader_stage_visibility
-{
-    VISIBILITY_VERTEX = 1 << 0,
-    VISIBILITY_FRAGMENT = 1 << 1,
-    VISIBILITY_COMPUTE = 1 << 2,
-};
-
 // The "Intent" of how a resource is used in a specific pass
 enum struct rbp_resource_usage
 {
