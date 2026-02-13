@@ -217,7 +217,10 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
 
 intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
-    init_asset_cache_default_types(&app->cg, "asset-cache", get_global_arena());
+    init_asset_cache_default_types(
+        &app->cg,
+        "asset-cache",
+        {.free_list = get_global_arena(), .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()});
 
     auto geom_pool = get_asset_pool<geometry>(&app->cg);
     auto tex_pool = get_asset_pool<texture>(&app->cg);

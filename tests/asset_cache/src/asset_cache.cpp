@@ -28,7 +28,10 @@ void test_cache_init_terminate()
 {
     ilog("begin");
     asset_cache cache{};
-    init_asset_cache(&cache, 128 * KB_SIZE, get_global_arena(), "asset_cache_test");
+    init_asset_cache(&cache,
+                     128 * KB_SIZE,
+                     {.free_list = get_global_arena(), .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()},
+                     "asset_cache_test");
     asrt_log(cache.pools.size == 0);
     terminate_asset_cache(&cache);
     ilog("end");
@@ -41,7 +44,8 @@ void test_direct_pool_init_and_terminate()
     init_fl_arena(&upstream, 128 * KB_SIZE, get_global_arena(), "asset_pool_test");
 
     asset_pool<geometry> pool{};
-    init_asset_pool(&pool, 64 * KB_SIZE, 4, &upstream);
+    init_asset_pool(
+        &pool, 64 * KB_SIZE, 4, {.free_list = &upstream, .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()});
 
     auto item0 = create_asset(&pool, "geom_0");
     auto item1 = create_asset(&pool, "geom_1");
@@ -70,7 +74,10 @@ void test_cache_pool_api()
 {
     ilog("begin");
     asset_cache cache{};
-    init_asset_cache(&cache, 256 * KB_SIZE, get_global_arena(), "cache_pool_api");
+    init_asset_cache(&cache,
+                     256 * KB_SIZE,
+                     {.free_list = get_global_arena(), .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()},
+                     "cache_pool_api");
 
     auto geom_pool = create_asset_pool<geometry>(&cache, 64 * KB_SIZE, 4);
     asrt_log(geom_pool);
@@ -123,7 +130,13 @@ void test_cache_default_types()
     sizet mem_budgets[ASSET_TYPE_USER]{};
     fill_small_budgets(item_budgets, mem_budgets);
 
-    init_asset_cache_default_types(&cache, "default_cache", get_global_arena(), item_budgets, mem_budgets, 0);
+    init_asset_cache_default_types(
+        &cache,
+        "default_cache",
+        {.free_list = get_global_arena(), .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()},
+        item_budgets,
+        mem_budgets,
+        0);
 
     auto tex_pool = get_asset_pool<texture>(&cache);
     asrt_log(tex_pool);

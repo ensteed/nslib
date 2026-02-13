@@ -34,13 +34,15 @@ asset_id generate_asset_id()
     return {.id = generate_unique_id()};
 }
 
-void init_asset_cache(asset_cache *cache, sizet overall_mem_budget, mem_arena *upstream, const char *cache_name)
+void init_asset_cache(asset_cache *cache, sizet overall_mem_budget, const mem_arena_set &upstream, const char *cache_name)
 {
     asrt(cache);
     asrt(cache->arena.total_size == 0 && cache->pools.size == 0);
     strncpy(cache->name, cache_name, SMALL_STR_LEN - 1);
     cache->name[SMALL_STR_LEN - 1] = 0;
-    init_fl_arena(&cache->arena, overall_mem_budget, upstream, cache_name);
+    init_fl_arena(&cache->arena, overall_mem_budget, upstream.free_list, cache_name);
+    cache->frame_linear = upstream.frame_linear;
+    cache->stack = upstream.stack;
     arr_init(&cache->pools, &cache->arena, ASSET_TYPE_USER);
 }
 
@@ -62,7 +64,7 @@ intern sizet get_default_cache_budget(const sizet* mem_budgets)
 
 void init_asset_cache_default_types(asset_cache *cache,
                               const char *name,
-                              mem_arena *upstream,
+                              const mem_arena_set &upstream,
                               const u32 *item_budgets,
                               const sizet *mem_budgets,
                               sizet overall_mem_budget)

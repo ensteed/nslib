@@ -48,7 +48,9 @@ const u32 ASSET_POOL_ITEM_BUDGETS[ASSET_TYPE_USER] = {
     asset_id id;                                                                                                                           \
     string name;                                                                                                                           \
     u64 flags;                                                                                                                             \
-    mem_arena *arena;
+    mem_arena *fl;                                                                                                                         \
+    mem_arena *frame_lin;                                                                                                                  \
+    mem_arena *stack;
 
 #define PUP_ASSET                                                                                                                          \
     pup_member(id);                                                                                                                        \

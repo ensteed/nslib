@@ -126,7 +126,7 @@ void init_asset(texture *tex)
 
 void release_ram_data(texture *tex)
 {
-    mem_free(tex->pixels, tex->arena);
+    mem_free(tex->pixels, tex->fl);
 }
 
 void terminate_asset(texture *tex)
@@ -181,8 +181,8 @@ const char *load_texture(texture *tex, const char *path)
     }
     tex->usage = texture_usage::ALBEDO;
     auto sz = get_texture_memsize(tex);
-    ilog("Allocating %lu bytes for texture (%lu bytes left in arena)", sz, tex->arena->total_size - tex->arena->used);
-    tex->pixels = mem_alloc(sz, tex->arena);
+    ilog("Allocating %lu bytes for texture (%lu bytes left in arena)", sz, tex->fl->total_size - tex->fl->used);
+    tex->pixels = mem_alloc(sz, tex->fl);
     memcpy(tex->pixels, stb_pixels, sz);
     stbi_image_free(stb_pixels);
     return nullptr;
@@ -190,7 +190,7 @@ const char *load_texture(texture *tex, const char *path)
 
 void init_asset(shader *shdr)
 {
-    arr_init(&shdr->stages, shdr->arena, 8);
+    arr_init(&shdr->stages, shdr->fl, 8);
 }
 
 void release_ram_data(shader *shdr)
@@ -206,15 +206,15 @@ void terminate_asset(shader *shdr)
     arr_terminate(&shdr->stages);
 }
 
-const char* load_shader(shader *shdr, const char *path)
+const char *load_shader(shader *shdr, const char *path)
 {
+
     arr_resize(&shdr->stages, 2);
     for (u32 i = 0; i < shdr->stages.size; ++i) {
-        arr_init(&shdr->stages[i].src, shdr->arena);
-        
+        arr_init(&shdr->stages[i].src, shdr->fl);
     }
+    return nullptr;
 }
-
 
 void init_asset(technique *tech)
 {}
@@ -252,10 +252,10 @@ void init_asset(geometry *geom)
     asrt(geom->inds.size == 0);
     asrt(geom->verts.size == 0);
     asrt(geom->skinned_verts_info.size == 0);
-    arr_init(&geom->verts, geom->arena);
-    arr_init(&geom->skinned_verts_info, geom->arena);
-    arr_init(&geom->inds, geom->arena);
-    arr_init(&geom->sm_info, geom->arena);
+    arr_init(&geom->verts, geom->fl);
+    arr_init(&geom->skinned_verts_info, geom->fl);
+    arr_init(&geom->inds, geom->fl);
+    arr_init(&geom->sm_info, geom->fl);
 }
 
 void release_ram_data(geometry *geom)
