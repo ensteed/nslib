@@ -75,40 +75,21 @@ struct rattachment_blend_info
 // TODO: Add depth bias to dynamic state along with viewports and scissor
 struct rtechnique_pass_desc
 {
-    // Which set of vert buffers does this pipeline use from the rbp pass vert stream group
     u32 geom_buffer_layout;
-
-    // Which geometry topology can this pipeline be used to draw
     rgeom_topology topology;
-
-    // How to rasterize polygons
     rpolygon_mode poly_mode;
-
-    // Which winding order
     rfront_face_winding ffw;
-
-    // Number of points per tessellation patch
     u32 tess_patch_control_points;
-
     rcompare_op depth_comp_op;
     rstencip_op_state stencil_front;
     rstencip_op_state stencil_back;
-
-    // Whether to apply logic operations or not
     rlogic_op logic_op;
-
     // Must match exactly the number of attachments in the blueprint or else will fail to create
     rattachment_blend_info atts_blending[MAX_FRAMEBUFFER_ATTACHMENT_COUNT];
-
-    // Blend constants
     vec4 blend_constants;
-
-    // Blueprint pass information the technique is made for
     rbp_info bp_info{};
-    // Technique enables
     rtechnique_flags tmask;
-    // Shader stage compiled spirv
-    const void *stages[RSHADER_STAGE_COUNT];
+    
 };
 
 struct rtechnique_desc
@@ -160,7 +141,7 @@ struct material_ubo_data
     vec4 misc;
 };
 
-// We use a single vertex and indice buffer for all meshes
+// We use a single vertex and indice buffer for all geometries
 struct rgeom_info
 {
     // Attached to the vert_mem allocation
@@ -184,8 +165,8 @@ struct rgeom_info
     // This is determined by taking the byte offset / sizeof(stream element)
     u32 ind_offset;
 
-    // Indice range for each submesh
-    static_array<rsubgeom_range, MAX_SUBMESH_COUNT> subgeom_vert_ind_counts;
+    // Indice range for each subgeometry
+    static_array<rsubgeom_range, MAX_SUBGEOM_COUNT> subgeom_vert_ind_counts;
 };
 
 struct vert_attrib_desc
@@ -229,6 +210,10 @@ struct rsampler_info
 
 struct rmaterial_info
 {};
+
+struct rshader_info {
+    VkShaderModule sm;
+};
 
 struct rtechnique_pass_entry
 {

@@ -8,12 +8,11 @@ namespace nslib
 const u32 MAX_STATIC_TRIANGLE_COUNT = 2000000;
 const u32 MAX_SKINNED_TRIANGLE_COUNT = 200000;
 // Default ind buffer size (holding all of our inds) in ind count (not byte size)
-const u32 MAX_TOTAL_MESH_IND_COUNT = (MAX_STATIC_TRIANGLE_COUNT + MAX_SKINNED_TRIANGLE_COUNT) * 3;
+const u32 MAX_TOTAL_GEOM_IND_COUNT = (MAX_STATIC_TRIANGLE_COUNT + MAX_SKINNED_TRIANGLE_COUNT) * 3;
 // Default vert buffer size (holding all of our verts) in vert count (not byte size)
 // Gemeni showed me that on average we will have 2 : 1 triangle to vert ratio
-const u32 MAX_STATIC_MESH_VERT_COUNT = MAX_STATIC_TRIANGLE_COUNT / 2;
-const u32 MAX_SKINNED_MESH_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
-    
+const u32 MAX_STATIC_GEOM_VERT_COUNT = MAX_STATIC_TRIANGLE_COUNT / 2;
+const u32 MAX_SKINNED_GEOM_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
 
 struct mem_arena;
 struct renderer;
@@ -29,25 +28,25 @@ enum rvert_stream
 
 enum rvert_layout : u32
 {
-    RVERT_LAYOUT_STATIC_MESH,
-    RVERT_LAYOUT_SKINNED_MESH,
+    RVERT_LAYOUT_STATIC_GEOM,
+    RVERT_LAYOUT_SKINNED_GEOM,
     RVERT_LAYOUT_COUNT
 };
 
-struct rmesh_vert_pos_col
+struct rgeom_vert_pos_col
 {
     vec3 pos;
     u32 col;
 };
 
-struct rmesh_vert_norm_tan_uv
+struct rgeom_vert_norm_tan_uv
 {
     vec3 norm;
     vec3 tangent;
     vec2 uv;
 };
 
-struct rmesh_vert_bone_weights_ids
+struct rgeom_vert_bone_weights_ids
 {
     // TODO: Pack these to unorm weights and u8 bonde ids
     vec4 bone_weights;
@@ -57,8 +56,8 @@ struct rmesh_vert_bone_weights_ids
 // Setup vert/index buffers (stream group) for this geometry type and get the runtime id for it
 u32 setup_geometry_stream_group(renderer *rndr);
 
-bool upload_geometry(renderer *rndr, u32 stream_gp, mesh *mesh, mem_arena *arena);
-u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<mesh> *meshes, mem_arena *arena);
+bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *arena);
+u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geoms, mem_arena *arena);
 
 void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *arena);
 

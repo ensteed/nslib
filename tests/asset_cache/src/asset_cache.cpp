@@ -40,11 +40,11 @@ void test_direct_pool_init_and_terminate()
     mem_arena upstream{};
     init_fl_arena(&upstream, 128 * KB_SIZE, get_global_arena(), "asset_pool_test");
 
-    asset_pool<mesh> pool{};
+    asset_pool<geometry> pool{};
     init_asset_pool(&pool, 64 * KB_SIZE, 4, &upstream);
 
-    auto item0 = create_asset(&pool, "mesh_0");
-    auto item1 = create_asset(&pool, "mesh_1");
+    auto item0 = create_asset(&pool, "geom_0");
+    auto item1 = create_asset(&pool, "geom_1");
     asrt_log(is_valid(item0));
     asrt_log(is_valid(item1));
 
@@ -56,11 +56,11 @@ void test_direct_pool_init_and_terminate()
 void fill_small_budgets(u32 *item_budgets, sizet *mem_budgets)
 {
     ilog("begin");
-    item_budgets[ASSET_TYPE_MESH] = 4;
+    item_budgets[ASSET_TYPE_GEOMETRY] = 4;
     item_budgets[ASSET_TYPE_TEXTURE] = 4;
     item_budgets[ASSET_TYPE_MATERIAL] = 4;
 
-    mem_budgets[ASSET_TYPE_MESH] = 64 * KB_SIZE;
+    mem_budgets[ASSET_TYPE_GEOMETRY] = 64 * KB_SIZE;
     mem_budgets[ASSET_TYPE_TEXTURE] = 64 * KB_SIZE;
     mem_budgets[ASSET_TYPE_MATERIAL] = 64 * KB_SIZE;
     ilog("end");
@@ -72,45 +72,45 @@ void test_cache_pool_api()
     asset_cache cache{};
     init_asset_cache(&cache, 256 * KB_SIZE, get_global_arena(), "cache_pool_api");
 
-    auto mesh_pool = create_asset_pool<mesh>(&cache, 64 * KB_SIZE, 4);
-    asrt_log(mesh_pool);
-    asrt_log(get_asset_pool<mesh>(&cache) == mesh_pool);
+    auto geom_pool = create_asset_pool<geometry>(&cache, 64 * KB_SIZE, 4);
+    asrt_log(geom_pool);
+    asrt_log(get_asset_pool<geometry>(&cache) == geom_pool);
 
-    auto mesh0 = create_asset(mesh_pool, "mesh_0");
-    auto mesh1 = create_asset<mesh>(&cache, "mesh_1");
-    asrt_log(is_valid(mesh0));
-    asrt_log(is_valid(mesh1));
+    auto geom0 = create_asset(geom_pool, "geom_0");
+    auto geom1 = create_asset<geometry>(&cache, "geom_1");
+    asrt_log(is_valid(geom0));
+    asrt_log(is_valid(geom1));
 
-    auto mesh0_ptr = get_asset(mesh_pool, mesh0.hndl);
-    auto mesh1_ptr = get_asset(&cache, mesh1.hndl);
-    asrt_log(mesh0_ptr == mesh0.item);
-    asrt_log(mesh1_ptr == mesh1.item);
+    auto geom0_ptr = get_asset(geom_pool, geom0.hndl);
+    auto geom1_ptr = get_asset(&cache, geom1.hndl);
+    asrt_log(geom0_ptr == geom0.item);
+    asrt_log(geom1_ptr == geom1.item);
 
-    auto mesh0_find = find_asset(mesh_pool, mesh0.item->id);
-    auto mesh1_find = find_asset<mesh>(&cache, mesh1.item->id);
-    asrt_log(is_valid(mesh0_find));
-    asrt_log(is_valid(mesh1_find));
-    asrt_log(mesh0_find.item == mesh0.item);
-    asrt_log(mesh1_find.item == mesh1.item);
+    auto geom0_find = find_asset(geom_pool, geom0.item->id);
+    auto geom1_find = find_asset<geometry>(&cache, geom1.item->id);
+    asrt_log(is_valid(geom0_find));
+    asrt_log(is_valid(geom1_find));
+    asrt_log(geom0_find.item == geom0.item);
+    asrt_log(geom1_find.item == geom1.item);
 
     u32 forward_count = 0;
-    for (auto iter = asset_pool_begin(mesh_pool); is_valid(iter); iter = asset_pool_next(mesh_pool, iter)) {
+    for (auto iter = asset_pool_begin(geom_pool); is_valid(iter); iter = asset_pool_next(geom_pool, iter)) {
         ++forward_count;
     }
     asrt_log(forward_count == 2);
 
     u32 reverse_count = 0;
-    for (auto iter = asset_pool_rbegin(mesh_pool); is_valid(iter); iter = asset_pool_prev(mesh_pool, iter)) {
+    for (auto iter = asset_pool_rbegin(geom_pool); is_valid(iter); iter = asset_pool_prev(geom_pool, iter)) {
         ++reverse_count;
     }
     asrt_log(reverse_count == 2);
 
-    asrt_log(destroy_asset(mesh_pool, mesh0.hndl));
-    asrt_log(destroy_asset(&cache, mesh1.hndl));
+    asrt_log(destroy_asset(geom_pool, geom0.hndl));
+    asrt_log(destroy_asset(&cache, geom1.hndl));
 
-    asrt_log(destroy_asset_pool(mesh_pool, &cache));
-    asrt_log(create_asset_pool<mesh>(&cache, 64 * KB_SIZE, 4));
-    asrt_log(destroy_asset_pool<mesh>(&cache));
+    asrt_log(destroy_asset_pool(geom_pool, &cache));
+    asrt_log(create_asset_pool<geometry>(&cache, 64 * KB_SIZE, 4));
+    asrt_log(destroy_asset_pool<geometry>(&cache));
     terminate_asset_cache(&cache);
     ilog("end");
 }

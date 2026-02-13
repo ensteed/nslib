@@ -5,7 +5,6 @@
 
 namespace nslib
 {
-struct submesh;
 enum comp_type
 {
     COMP_TYPE_TRANSFORM,
@@ -38,7 +37,7 @@ struct transform
     vec3 scale{1};
 };
 
-struct material_submesh_mapping
+struct material_subgeom_mapping
 {
     asset_id mat_id;
     u32 sm_mat_slot;
@@ -47,10 +46,8 @@ struct material_submesh_mapping
 struct static_model
 {
     COMP(STATIC_MODEL)
-    asset_id mesh_id;
-    // This is fixed to max submesh arraty so that each ind in this array matches an ind in the submesh array
-    // We might have some of the submeshes with no materials for example, for those the rid will be 0
-    array<material_submesh_mapping> mat_mapping{};
+    asset_id geom_id;
+    array<material_subgeom_mapping> mat_mapping{};
 };
 
 struct camera

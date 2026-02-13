@@ -8,30 +8,30 @@ u32 setup_geometry_stream_group(renderer *rndr)
 {
     geometry_stream_group_desc desc{};
     desc.name = "nslib";
-    desc.max_ind_count = MAX_TOTAL_MESH_IND_COUNT;
+    desc.max_ind_count = MAX_TOTAL_GEOM_IND_COUNT;
 
-    geometry_vert_layout_desc *static_mesh_layout = push_geometry_layout(&desc, MAX_STATIC_MESH_VERT_COUNT);
-    vert_stream_desc *pos_col = push_geometry_stream(static_mesh_layout, "static-pos-col");
+    geometry_vert_layout_desc *static_geom_layout = push_geometry_layout(&desc, MAX_STATIC_GEOM_VERT_COUNT);
+    vert_stream_desc *pos_col = push_geometry_stream(static_geom_layout, "static-pos-col");
     u32 shader_location = 0;
     push_geometry_attribute<vec3>(pos_col, shader_location++);
     push_geometry_attribute<u8vec4>(pos_col, shader_location++, true);
 
-    vert_stream_desc *norm_tan_uv = push_geometry_stream(static_mesh_layout, "static-tan-norm-uv");
+    vert_stream_desc *norm_tan_uv = push_geometry_stream(static_geom_layout, "static-tan-norm-uv");
     push_geometry_attribute<vec3>(norm_tan_uv, shader_location++);
     push_geometry_attribute<vec3>(norm_tan_uv, shader_location++);
     push_geometry_attribute<vec2>(norm_tan_uv, shader_location++);
 
-    geometry_vert_layout_desc *skinned_mesh_layout = push_geometry_layout(&desc, MAX_SKINNED_MESH_VERT_COUNT);
-    pos_col = push_geometry_stream(skinned_mesh_layout, "skinned-pos-col");
+    geometry_vert_layout_desc *skinned_geom_layout = push_geometry_layout(&desc, MAX_SKINNED_GEOM_VERT_COUNT);
+    pos_col = push_geometry_stream(skinned_geom_layout, "skinned-pos-col");
     push_geometry_attribute<vec3>(pos_col, shader_location++);
     push_geometry_attribute<u8vec4>(pos_col, shader_location++, true);
 
-    norm_tan_uv = push_geometry_stream(skinned_mesh_layout, "skinned-tan-norm-uv");
+    norm_tan_uv = push_geometry_stream(skinned_geom_layout, "skinned-tan-norm-uv");
     push_geometry_attribute<vec3>(norm_tan_uv, shader_location++);
     push_geometry_attribute<vec3>(norm_tan_uv, shader_location++);
     push_geometry_attribute<vec2>(norm_tan_uv, shader_location++);
 
-    vert_stream_desc *bone_weight_ids = push_geometry_stream(skinned_mesh_layout, "skinned-bone-weight-ids");
+    vert_stream_desc *bone_weight_ids = push_geometry_stream(skinned_geom_layout, "skinned-bone-weight-ids");
     push_geometry_attribute<vec3>(bone_weight_ids, shader_location++);
     push_geometry_attribute<vec3>(bone_weight_ids, shader_location++);
     push_geometry_attribute<vec2>(bone_weight_ids, shader_location++);
@@ -56,9 +56,9 @@ intern rformat get_rformat_for_usage(texture_usage usage)
     }
 }
 
-bool upload_geometry(renderer *rndr, u32 stream_gp, mesh *geom, mem_arena *arena)
+bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *arena)
 {
-    ilog("Registering mesh id: %s  name: %s", ls(geom->name), str_cstr(geom->name));
+    ilog("Registering geom id: %s  name: %s", ls(geom->name), str_cstr(geom->name));
     asrt(geom->verts.size > 0);
     rgeom_desc cinf{};
 
@@ -66,23 +66,23 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, mesh *geom, mem_arena *arena
     cinf.vert_count = geom->verts.size;
     cinf.ind_count = geom->inds.size;
 
-    // Submesh ranges
+    // Subgeom ranges
     cinf.subgeom_cnt = geom->sm_info.size;
 
     // bone weight ids will be null if size is 0 - size will either be 0 or same size as verts (we assert that now)
     asrt(geom->skinned_verts_info.size == cinf.vert_count || geom->skinned_verts_info.size == 0);
 
     // Allocate temporary buffers for everything
-    rsubgeom_range *tmp_smeshes = mem_alloc<rsubgeom_range>(arena, cinf.subgeom_cnt);
-    rmesh_vert_pos_col *tmp_pos_cols = mem_alloc<rmesh_vert_pos_col>(arena, cinf.vert_count);
-    rmesh_vert_norm_tan_uv *tmp_norm_tan_uvs = mem_alloc<rmesh_vert_norm_tan_uv>(arena, cinf.vert_count);
-    rmesh_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rmesh_vert_bone_weights_ids>(arena, geom->skinned_verts_info.size);
+    rsubgeom_range *tmp_sgeoms = mem_alloc<rsubgeom_range>(arena, cinf.subgeom_cnt);
+    rgeom_vert_pos_col *tmp_pos_cols = mem_alloc<rgeom_vert_pos_col>(arena, cinf.vert_count);
+    rgeom_vert_norm_tan_uv *tmp_norm_tan_uvs = mem_alloc<rgeom_vert_norm_tan_uv>(arena, cinf.vert_count);
+    rgeom_vert_bone_weights_ids *tmp_bone_weight_ids = mem_alloc<rgeom_vert_bone_weights_ids>(arena, geom->skinned_verts_info.size);
     ind_t *tmp_inds = mem_alloc<ind_t>(arena, cinf.ind_count);
 
-    // Copy submeshes
+    // Copy subgeoms
     for (u32 i = 0; i < cinf.subgeom_cnt; ++i) {
-        tmp_smeshes[i].count = geom->sm_info[i].count;
-        tmp_smeshes[i].offset = geom->sm_info[i].offset;
+        tmp_sgeoms[i].count = geom->sm_info[i].count;
+        tmp_sgeoms[i].offset = geom->sm_info[i].offset;
     }
 
     // Copy vert data
@@ -105,10 +105,10 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, mesh *geom, mem_arena *arena
     void *vdata[] = {tmp_pos_cols, tmp_norm_tan_uvs, tmp_bone_weight_ids};
     cinf.name = str_cstr(geom->name);
     cinf.group = stream_gp;
-    cinf.layout = tmp_bone_weight_ids ? RVERT_LAYOUT_SKINNED_MESH : RVERT_LAYOUT_STATIC_MESH;
+    cinf.layout = tmp_bone_weight_ids ? RVERT_LAYOUT_SKINNED_GEOM : RVERT_LAYOUT_STATIC_GEOM;
     cinf.vert_data = vdata;
     cinf.ind_data = tmp_inds;
-    cinf.subgeoms = tmp_smeshes;
+    cinf.subgeoms = tmp_sgeoms;
     cinf.topology = (rgeom_topology)geom->topology;
 
     geom->rhndl = create_geometry(rndr, cinf);
@@ -124,12 +124,12 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, mesh *geom, mem_arena *arena
     mem_free(tmp_bone_weight_ids, arena);
     mem_free(tmp_norm_tan_uvs, arena);
     mem_free(tmp_pos_cols, arena);
-    mem_free(tmp_smeshes, arena);
+    mem_free(tmp_sgeoms, arena);
     return result;
 }
 
 // Great use for a stack arena - will work
-u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<mesh> *geometry, mem_arena *arena)
+u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geometry, mem_arena *arena)
 {
     u32 success_count{0};
     for (auto rm = asset_pool_begin(geometry); is_valid(rm); rm = asset_pool_next(geometry, rm)) {

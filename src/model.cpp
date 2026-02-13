@@ -125,14 +125,14 @@ void init_asset(texture *tex)
 {
 }
 
-void release_texture_ram_data(texture *tex)
+void release_ram_data(texture *tex)
 {
     mem_free(tex->pixels, tex->arena);
 }
 
 void terminate_asset(texture *tex)
 {
-    release_texture_ram_data(tex);
+    release_ram_data(tex);
 }
 
 u32 get_texture_layer_pixel_count(const texture *tex)
@@ -199,47 +199,47 @@ void terminate_asset(material *mat)
 {
 }
 
-void make_rect(mesh *msh)
+void make_rect(geometry *geom)
 {
-    arr_copy(&msh->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(mvert));
-    arr_copy(&msh->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(u32));
-    arr_resize(&msh->sm_info, 1);
-    msh->sm_info[0].count = msh->inds.size;
-    strncpy(msh->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
+    arr_copy(&geom->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(mvert));
+    arr_copy(&geom->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(u32));
+    arr_resize(&geom->sm_info, 1);
+    geom->sm_info[0].count = geom->inds.size;
+    strncpy(geom->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
-void make_cube(mesh *msh)
+void make_cube(geometry *geom)
 {
-    arr_copy(&msh->verts, CUBE_VERTS, sizeof(CUBE_VERTS) / sizeof(mvert));
-    arr_copy(&msh->inds, CUBE_INDS_TRI_LIST, sizeof(CUBE_INDS_TRI_LIST) / sizeof(u32));
-    arr_resize(&msh->sm_info, 1);
-    msh->sm_info[0].count = msh->inds.size;
-    strncpy(msh->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
+    arr_copy(&geom->verts, CUBE_VERTS, sizeof(CUBE_VERTS) / sizeof(mvert));
+    arr_copy(&geom->inds, CUBE_INDS_TRI_LIST, sizeof(CUBE_INDS_TRI_LIST) / sizeof(u32));
+    arr_resize(&geom->sm_info, 1);
+    geom->sm_info[0].count = geom->inds.size;
+    strncpy(geom->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
-void init_asset(mesh *msh)
+void init_asset(geometry *geom)
 {
-    asrt(msh->sm_info.size == 0);
-    asrt(msh->inds.size == 0);
-    asrt(msh->verts.size == 0);
-    asrt(msh->skinned_verts_info.size == 0);
-    arr_init(&msh->verts, msh->arena);
-    arr_init(&msh->skinned_verts_info, msh->arena);
-    arr_init(&msh->inds, msh->arena);
-    arr_init(&msh->sm_info, msh->arena);
+    asrt(geom->sm_info.size == 0);
+    asrt(geom->inds.size == 0);
+    asrt(geom->verts.size == 0);
+    asrt(geom->skinned_verts_info.size == 0);
+    arr_init(&geom->verts, geom->arena);
+    arr_init(&geom->skinned_verts_info, geom->arena);
+    arr_init(&geom->inds, geom->arena);
+    arr_init(&geom->sm_info, geom->arena);
 }
 
-void release_mesh_ram_data(mesh *msh)
+void release_ram_data(geometry *geom)
 {
-    arr_terminate(&msh->verts);
-    arr_terminate(&msh->skinned_verts_info);
-    arr_terminate(&msh->inds);
-    arr_terminate(&msh->sm_info);
+    arr_terminate(&geom->verts);
+    arr_terminate(&geom->skinned_verts_info);
+    arr_terminate(&geom->inds);
+    arr_terminate(&geom->sm_info);
 }
 
-void terminate_asset(mesh *msh)
+void terminate_asset(geometry *geom)
 {
-    release_mesh_ram_data(msh);
+    release_ram_data(geom);
 }
 
 } // namespace nslib

@@ -12,7 +12,7 @@
 namespace nslib
 {
 
-intern const sizet ASSET_TYPE_SIZE[ASSET_TYPE_USER] = {sizeof(mesh)};
+intern const sizet ASSET_TYPE_SIZE[ASSET_TYPE_USER] = {sizeof(geometry)};
 
 asset_id make_asset_id(const string &str)
 {
@@ -50,7 +50,7 @@ intern sizet get_default_cache_budget(const sizet* mem_budgets)
     // alignment padding wiggle room in there too
     sizet alloc_overhead = (sizeof(alloc_header) + 32) * (ASSET_TYPE_USER * 2 + 1);
     sizet asset_pool_sizes =
-        sizeof(asset_pool<mesh>) + sizeof(asset_pool<texture>) + sizeof(asset_pool<material>);
+        sizeof(asset_pool<geometry>) + sizeof(asset_pool<texture>) + sizeof(asset_pool<material>);
     sizet ret{sizeof(sizet) * ASSET_TYPE_USER + alloc_overhead + asset_pool_sizes};
     
     // Add in cache budgets
@@ -75,7 +75,7 @@ void init_asset_cache_default_types(asset_cache *cache,
     init_asset_cache(cache, overall_mem_budget, upstream, name);
     
     // NOTE: Manually update this on adding different asset types
-    create_asset_pool<mesh>(cache, mem_budgets[mesh::type_id], item_budgets[mesh::type_id]);
+    create_asset_pool<geometry>(cache, mem_budgets[geometry::type_id], item_budgets[geometry::type_id]);
     create_asset_pool<texture>(cache, mem_budgets[texture::type_id], item_budgets[texture::type_id]);
     create_asset_pool<material>(cache, mem_budgets[material::type_id], item_budgets[material::type_id]);
 }
@@ -84,7 +84,7 @@ void terminate_asset_cache_default_types(asset_cache *cache)
 {
     asrt(cache);
     // NOTE: Manually update this on adding different asset types
-    destroy_asset_pool<mesh>(cache);
+    destroy_asset_pool<geometry>(cache);
     destroy_asset_pool<texture>(cache);
     destroy_asset_pool<material>(cache);
     terminate_asset_cache(cache);

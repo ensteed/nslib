@@ -48,13 +48,6 @@ enum vkr
 };
 }
 
-enum vkr_shader_stage_type
-{
-    VKR_SHADER_STAGE_VERT,
-    VKR_SHADER_STAGE_FRAG,
-    VKR_SHADER_STAGE_COUNT
-};
-
 enum vkr_queue_fam_type
 {
     VKR_QUEUE_FAM_TYPE_GFX,
@@ -338,13 +331,22 @@ struct vkr_pipeline_cfg_multisample
     bool alpha_to_one_enable{false};
 };
 
+struct vkr_pipeline_cfg_shader_stage
+{
+    VkShaderStageFlagBits stage;
+    VkShaderModule module;
+    const char *entry_point;
+    const VkSpecializationInfo *specialized_info{nullptr};
+};
+
 struct vkr_pipeline_cfg_input_assembly
 {
     bool primitive_restart_enable{};
     VkPrimitiveTopology primitive_topology{};
 };
 
-struct vkr_pipeline_cfg_tessellation_state {
+struct vkr_pipeline_cfg_tessellation_state
+{
     u32 patch_control_points;
 };
 
@@ -383,8 +385,8 @@ struct vkr_vertex_layout
 
 struct vkr_pipeline_cfg
 {
-
-    vkr_shader_stage shader_stages[VKR_SHADER_STAGE_COUNT];
+    const vkr_pipeline_cfg_shader_stage *stages;
+    sizet stage_cnt;
 
     // Render pass info
     VkRenderPass rpass{};
@@ -510,9 +512,6 @@ VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, bool need_stenci
 VkIndexType get_vk_index_type(sizet ind_size);
 
 u32 vkr_find_mem_type(u32 type_flags, VkMemoryPropertyFlags property_flags, const vkr_phys_device *pdev);
-
-VkShaderStageFlagBits vkr_shader_stage_type_bits(vkr_shader_stage_type st_type);
-const char *vkr_shader_stage_type_str(vkr_shader_stage_type st_type);
 
 const char *vkr_physical_device_type_str(VkPhysicalDeviceType type);
 vkr_queue_families vkr_get_queue_families(const vkr_context *vk, VkPhysicalDevice dev);

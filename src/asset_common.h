@@ -284,7 +284,7 @@ bool destroy_asset(asset_cache *cache, asset_handle<T> hndl)
 // Initialize cache of type T with memory and item budget. If either go over we assert.
 // The item budget determines approximately how much of the memory budget we use on the asset meta itself,
 // the asset handles, and the id to handle map. The remainder is set aside for asset dynamic allocations (such
-// as texture allocating pixels or mesh allocating verts). When adding pool to a cache, this is automatically called
+// as texture allocating pixels or geom allocating verts). When adding pool to a cache, this is automatically called
 // passing in the cache's arena as upstream so the cache arena must be large enough to handle all pools
 template<typename T>
 void init_asset_pool(asset_pool<T> *pool, sizet memory_budget, u32 item_budget, mem_arena *upstream)

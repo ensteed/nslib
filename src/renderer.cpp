@@ -443,7 +443,7 @@ intern bool fill_geometry_layout_entry(geom_buffer_layout_entry *layout,
     layout->vert_streams.size = desc.streams.size;
 
     // Virtual block used for this layout entry - we use vert stream 0 as the guide for all other vert streams.. that is
-    // it dictates at what range (in vertices) each buffer uses for each mesh.. this is not the most "efficient" thing
+    // it dictates at what range (in vertices) each buffer uses for each geom.. this is not the most "efficient" thing
     // since other buffers might do better with space usage if they had their own block, but it allows us to bind all
     // vert buffers at once and use them in shaders
     VmaVirtualBlockCreateInfo ci{};
@@ -798,12 +798,12 @@ intern void init_render_resources(renderer *rndr)
     init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->geometry, MAX_MESH_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->geometry, MAX_GEOM_COUNT, &rndr->persist_fl);
 }
 
 intern void terminate_render_resources(renderer *rndr)
 {
-    // Terminate all meshes
+    // Geometries
     for (auto iter = slot_pool_begin(&rndr->geometry); is_valid(iter); iter = slot_pool_next(&rndr->geometry, iter)) {
         destroy_geometry(iter, rndr);
     }
@@ -1142,7 +1142,7 @@ rgeom_handle create_geometry(renderer *rndr, const rgeom_desc &ci)
     asrt(ci.subgeoms);
     asrt(ci.group < rndr->geom_groups.size);
 
-    // Verify we have room for a mesh
+    // Verify we have room for a geom
     auto gp = &rndr->geom_groups[ci.group];
     asrt(ci.layout < gp->layouts.size);
     auto layout = &gp->layouts[ci.layout];
@@ -1300,6 +1300,8 @@ rtexture_handle create_texture(renderer *rndr, const rtexture_desc &ctinfo)
 
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo)
 {
+    vkr_pipeline_cfg cfg{};
+    
     return {};
 }
 

@@ -119,7 +119,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     app->movement_km.mbutton_mask = MBUTTON_MASK_NONE;
 }
 
-intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const mesh &rect_msh)
+intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom)
 {
     // Create a grid of entities with odd ones being cubes and even being rectangles
     int len = 10, width = 10, height = 10;
@@ -134,11 +134,11 @@ intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const m
                 auto tfcomp = add_comp<transform>(ent->id, tf_tbl);
                 auto sc = add_comp<static_model>(ent);
                 if (xind % 2) {
-                    sc->mesh_id = cube_msh.id;
+                    sc->geom_id = cube_geom.id;
                     ent->name = to_str("cube-%d", ent_ind);
                 }
                 else {
-                    sc->mesh_id = rect_msh.id;
+                    sc->geom_id = rect_geom.id;
                     ent->name = to_str("rect-%d", ent_ind);
                 }
                 tfcomp->world_pos = vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f};
@@ -148,14 +148,14 @@ intern void create_entity_grid(sim_region *region, const mesh &cube_msh, const m
     }
 }
 
-intern void create_meshes(mesh_pool *msh_pool, mesh **rect, mesh **cube)
+intern void create_geometry(geometry_pool *geom_pool, geometry **rect, geometry **cube)
 {
-    auto cube_msh = create_asset(msh_pool, "rect");
-    auto rect_msh = create_asset(msh_pool, "cube");
-    make_rect(rect_msh.item);
-    make_cube(cube_msh.item);
-    *rect = rect_msh.item;
-    *cube = cube_msh.item;
+    auto cube_geom = create_asset(geom_pool, "rect");
+    auto rect_geom = create_asset(geom_pool, "cube");
+    make_rect(rect_geom.item);
+    make_cube(cube_geom.item);
+    *rect = rect_geom.item;
+    *cube = cube_geom.item;
 }
 
 intern void create_textures(texture_pool *tex_pool)
@@ -220,11 +220,10 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     init_asset_cache_default_types(&app->cg, "asset-cache", get_global_arena());
 
-    // Create meshes
-    auto msh_pool = get_asset_pool<mesh>(&app->cg);
+    auto geom_pool = get_asset_pool<geometry>(&app->cg);
     auto tex_pool = get_asset_pool<texture>(&app->cg);
-    mesh *rect, *cube;
-    create_meshes(msh_pool, &rect, &cube);
+    geometry *rect, *cube;
+    create_geometry(geom_pool, &rect, &cube);
     create_textures(tex_pool);
 
     // Initialize our renderer - fail early if init fails
@@ -249,7 +248,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     init_imgui(&app->rndr, rbp.item->passes[pass_id]);
 #endif
 
-    upload_geometry(&app->rndr, geom_stream_gp, msh_pool, &ctxt->arenas.stack);
+    upload_geometry(&app->rndr, geom_stream_gp, geom_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
 
     // Create render targets
@@ -290,7 +289,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 
     auto tform_tbl = get_comp_tbl<transform>(&app->rgn.cdb);
     auto mat_cache = get_asset_pool<material>(&app->cg);
-    auto msh_cache = get_asset_pool<mesh>(&app->cg);
+    auto geom_cache = get_asset_pool<geometry>(&app->cg);
     for (sizet i = 0; i < tform_tbl->entries.size; ++i) {
         auto curtf = &tform_tbl->entries[i];
         if (curtf->ent_id != app->cam_id) {

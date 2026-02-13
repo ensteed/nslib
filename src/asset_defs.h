@@ -12,7 +12,7 @@ struct slot_item_ref;
 
 enum asset_type : u32
 {
-    ASSET_TYPE_MESH,
+    ASSET_TYPE_GEOMETRY,
     ASSET_TYPE_TEXTURE,
     ASSET_TYPE_MATERIAL,
     ASSET_TYPE_TECHNIQUE,
@@ -73,12 +73,12 @@ struct asset_ref
 template<typename T>
 struct asset_pool;
 
-struct mesh;
+struct geometry;
 struct material;
 struct texture;
-using mesh_pool = asset_pool<mesh>;
-using mesh_handle = asset_handle<mesh>;
-using mesh_item = asset_item<mesh>;
+using geometry_pool = asset_pool<geometry>;
+using geometry_handle = asset_handle<geometry>;
+using geometry_item = asset_item<geometry>;
 using material_pool = asset_pool<material>;
 using material_handle = asset_handle<material>;
 using material_item = asset_item<material>;

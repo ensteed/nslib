@@ -14,7 +14,7 @@ enum mat_sampler_slot
     MAT_SAMPLER_SLOT_COUNT
 };
 
-enum struct mesh_topology : u8
+enum struct geometry_topology : u8
 {
     POINT_LIST,
     LINE_LIST,
@@ -96,6 +96,12 @@ struct raster_state
     raster_flags rmask;
     stencil_mode sm;
     depth_mode dm;
+};
+
+struct shader {
+    ASSET(SHADER, efx);
+    byte_array frag;
+    byte_array vert;
 };
 
 struct technique_pass
@@ -180,7 +186,7 @@ pup_func(mskinned_vert_info)
     pup_member(bone_weights);
 }
 
-struct submesh_range
+struct subgeom_range
 {
     // Indice offset
     u32 offset;
@@ -190,7 +196,7 @@ struct submesh_range
     u32 mat_slot_ind;
 };
 
-pup_func(submesh_range)
+pup_func(subgeom_range)
 {
     pup_member(offset);
     pup_member(count);
@@ -198,42 +204,44 @@ pup_func(submesh_range)
     pup_member(mat_slot_ind);
 }
 
-struct mesh
+struct geometry
 {
-    ASSET(MESH, nsmsh);
+    ASSET(GEOMETRY, geom);
     array<u32> inds;
     array<mvert> verts;
     array<mskinned_vert_info> skinned_verts_info;
-    array<submesh_range> sm_info;
-    mesh_topology topology;
+    array<subgeom_range> sm_info;
+    geometry_topology topology;
 
     rgeom_handle rhndl;
 };
 
-pup_func(mesh)
+pup_func(geometry)
 {
     pup_member(inds);
     pup_member(verts);
     pup_member(skinned_verts_info);
     pup_member(sm_info);
-    pup_enum_member(mesh_topology, u8, topology);
+    pup_enum_member(geometry_topology, u8, topology);
 }
 
+// TEXTURE
 void init_asset(texture *tex);
-void release_texture_ram_data(texture *tex);
+void release_ram_data(texture *tex);
 void terminate_asset(texture *tex);
 sizet get_texture_memsize(const texture *tex);
 u32 get_texture_layer_pixel_count(const texture *tex);
 bool load_texture(texture *tex, const char *path, cstr *err);
 
+// MATERIAL
 void init_asset(material *mat);
 void terminate_asset(material *mat);
 
-void make_rect(mesh *msh);
-void make_cube(mesh *msh);
-
-void init_asset(mesh *msh);
-void release_mesh_ram_data(mesh *msh);
-void terminate_asset(mesh *msh);
+// GEOMETRY
+void make_rect(geometry *geom);
+void make_cube(geometry *geom);
+void init_asset(geometry *geom);
+void release_ram_data(geometry *geom);
+void terminate_asset(geometry *geom);
 
 } // namespace nslib

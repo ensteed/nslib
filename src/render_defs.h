@@ -14,13 +14,13 @@ inline constexpr u32 MAX_PIPELINE_COUNT = 2048;
 // Maximum number of materials the renderer supports
 inline constexpr u32 MAX_MATERIAL_COUNT = 4096;
 // Maximum number of materials the renderer supports
-inline constexpr u32 MAX_MESH_COUNT = 4096;
+inline constexpr u32 MAX_GEOM_COUNT = 4096;
 // Maximum number of textures the renderer supports
 inline constexpr u32 MAX_TEXTURE_COUNT = 4096;
 // Maximum number of objects
 inline constexpr u32 MAX_OBJECT_COUNT = 1000000;
-// Max submeshes per rmesh_info - easy to change later
-inline constexpr u8 MAX_SUBMESH_COUNT = 16;
+// Max subgeometry per rgeom_info - easy to change later
+inline constexpr u8 MAX_SUBGEOM_COUNT = 16;
 // Max number of geometry layouts - each layout gets it own set of buffers
 inline constexpr u8 MAX_GEOMETRY_LAYOUT_COUNT = 8;
 // Max number of vert groups per layout
@@ -257,12 +257,12 @@ enum rsampler_type : u32
 
 enum struct rgeom_topology : u8
 {
-    RMESH_TOPOLOGY_POINT_LIST,
-    RMESH_TOPOLOGY_LINE_LIST,
-    RMESH_TOPOLOGY_LINE_STRIP,
-    RMESH_TOPOLOGY_TRIANGLE_LIST,
-    RMESH_TOPOLOGY_TRIANGLE_STRIP,
-    RMESH_TOPOLOGY_TRIANGLE_FAN,
+    RGEOM_TOPOLOGY_POINT_LIST,
+    RGEOM_TOPOLOGY_LINE_LIST,
+    RGEOM_TOPOLOGY_LINE_STRIP,
+    RGEOM_TOPOLOGY_TRIANGLE_LIST,
+    RGEOM_TOPOLOGY_TRIANGLE_STRIP,
+    RGEOM_TOPOLOGY_TRIANGLE_FAN,
 };
 
 enum rdesc_set_layout : u32
