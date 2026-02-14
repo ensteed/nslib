@@ -949,17 +949,17 @@ void vkr_terminate_cmd_pool(VkCommandPool hndl, const vkr_context *vk)
     vkDestroyCommandPool(vk->inst.device.hndl, hndl, &vk->alloc_cbs);
 }
 
-int vkr_init_shader_module(VkShaderModule *module, const byte_array *code, const vkr_context *vk)
-{
+int vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, const vkr_context *vk) {
     VkShaderModuleCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    create_info.codeSize = code->size;
-    create_info.pCode = (const u32 *)code->data;
+    create_info.codeSize = code_byte_size;
+    create_info.pCode = (const u32 *)code;
     if (vkCreateShaderModule(vk->inst.device.hndl, &create_info, &vk->alloc_cbs, module) != VK_SUCCESS) {
         return err_code::VKR_CREATE_SHADER_MODULE_FAIL;
     }
     return err_code::VKR_NO_ERROR;
 }
+
 void vkr_terminate_shader_module(VkShaderModule module, const vkr_context *vk)
 {
     vkDestroyShaderModule(vk->inst.device.hndl, module, &vk->alloc_cbs);

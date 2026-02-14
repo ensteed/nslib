@@ -225,7 +225,7 @@ struct rmaterial_info
 {};
 
 struct rshader_info {
-    VkShaderModule sm[RSHADER_STAGE_TYPE_COUNT];
+    VkShaderModule sm[RSHADER_STAGE_TYPE_COUNT]{};
 };
 
 struct rtechnique_pass_entry
@@ -496,6 +496,7 @@ struct renderer
     pipeline_cache pline_cache;
     framebuffer_cache fb_cache;
 
+    slot_pool<rshader_info> shaders{};
     slot_pool<rtechnique_info> techniques{};
     slot_pool<rmaterial_info> materials{};
     slot_pool<rtexture_info> textures{};
@@ -586,7 +587,6 @@ rformat get_swapchain_format(renderer *rnd);
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
-
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 

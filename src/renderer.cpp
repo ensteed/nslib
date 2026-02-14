@@ -793,8 +793,17 @@ intern void terminate_geometry_stream_groups(renderer *rndr)
     hmap_terminate(&rndr->geom_group_id_map);
 }
 
+intern void terminate_shader(renderer *rndr, rshader_ref ref)
+{
+    for (u8 t = 0; t < RSHADER_STAGE_TYPE_COUNT; ++t) {
+        vkr_terminate_shader_module(ref.item->sm[t], &rndr->vk);
+        ref.item->sm[t] = VK_NULL_HANDLE;
+    }
+}
+
 intern void init_render_resources(renderer *rndr)
 {
+    init_slot_pool(&rndr->shaders, MAX_SHADER_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
@@ -827,6 +836,12 @@ intern void terminate_render_resources(renderer *rndr)
         // Do something
     }
     terminate_slot_pool(&rndr->techniques);
+
+    // Shaders
+    for (auto iter = slot_pool_begin(&rndr->shaders); is_valid(iter); iter = slot_pool_next(&rndr->shaders, iter)) {
+        terminate_shader(rndr, iter);
+    }
+    terminate_slot_pool(&rndr->shaders);
 }
 
 intern int init_global_pipeline_layout(renderer *rndr)
@@ -1298,10 +1313,28 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo)
     return tref.hndl;
 }
 
+rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
+{
+    if (sdr_info.stage_cnt == 0) {
+        return {};
+    }
+    rshader_ref sref = acquire_slot(&rndr->shaders);
+    for (u8 i = 0; i < sdr_info.stage_cnt; ++i) {
+        auto shdr_mod = &sref.item->sm[sdr_info.stages[i].stype];
+        s32 result = vkr_init_shader_module(shdr_mod, sdr_info.stages[i].src, sdr_info.stages[i].src_byte_size, &rndr->vk);
+        if (result != err_code::VKR_NO_ERROR) {
+            terminate_shader(rndr, sref);
+            release_slot(&rndr->shaders, sref.hndl);
+            return {};
+        }
+    }
+    return sref.hndl;
+}
+
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo)
 {
     vkr_pipeline_cfg cfg{};
-    
+
     return {};
 }
 

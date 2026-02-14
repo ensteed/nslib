@@ -572,7 +572,7 @@ int vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, const vkr_c
 void vkr_terminate_pipeline(VkPipeline hndl, const vkr_context *vk_ctxt);
 
 // Shader module
-int vkr_init_shader_module(VkShaderModule *module, const byte_array *code, const vkr_context *vk);
+int vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, const vkr_context *vk);
 void vkr_terminate_shader_module(VkShaderModule module, const vkr_context *vk);
 
 // Framebuffers

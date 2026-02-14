@@ -6,7 +6,8 @@ namespace nslib
 {
 // Rendering resource id
 using rres_id = u64;
-
+// Maximum number of techniques the renderer supports
+inline constexpr u32 MAX_SHADER_COUNT = 1024;
 // Maximum number of techniques the renderer supports
 inline constexpr u32 MAX_TECHNIQUE_COUNT = 1024;
 // Maximum number of materials the renderer supports
