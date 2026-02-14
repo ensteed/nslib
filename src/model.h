@@ -38,7 +38,7 @@ struct texture
     void *pixels;
     uvec3 dims;
     texture_usage usage;
-    rtexture_handle rndr_hndl;
+    rtexture_handle rhndl;
 };
 
 enum raster_flag
@@ -110,7 +110,7 @@ struct shader
 {
     ASSET(SHADER, efx);
     array<shader_stage> stages;
-    rshader_handle gpu_hndl;
+    rshader_handle rhndl;
 };
 
 struct raster_state
@@ -141,7 +141,7 @@ struct technique
 
     // Pass per render blueprint pass
     hmap<rres_id, technique_pass> passes;
-    rtechnique_handle gpu_hndl;
+    rtechnique_handle rhndl;
 };
 
 // Material references textures and pipelines, which both must be uploaded to GPUa
@@ -163,7 +163,7 @@ struct material
     static_array<asset_id, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
 
     // Handle given back by renderer
-    rmaterial_handle rndr_hndl;
+    rmaterial_handle rhndl;
 };
 
 pup_func(material)

@@ -107,6 +107,8 @@ struct rtechnique_pass_desc
 
 struct rtechnique_desc
 {
+    const rtechnique_pass_desc *passes;
+    sizet pass_count;
     const char *name;
 };
 
@@ -238,6 +240,7 @@ struct rtechnique_pass_entry
 
 struct rtechnique_info
 {
+    small_str name;
     static_array<rtechnique_pass_entry, MAX_BP_PASS_COUNT> rpass_plines;
 };
 

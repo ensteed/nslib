@@ -1,8 +1,55 @@
 #include "engine_rendering.h"
+#include "model.h"
 #include "renderer.h"
 
 namespace nslib
 {
+
+intern rformat get_rformat_for_usage(texture_usage usage)
+{
+    switch (usage) {
+    case (texture_usage::ALBEDO):
+        return rformat::RGBA8_SRGB;
+    case (texture_usage::NORMAL):
+        return rformat::RG8_UNORM;
+    case (texture_usage::GRAYSCALE):
+        return rformat::R8_UNORM;
+    case (texture_usage::HDR):
+        return rformat::RGBA16_SFLOAT;
+    default:
+        asrt_break("Failed to handle texture usage case");
+        return rformat::INVALID;
+    }
+}
+
+template<typename T>
+intern bool get_and_log_upload_result(T *asset)
+{
+    bool result = is_valid(asset->rhndl);
+    if (result) {
+        ilog("Uploaded %s %s to renderer", asset->type_str, ls(asset->name));
+    }
+    else {
+        wlog("Failed to upload %s %s to renderer", asset->type_str, ls(asset->name));
+    }
+    return result;
+}
+
+// All we need to do currently is cast it!
+intern rshader_stage_type get_renderer_shader_stage_type(shader_stage_type st)
+{
+    return (rshader_stage_type)st;
+}
+
+template<typename PoolT, typename UploadFunc>
+intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
+{
+    u32 success_count{0};
+    for (auto aiter = asset_pool_begin(pool); is_valid(aiter); aiter = asset_pool_next(pool, aiter)) {
+        success_count += (u32)func(aiter.item);
+    }
+    return success_count;
+}
 
 u32 setup_geometry_stream_group(renderer *rndr)
 {
@@ -37,23 +84,6 @@ u32 setup_geometry_stream_group(renderer *rndr)
     push_geometry_attribute<vec2>(bone_weight_ids, shader_location++);
 
     return push_geometry_stream_group(rndr, desc);
-}
-
-intern rformat get_rformat_for_usage(texture_usage usage)
-{
-    switch (usage) {
-    case (texture_usage::ALBEDO):
-        return rformat::RGBA8_SRGB;
-    case (texture_usage::NORMAL):
-        return rformat::RG8_UNORM;
-    case (texture_usage::GRAYSCALE):
-        return rformat::R8_UNORM;
-    case (texture_usage::HDR):
-        return rformat::RGBA16_SFLOAT;
-    default:
-        asrt_break("Failed to handle texture usage case");
-        return rformat::INVALID;
-    }
 }
 
 bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *scratch)
@@ -112,13 +142,8 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *s
     cinf.topology = (rgeom_topology)geom->topology;
 
     geom->rhndl = create_rgeometry(rndr, cinf);
-    bool result = is_valid(geom->rhndl);
-    if (result) {
-        ilog("Uploaded %s to renderer for %s", geom->type_str, ls(geom->name));
-    }
-    else {
-        wlog("Could not upload %s to renderer for %s", geom->type_str, ls(geom->name));
-    }
+    bool result = get_and_log_upload_result(geom);
+
     mem_free(tmp_inds, scratch);
     mem_free(tmp_bone_weight_ids, scratch);
     mem_free(tmp_norm_tan_uvs, scratch);
@@ -128,67 +153,69 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *s
 }
 
 // Great use for a stack arena - will work
-u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geometry, mem_arena *scratch)
+u32 upload_geometries(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geom_pool, mem_arena *scratch)
 {
-    u32 success_count{0};
-    for (auto rm = asset_pool_begin(geometry); is_valid(rm); rm = asset_pool_next(geometry, rm)) {
-        success_count += (u32)upload_geometry(rndr, stream_gp, rm.item, scratch);
-    }
-    return success_count;
+    auto upload_func = [rndr, stream_gp, scratch](geometry *geom) -> bool { return upload_geometry(rndr, stream_gp, geom, scratch); };
+    return upload_assets_helper(geom_pool, upload_func);
 }
 
-void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch)
+bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch)
 {
-    for (auto iter = asset_pool_begin(tex_pool); is_valid(iter); iter = asset_pool_next(tex_pool, iter)) {
-        rtexture_desc ctinfo{};
-        ctinfo.name = ls(iter.item->name);
-        ctinfo.dims = iter.item->dims;
-        ctinfo.data = iter.item->pixels;
-        ctinfo.data_size = get_texture_memsize(iter.item);
-        ctinfo.format = get_rformat_for_usage(iter.item->usage);
-        iter.item->rndr_hndl = create_rtexture(rndr, ctinfo);
-        if (is_valid(iter.item->rndr_hndl)) {
-            ilog("Uploaded %s %s to renderer", iter.item->type_str, ls(iter.item->name));
-        }
-        else {
-            wlog("Failed to upload %s %s to renderer", iter.item->type_str, ls(iter.item->name));
-        }
-    }
+    rtexture_desc ctinfo{};
+    ctinfo.name = ls(tex->name);
+    ctinfo.dims = tex->dims;
+    ctinfo.data = tex->pixels;
+    ctinfo.data_size = get_texture_memsize(tex);
+    ctinfo.format = get_rformat_for_usage(tex->usage);
+    tex->rhndl = create_rtexture(rndr, ctinfo);
+    return get_and_log_upload_result(tex);
 }
 
-// All we need to do currently is cast it!
-intern rshader_stage_type get_renderer_shader_stage_type(shader_stage_type st)
+u32 upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch)
 {
-    return (rshader_stage_type)st;
+    auto upload_func = [rndr, scratch](texture *tex) -> bool { return upload_texture(rndr, tex, scratch); };
+    return upload_assets_helper(tex_pool, upload_func);
 }
 
-void upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch)
+bool upload_technique(renderer *rndr, technique *tech, mem_arena *scratch)
 {
-    for (auto iter = asset_pool_begin(shdr_pool); is_valid(iter); iter = asset_pool_next(shdr_pool, iter)) {
-        rshader_desc rd{};
-        rd.name = ls(iter.item->name);
+    rtechnique_desc tinfo{};
+    tinfo.name = ls(tech->name);
+    return get_and_log_upload_result(tech);
+}
 
-        array<rshader_stage_desc> stages(iter.item->stages.size, scratch);
-        arr_resize(&stages, iter.item->stages.size);
-        for (sizet i = 0; i < stages.size; ++i) {
-            auto cur_s = &stages[i];
-            auto src_s = &iter.item->stages[i];
-            cur_s->src_byte_size = src_s->src.size;
-            cur_s->src = src_s->src.data;
-            cur_s->entry_point = src_s->entry_point;
-            cur_s->stype = get_renderer_shader_stage_type(src_s->stype);
-        }
-        rd.stage_cnt = stages.size;
-        rd.stages = stages.data;
+u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, mem_arena *scratch)
+{
+    auto upload_func = [rndr, scratch](technique *tech) -> bool { return upload_technique(rndr, tech, scratch); };
+    return upload_assets_helper(tech_pool, upload_func);
+}
 
-        iter.item->gpu_hndl = create_rshader(rndr, rd);
-        if (is_valid(iter.item->gpu_hndl)) {
-            ilog("Uploaded %s %s to renderer", iter.item->type_str, ls(iter.item->name));
-        }
-        else {
-            wlog("Failed to upload %s %s to renderer", iter.item->type_str, ls(iter.item->name));
-        }
+bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch)
+{
+    rshader_desc rd{};
+    rd.name = ls(shdr->name);
+
+    array<rshader_stage_desc> stages(shdr->stages.size, scratch);
+    arr_resize(&stages, shdr->stages.size);
+    for (sizet i = 0; i < stages.size; ++i) {
+        auto cur_s = &stages[i];
+        auto src_s = &shdr->stages[i];
+        cur_s->src_byte_size = src_s->src.size;
+        cur_s->src = src_s->src.data;
+        cur_s->entry_point = src_s->entry_point;
+        cur_s->stype = get_renderer_shader_stage_type(src_s->stype);
     }
+    rd.stage_cnt = stages.size;
+    rd.stages = stages.data;
+
+    shdr->rhndl = create_rshader(rndr, rd);
+    return get_and_log_upload_result(shdr);
+}
+
+u32 upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch)
+{
+    auto upload_func = [rndr, scratch](shader *shdr) -> bool { return upload_shader(rndr, shdr, scratch); };
+    return upload_assets_helper(shdr_pool, upload_func);
 }
 
 } // namespace nslib

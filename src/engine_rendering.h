@@ -57,8 +57,15 @@ struct rgeom_vert_bone_weights_ids
 u32 setup_geometry_stream_group(renderer *rndr);
 
 bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *arena);
-u32 upload_geometry(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geoms, mem_arena *scratch);
-void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch);
-void upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch);
+u32 upload_geometries(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geoms, mem_arena *scratch);
+
+bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch);
+u32 upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch);
+
+bool upload_technique(renderer *rndr, technique *tech, mem_arena *scratch);
+u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, mem_arena *scratch);
+
+bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch);
+u32 upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch);
 
 } // namespace nslib

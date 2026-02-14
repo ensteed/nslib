@@ -262,7 +262,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     init_imgui(&app->rndr, rbp.item->passes[pass_id]);
 #endif
 
-    upload_geometry(&app->rndr, geom_stream_gp, geom_pool, &ctxt->arenas.stack);
+    upload_geometries(&app->rndr, geom_stream_gp, geom_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
     upload_shaders(&app->rndr, shdr_pool, &ctxt->arenas.stack);
     
