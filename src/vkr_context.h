@@ -101,6 +101,17 @@ struct vk_arenas
     mem_arena *command_arena{};
 };
 
+enum vkr_log_info_flag
+{
+    VKR_LOG_INFO_NONE = 0,
+    VKR_LOG_INFO_AVAILABLE_DEVICE_EXT_BIT = (1 << 0),
+    VKR_LOG_INFO_AVAILABLE_INST_EXT_BIT = (1 << 1),
+    VKR_LOG_INFO_AVAILABLE_VALIDATION_LAYERS_BIT = (1 << 2),
+    VKR_LOG_INFO_ALL =
+        VKR_LOG_INFO_AVAILABLE_DEVICE_EXT_BIT | VKR_LOG_INFO_AVAILABLE_INST_EXT_BIT | VKR_LOG_INFO_AVAILABLE_VALIDATION_LAYERS_BIT,
+};
+using vkr_log_info_flags = u8;
+
 struct vkr_buffer_cfg
 {
     sizet buffer_size;
@@ -485,6 +496,7 @@ struct vkr_cfg
     int log_verbosity;
     void *window;
     VkInstanceCreateFlags inst_create_flags;
+    vkr_log_info_flags li_flags{VKR_LOG_INFO_ALL};
 
     // Array of additional instance extension names - besides defaults determined by window
     const char *const *extra_instance_extension_names;
@@ -524,17 +536,21 @@ int vkr_select_best_graphics_physical_device(const vkr_context *vk, vkr_phys_dev
 
 // Enumerate (log) the available extensions - if an extension is included in the passed in array then it will be
 // indicated as such
-void vkr_enumerate_instance_extensions(const char *const *enabled_extensions, u32 enabled_extension_count, const vk_arenas *arenas);
+void vkr_enumerate_instance_extensions(const char *const *enabled_extensions,
+                                       u32 enabled_extension_count,
+                                       const vk_arenas *arenas,
+                                       bool log_available);
 
 // Enumerate (log) the available device extensions
 void vkr_enumerate_device_extensions(const vkr_phys_device *pdevice,
                                      const char *const *enabled_extensions,
                                      u32 enabled_extension_count,
-                                     const vk_arenas *arenas);
+                                     const vk_arenas *arenas,
+                                     bool log_available);
 
 // Enumerate (log) the available layers - if an extension is included in the passed in array then it will be
 // indicated as such
-void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas);
+void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas, bool log_available);
 
 // Descriptor Pools
 int vkr_init_desc_pool(VkDescriptorPool *hndl, const vkr_desc_cfg &cfg, const vkr_context *vk);

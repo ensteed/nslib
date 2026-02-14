@@ -46,6 +46,7 @@ struct rshader_stage_desc {
 };
 
 struct rshader_desc {
+    const char *name;
     rshader_stage_desc *stages;
     u8 stage_cnt;
 };
@@ -225,6 +226,7 @@ struct rmaterial_info
 {};
 
 struct rshader_info {
+    small_str name;
     VkShaderModule sm[RSHADER_STAGE_TYPE_COUNT]{};
 };
 

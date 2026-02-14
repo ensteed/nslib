@@ -114,11 +114,10 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *s
     geom->rhndl = create_rgeometry(rndr, cinf);
     bool result = is_valid(geom->rhndl);
     if (result) {
-        ilog("Uploaded geometry to renderer for %s", ls(geom->name));
-        
+        ilog("Uploaded %s to renderer for %s", geom->type_str, ls(geom->name));
     }
     else {
-        wlog("Could not upload geometry to renderer for %s", ls(geom->name));
+        wlog("Could not upload %s to renderer for %s", geom->type_str, ls(geom->name));
     }
     mem_free(tmp_inds, scratch);
     mem_free(tmp_bone_weight_ids, scratch);
@@ -149,18 +148,47 @@ void upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch)
         ctinfo.format = get_rformat_for_usage(iter.item->usage);
         iter.item->rndr_hndl = create_rtexture(rndr, ctinfo);
         if (is_valid(iter.item->rndr_hndl)) {
-            ilog("Uploaded texture %s to renderer", ls(iter.item->name));
+            ilog("Uploaded %s %s to renderer", iter.item->type_str, ls(iter.item->name));
         }
         else {
-            wlog("Failed to upload texture %s to renderer", ls(iter.item->name));
+            wlog("Failed to upload %s %s to renderer", iter.item->type_str, ls(iter.item->name));
         }
     }
 }
 
-void upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch)
+// All we need to do currently is cast it!
+intern rshader_stage_type get_renderer_shader_stage_type(shader_stage_type st)
 {
-    ilog("Todo");
+    return (rshader_stage_type)st;
 }
 
+void upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch)
+{
+    for (auto iter = asset_pool_begin(shdr_pool); is_valid(iter); iter = asset_pool_next(shdr_pool, iter)) {
+        rshader_desc rd{};
+        rd.name = ls(iter.item->name);
+
+        array<rshader_stage_desc> stages(iter.item->stages.size, scratch);
+        arr_resize(&stages, iter.item->stages.size);
+        for (sizet i = 0; i < stages.size; ++i) {
+            auto cur_s = &stages[i];
+            auto src_s = &iter.item->stages[i];
+            cur_s->src_byte_size = src_s->src.size;
+            cur_s->src = src_s->src.data;
+            cur_s->entry_point = src_s->entry_point;
+            cur_s->stype = get_renderer_shader_stage_type(src_s->stype);
+        }
+        rd.stage_cnt = stages.size;
+        rd.stages = stages.data;
+
+        iter.item->gpu_hndl = create_rshader(rndr, rd);
+        if (is_valid(iter.item->gpu_hndl)) {
+            ilog("Uploaded %s %s to renderer", iter.item->type_str, ls(iter.item->name));
+        }
+        else {
+            wlog("Failed to upload %s %s to renderer", iter.item->type_str, ls(iter.item->name));
+        }
+    }
+}
 
 } // namespace nslib

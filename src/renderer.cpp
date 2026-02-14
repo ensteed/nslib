@@ -191,12 +191,12 @@ intern void fill_default_pipeline_config(vkr_pipeline_cfg *cfg, renderer *rndr)
     cfg->layout_hndl = rndr->g_layout;
 }
 
-intern bool destroy_geometry(rgeom_ref gref, renderer *rndr)
+intern void terminate_geometry(renderer *rndr, rgeom_info *gref)
 {
-    vmaVirtualFree(gref.item->vert_block, gref.item->vert_mem);
-    vmaVirtualFree(gref.item->ind_block, gref.item->ind_mem);
-    *gref.item = {};
-    return release_slot(&rndr->geometry, gref.hndl);
+    ilog("Terminating geometry %s", gref->name);
+    vmaVirtualFree(gref->vert_block, gref->vert_mem);
+    vmaVirtualFree(gref->ind_block, gref->ind_mem);
+    *gref = {};
 }
 
 intern int record_command_buffer(renderer *rndr, vkr_framebuffer *, frame_context *cur_frame)
@@ -499,11 +499,13 @@ intern bool fill_geometry_layout_entry(geom_buffer_layout_entry *layout,
     return !failed;
 }
 
-intern void release_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
+intern void terminate_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
 {
+    ilog("Terminating geometry stream group %s (%lu)", gp->indice_stream.name, gp->id);
     for (u32 i = 0; i < gp->layouts.size; ++i) {
         vmaDestroyVirtualBlock(gp->layouts[i].vert_block);
         for (u32 bufi = 0; bufi < gp->layouts[i].vert_streams.size; ++bufi) {
+            ilog("Terminating vert stream %s", gp->layouts[i].vert_streams[bufi].name);
             vkr_terminate_buffer(&gp->layouts[i].vert_streams[bufi].buffer, vk);
         }
     }
@@ -514,10 +516,11 @@ intern void release_geometry_stream_group(geom_streams_group *gp, const vkr_cont
 
 intern void terminate_framebuffers_with_image(renderer *rndr, VkImageView iv)
 {
+    ilog("Destroying framebuffers for image view %p", iv);
     for (auto sliter = slot_pool_begin(&rndr->fb_cache.items); is_valid(sliter); sliter = slot_pool_next(&rndr->fb_cache.items, sliter)) {
         // If it had one, we delete it and continue, otherwise we leave it alone and continue
         if (arr_find(&sliter.item->gpu_d.kd.atts, iv)) {
-            ilog("Destroying framebuffer %p for image view %p", sliter.item->gpu_d.hndl, iv);
+            ilog("-> destroying framebuffer %p", sliter.item->gpu_d.hndl, iv);
             vkr_terminate_framebuffer(&sliter.item->gpu_d, &rndr->vk);
             hmap_remove(&rndr->fb_cache.key_lut, sliter.item->key);
             release_slot(&rndr->fb_cache.items, sliter.hndl);
@@ -635,6 +638,7 @@ intern int init_frame_contexts(renderer *rndr, sizet thread_cnt)
 
 intern void terminate_frame_contexts(renderer *rndr)
 {
+    ilog("Terminating frame contexts");
     auto dev = &rndr->vk.inst.device;
     for (u32 framei = 0; framei < rndr->fifs.size; ++framei) {
         auto cur_fif = &rndr->fifs[framei];
@@ -734,7 +738,7 @@ intern int init_global_descriptor_set_layouts(renderer *rndr)
 intern void terminate_global_descriptor_set_layouts(renderer *rndr)
 {
     // Terminate our default descriptor layout sets
-    dlog("Should be terminating %d layouts", rndr->set_layouts.size);
+    ilog("Terminating %d global desc set layouts", rndr->set_layouts.size);
     vkr_terminate_desc_set_layouts(rndr->set_layouts.data, rndr->set_layouts.size, &rndr->vk);
     arr_clear(&rndr->set_layouts);
 }
@@ -785,20 +789,22 @@ intern void init_geometry_stream_groups(renderer *rndr)
 
 intern void terminate_geometry_stream_groups(renderer *rndr)
 {
+    ilog("Terminating geometry stream groups");
     // Remove source geometry buffers
     for (u32 i = 0; i < rndr->geom_groups.size; ++i) {
-        release_geometry_stream_group(&rndr->geom_groups[i], &rndr->vk);
+        terminate_geometry_stream_group(&rndr->geom_groups[i], &rndr->vk);
     }
     rndr->geom_groups.size = 0;
     hmap_terminate(&rndr->geom_group_id_map);
 }
 
-intern void terminate_shader(renderer *rndr, rshader_ref ref)
+intern void terminate_shader(renderer *rndr, rshader_info* shdr)
 {
+    ilog("Terminating shader %s", shdr->name);
     for (u8 t = 0; t < RSHADER_STAGE_TYPE_COUNT; ++t) {
-        vkr_terminate_shader_module(ref.item->sm[t], &rndr->vk);
-        ref.item->sm[t] = VK_NULL_HANDLE;
+        vkr_terminate_shader_module(shdr->sm[t], &rndr->vk);
     }
+    *shdr = {};
 }
 
 intern void init_render_resources(renderer *rndr)
@@ -810,18 +816,31 @@ intern void init_render_resources(renderer *rndr)
     init_slot_pool(&rndr->geometry, MAX_GEOM_COUNT, &rndr->persist_fl);
 }
 
+intern void terminate_texture(renderer *rndr, rtexture_info *im)
+{
+    ilog("Terminating texture %s", im->name);
+    vkr_terminate_image(&im->im, &rndr->vk);
+    vkr_terminate_image_view(im->im_view, &rndr->vk);
+    *im = {};
+}
+
 intern void terminate_render_resources(renderer *rndr)
 {
+    ilog("Terminating render resources (%lu geoms, %lu textures, %lu mats, %lu techniques, %lu shdrs)",
+         rndr->geometry.used_count,
+         rndr->textures.used_count,
+         rndr->materials.used_count,
+         rndr->techniques.used_count,
+         rndr->shaders.used_count);
     // Geometries
     for (auto iter = slot_pool_begin(&rndr->geometry); is_valid(iter); iter = slot_pool_next(&rndr->geometry, iter)) {
-        destroy_geometry(iter, rndr);
+        terminate_geometry(rndr, iter.item);
     }
     terminate_slot_pool(&rndr->geometry);
 
     // Terminate all images and image views
     for (auto iter = slot_pool_begin(&rndr->textures); is_valid(iter); iter = slot_pool_next(&rndr->textures, iter)) {
-        vkr_terminate_image(&iter.item->im, &rndr->vk);
-        vkr_terminate_image_view(iter.item->im_view, &rndr->vk);
+        terminate_texture(rndr, iter.item);
     }
     terminate_slot_pool(&rndr->textures);
 
@@ -839,7 +858,7 @@ intern void terminate_render_resources(renderer *rndr)
 
     // Shaders
     for (auto iter = slot_pool_begin(&rndr->shaders); is_valid(iter); iter = slot_pool_next(&rndr->shaders, iter)) {
-        terminate_shader(rndr, iter);
+        terminate_shader(rndr, iter.item);
     }
     terminate_slot_pool(&rndr->shaders);
 }
@@ -861,6 +880,7 @@ intern int init_global_pipeline_layout(renderer *rndr)
 
 intern void terminate_global_pipeline_layout(renderer *rndr)
 {
+    ilog("Terminating pipeline layout");
     vkr_terminate_pipeline_layout(rndr->g_layout, &rndr->vk);
 }
 
@@ -913,6 +933,7 @@ intern void init_blueprints(renderer *rndr)
 
 intern void terminate_blueprints(renderer *rndr)
 {
+    ilog("Terminating render blueprints");
     while (!slot_pool_empty(&rndr->blueprints)) {
         destroy_render_blueprint(rndr, slot_pool_begin(&rndr->blueprints).hndl);
     }
@@ -937,6 +958,7 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
                  .log_verbosity = LOG_DEBUG,
                  .window = p.win_hndl,
                  .inst_create_flags = INST_CREATE_FLAGS,
+                 .li_flags = VKR_LOG_INFO_NONE,
                  .extra_instance_extension_names = ADDITIONAL_INST_EXTENSIONS,
                  .extra_instance_extension_count = ADDITIONAL_INST_EXTENSION_COUNT,
                  .device_extension_names = DEVICE_EXTENSIONS,
@@ -947,8 +969,6 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
     if (result != err_code::VKR_NO_ERROR) {
         return err_code::RENDER_INIT_FAIL;
     }
-
-    // Swapchain image handling...
 
     // Blueprints
     init_blueprints(rndr);
@@ -1117,7 +1137,7 @@ u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc 
     }
 
     if (failed) {
-        release_geometry_stream_group(cur_group, &rndr->vk);
+        terminate_geometry_stream_group(cur_group, &rndr->vk);
         --rndr->geom_groups.size;
         return INVALID_ID;
     }
@@ -1193,7 +1213,8 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     s32 result = vmaVirtualAllocate(geom_ref.item->vert_block, &alloc_ci, &geom_ref.item->vert_mem, &vert_stream_byte_offset);
     if (result != err_code::VKR_NO_ERROR) {
         wlog("Vma virtual allocate for vert stream failed with code %d", result);
-        asrt(destroy_geometry(geom_ref, rndr));
+        terminate_geometry(rndr, geom_ref.item);
+        asrt(release_slot(&rndr->geometry, geom_ref.hndl));
         return {};
     }
     asrt(vert_stream_byte_offset % alloc_ci.alignment == 0);
@@ -1206,7 +1227,8 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     result = vmaVirtualAllocate(geom_ref.item->ind_block, &alloc_ci, &geom_ref.item->ind_mem, &ind_stream_byte_offset);
     if (result != err_code::VKR_NO_ERROR) {
         wlog("Vma virtual allocate indices stream failed with code %d", result);
-        asrt(destroy_geometry(geom_ref, rndr));
+        terminate_geometry(rndr, geom_ref.item);
+        asrt(release_slot(&rndr->geometry, geom_ref.hndl));
         return {};
     }
     asrt(ind_stream_byte_offset % alloc_ci.alignment == 0);
@@ -1217,7 +1239,8 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
         wlog("Failed to create command buffer - error code: %d", result);
-        asrt(destroy_geometry(geom_ref, rndr));
+        terminate_geometry(rndr, geom_ref.item);
+        asrt(release_slot(&rndr->geometry, geom_ref.hndl));
         return {};
     }
     VkQueue tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
@@ -1230,7 +1253,8 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
         result = vkr_stage_and_upload_buffer_data(
             &layout->vert_streams[streami].buffer, ci.vert_data[streami], &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
-            asrt(destroy_geometry(geom_ref, rndr));
+            terminate_geometry(rndr, geom_ref.item);
+            asrt(release_slot(&rndr->geometry, geom_ref.hndl));
             vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
             return {};
         }
@@ -1241,7 +1265,8 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     region.dstOffset = geom_ref.item->ind_offset * sizeof(ind_t);
     result = vkr_stage_and_upload_buffer_data(&gp->indice_stream.buffer, ci.ind_data, &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
-        asrt(destroy_geometry(geom_ref, rndr));
+        terminate_geometry(rndr, geom_ref.item);
+        asrt(release_slot(&rndr->geometry, geom_ref.hndl));
         vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
         geom_ref = {};
     }
@@ -1319,11 +1344,12 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
         return {};
     }
     rshader_ref sref = acquire_slot(&rndr->shaders);
+    strncpy(sref.item->name, sdr_info.name, SMALL_STR_LEN - 1);
     for (u8 i = 0; i < sdr_info.stage_cnt; ++i) {
         auto shdr_mod = &sref.item->sm[sdr_info.stages[i].stype];
         s32 result = vkr_init_shader_module(shdr_mod, sdr_info.stages[i].src, sdr_info.stages[i].src_byte_size, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
-            terminate_shader(rndr, sref);
+            terminate_shader(rndr, sref.item);
             release_slot(&rndr->shaders, sref.hndl);
             return {};
         }

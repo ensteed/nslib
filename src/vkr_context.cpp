@@ -8,8 +8,12 @@
 #define PRINT_MEM_DEBUG false
 #define PRINT_MEM_INSTANCE_ONLY false
 #define PRINT_MEM_OBJECT_ONLY true
-
 #define PRINT_MEM_GPU_ALLOC false
+
+#define vk_elog(args...) elog(args)
+#define vk_wlog(args...) wlog(args)
+#define vk_dlog(args...) // dlog
+#define vk_tlog(args...) tlog(args)
 
 namespace nslib
 {
@@ -236,7 +240,8 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
 void vkr_enumerate_device_extensions(const vkr_phys_device *pdevice,
                                      const char *const *enabled_extensions,
                                      u32 enabled_extension_count,
-                                     const vk_arenas *arenas)
+                                     const vk_arenas *arenas,
+                                     bool log_available)
 {
     u32 extension_count{0};
     ilog("Enumerating device extensions...");
@@ -254,11 +259,19 @@ void vkr_enumerate_device_extensions(const vkr_phys_device *pdevice,
                 ext_enabled = true;
             }
         }
-        ilog("Device Ext:%s  SpecVersion:%d  Enabled:%s", ext_array[i].extensionName, ext_array[i].specVersion, ext_enabled ? "true" : "false");
+        if (log_available) {
+            ilog("Device Ext:%s  SpecVersion:%d  Enabled:%s",
+                 ext_array[i].extensionName,
+                 ext_array[i].specVersion,
+                 ext_enabled ? "true" : "false");
+        }
     }
 }
 
-void vkr_enumerate_instance_extensions(const char *const *enabled_extensions, u32 enabled_extension_count, const vk_arenas *arenas)
+void vkr_enumerate_instance_extensions(const char *const *enabled_extensions,
+                                       u32 enabled_extension_count,
+                                       const vk_arenas *arenas,
+                                       bool log_available)
 {
     u32 extension_count{0};
     ilog("Enumerating instance extensions...");
@@ -276,11 +289,16 @@ void vkr_enumerate_instance_extensions(const char *const *enabled_extensions, u3
                 ext_enabled = true;
             }
         }
-        ilog("Inst Ext:%s  SpecVersion:%d  Enabled:%s", ext_array[i].extensionName, ext_array[i].specVersion, ext_enabled ? "true" : "false");
+        if (log_available) {
+            ilog("Inst Ext:%s  SpecVersion:%d  Enabled:%s",
+                 ext_array[i].extensionName,
+                 ext_array[i].specVersion,
+                 ext_enabled ? "true" : "false");
+        }
     }
 }
 
-void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas)
+void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas, bool log_available)
 {
     u32 layer_count{0};
     ilog("Enumerating vulkan validation layers...");
@@ -299,12 +317,14 @@ void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enab
                 enabled = true;
             }
         }
-        ilog("Layer:%s  Desc:\"%s\"  ImplVersion:%d  SpecVersion:%d  Enabled:%s",
-             layer_array[i].layerName,
-             layer_array[i].description,
-             layer_array[i].implementationVersion,
-             layer_array[i].specVersion,
-             enabled ? "true" : "false");
+        if (log_available) {
+            ilog("Layer:%s  Desc:\"%s\"  ImplVersion:%d  SpecVersion:%d  Enabled:%s",
+                 layer_array[i].layerName,
+                 layer_array[i].description,
+                 layer_array[i].implementationVersion,
+                 layer_array[i].specVersion,
+                 enabled ? "true" : "false");
+        }
     }
 }
 
@@ -316,16 +336,16 @@ intern VkBool32 VKAPI_PTR debug_message_callback(VkDebugUtilsMessageSeverityFlag
     int cur = logging_level(GLOBAL_LOGGER);
     set_logging_level(GLOBAL_LOGGER, *((int *)user));
     if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        elog("Vk: %s", data->pMessage);
+        vk_elog("Vk (%#b): %s", types, data->pMessage);
     }
     else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        wlog("Vk: %s", data->pMessage);
+        vk_wlog("Vk (%#b): %s", types, data->pMessage);
     }
     else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        dlog("Vk: %s", data->pMessage);
+        vk_dlog("Vk (%#b): %s", types, data->pMessage);
     }
     else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
-        tlog("Vk: %s", data->pMessage);
+        vk_tlog("Vk (%#b): %s", types, data->pMessage);
     }
     set_logging_level(GLOBAL_LOGGER, cur);
     return VK_FALSE;
@@ -390,8 +410,11 @@ int vkr_init_instance(const vkr_context *vk, vkr_instance *inst)
     fill_debug_ext_create_info(&dbg_ci, (void *)&vk->cfg.log_verbosity);
 
     u32 total_exts = ext_count + vk->cfg.extra_instance_extension_count;
-    vkr_enumerate_instance_extensions(ext, total_exts, &vk->cfg.arenas);
-    vkr_enumerate_validation_layers(vk->cfg.validation_layer_names, vk->cfg.validation_layer_count, &vk->cfg.arenas);
+    vkr_enumerate_instance_extensions(ext, total_exts, &vk->cfg.arenas, test_flags(vk->cfg.li_flags, VKR_LOG_INFO_AVAILABLE_INST_EXT_BIT));
+    vkr_enumerate_validation_layers(vk->cfg.validation_layer_names,
+                                    vk->cfg.validation_layer_count,
+                                    &vk->cfg.arenas,
+                                    test_flags(vk->cfg.li_flags, VKR_LOG_INFO_AVAILABLE_VALIDATION_LAYERS_BIT));
 
     create_inf.pNext = &dbg_ci;
     VkValidationFeatureEnableEXT enabled[] = {VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT};
@@ -949,7 +972,8 @@ void vkr_terminate_cmd_pool(VkCommandPool hndl, const vkr_context *vk)
     vkDestroyCommandPool(vk->inst.device.hndl, hndl, &vk->alloc_cbs);
 }
 
-int vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, const vkr_context *vk) {
+int vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, const vkr_context *vk)
+{
     VkShaderModuleCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     create_info.codeSize = code_byte_size;
@@ -1454,7 +1478,7 @@ int vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg)
     alloc_info.preferredFlags = cfg.preferred_flags;
     alloc_info.priority = cfg.priority;
     alloc_info.pUserData = cfg.user_data;
-    
+
     image->format = cinfo.format;
     image->dims = cfg.dims;
 
@@ -1693,7 +1717,11 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     }
 
     // Log out the device extensions
-    vkr_enumerate_device_extensions(&vk->inst.pdev_info, cfg->device_extension_names, cfg->device_extension_count, &vk->cfg.arenas);
+    vkr_enumerate_device_extensions(&vk->inst.pdev_info,
+                                    cfg->device_extension_names,
+                                    cfg->device_extension_count,
+                                    &vk->cfg.arenas,
+                                    test_flags(cfg->li_flags, VKR_LOG_INFO_AVAILABLE_DEVICE_EXT_BIT));
     code = vkr_init_device(&vk->inst.device,
                            vk,
                            cfg->validation_layer_names,
