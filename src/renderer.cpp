@@ -1357,9 +1357,53 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
     return sref.hndl;
 }
 
+void terminate_rtechnique(renderer *rndr, rtechnique_info *info) {
+    ilog("Terminating technique %s with %lu pass pipelines", info->name, info->rpass_plines.size);
+    for (u32 i = 0; i < info->rpass_plines.size; ++i) {
+        vkr_terminate_pipeline((VkPipeline)info->rpass_plines[i].pline, &rndr->vk);
+    }
+}
+
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo)
 {
-    vkr_pipeline_cfg cfg{};
+    if (ctinfo.pass_count == 0) {
+        return {};
+    }
+    rtechnique_ref rtech = acquire_slot(&rndr->techniques);
+    strncpy(rtech.item->name, ctinfo.name, SMALL_STR_LEN-1);
+
+    for (u32 i = 0; i < ctinfo.pass_count; ++i) {
+        auto cur_desc = &ctinfo.passes[i];
+
+        auto rbp_bp = get_render_blueprint(rndr, cur_desc->bp_info.bp);
+        if (!rbp_bp) {
+            wlog("Invlaid render blueprint for pass %d of %s", cur_desc->bp_info.pid, ctinfo.name);
+            terminate_rtechnique(rndr, rtech.item);
+            release_slot(&rndr->techniques, rtech.hndl);
+            return {};
+        }
+        
+        vkr_pipeline_cfg cfg{};
+        cfg.dynamic_states = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR,
+            VK_DYNAMIC_STATE_DEPTH_BIAS,
+            VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+            VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+            VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+            VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+            VK_DYNAMIC_STATE_CULL_MODE,
+            VK_DYNAMIC_STATE_FRONT_FACE,
+            VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
+            VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
+            VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
+            VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE,
+            VK_DYNAMIC_STATE_STENCIL_OP
+        };
+        cfg.dynamic_states.size = 14;
+        
+    }
+    
 
     return {};
 }
