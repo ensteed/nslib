@@ -11,6 +11,49 @@ struct renderer;
 struct rbuffer_target_fif;
 struct rtexture_target_fif;
 
+struct rstencil_op_state
+{
+    rstencil_op on_fail;
+    rstencil_op on_pass;
+    rstencil_op on_depth_fail;
+    rcompare_op comp;
+    u32 comp_mask;
+    u32 write_mask;
+    u32 ref;
+};
+
+struct rdepth_bias
+{
+    float const_factor;
+    float slope_factor;
+    float clamp;
+};
+
+enum rtechnique_dyn_state_flag
+{
+    RTECHNIQUE_DYN_STATE_FLAG_CULL_BACK = RTECHNIQUE_FLAG_CULL_BACK,
+    RTECHNIQUE_DYN_STATE_FLAG_CULL_FRONT = RTECHNIQUE_FLAG_CULL_FRONT,
+    RTECHNIQUE_DYN_STATE_FLAG_STENCIL_TEST = RTECHNIQUE_FLAG_STENCIL_TEST,
+};
+using rtechnique_dyn_state_flags = u32;
+
+struct rtechnique_dyn_state
+{
+    rtechnique_dyn_state_flags dflags;
+    rstencil_op_state stencil_front;
+    rstencil_op_state stencil_back;
+    rdepth_bias depth_b;
+    vec4 blend_ops;
+    // Should almost never be set to something different
+    rfront_face_winding ffw{DEFAULT_FRONT_FACE_WINDING};
+};
+
+struct rtechnique_draw_info
+{
+    rtechnique_handle hndl;
+    rtechnique_dyn_state dstate;
+};
+
 struct rtexture_assignment
 {
     u32 unit;
@@ -21,10 +64,10 @@ struct mdraw_params
 {
     rgeom_handle geom;
     rmaterial_handle mat;
-    rtechnique_handle technique;
+    rtechnique_draw_info technique;
     const rtexture_assignment *tex_assignments;
     sizet tex_assignment_count;
-    instance_id iid;
+    instance_idx iid;
 };
 
 struct mdraw_call
@@ -33,7 +76,7 @@ struct mdraw_call
     rmaterial_handle mat;
     gpu_handle pipeline;
     static_array<rtexture_handle, RMATERIAL_TEXTURE_COUNT> textures;
-    instance_id iid;
+    instance_idx iid;
     // Mostly for UI
     vec4 scissor_override{};
 };
@@ -171,7 +214,7 @@ struct mpass
 {
     // These need to match exactly in size with the rbp slot count
     static_array<mpass_slot_assignment, MAX_BP_PASS_SLOT_COUNT> slot_assignments;
-    rbp_pass_id rbp_pid;
+    rbp_pass_idx rbp_pid;
 
     // Coordinates x,y and width/height of the render area normalized to the framebuffer size
     // Anything outside this area has no render operation
@@ -215,8 +258,8 @@ using render_job_cb = void(const render_job_cb_params &, void *user);
 
 struct mrender_job
 {
-    mpass_id pid;
-    mview_id vid;
+    mpass_idx pid;
+    mview_idx vid;
     array<mdraw_call> draw_calls;
     render_job_cb *cb;
     void *cb_user;
@@ -240,19 +283,19 @@ struct rmanifest
     array<mrender_job> jobs;
 };
 
-mpass_id push_pass(rmanifest *m,
-                   rbp_pass_id pid,
-                   const rect &norm_render_area = {0.0f, 0.0f, 1.0f, 1.0f},
-                   mpass_slot_assignment *assignments = nullptr,
-                   sizet assignment_count = 0);
-mpass_id push_pass(rmanifest *m,
-                   rbp_pass_id pid,
-                   const srect &render_area,
-                   mpass_slot_assignment *assignments = nullptr,
-                   sizet assignment_count = 0);
-u32 push_slot_assignment(rmanifest *m, mpass_id pid, const mpass_slot_assignment &sa);
-mview_id push_view(rmanifest *m, const mview &view);
-mrender_job_id push_render_job(rmanifest *m, mpass_id pass, mview_id view, render_job_cb *cb, void *cb_params);
+mpass_idx push_pass(rmanifest *m,
+                    rbp_pass_idx pid,
+                    const rect &norm_render_area = {0.0f, 0.0f, 1.0f, 1.0f},
+                    mpass_slot_assignment *assignments = nullptr,
+                    sizet assignment_count = 0);
+mpass_idx push_pass(rmanifest *m,
+                    rbp_pass_idx pid,
+                    const srect &render_area,
+                    mpass_slot_assignment *assignments = nullptr,
+                    sizet assignment_count = 0);
+u32 push_slot_assignment(rmanifest *m, mpass_idx pid, const mpass_slot_assignment &sa);
+mview_idx push_view(rmanifest *m, const mview &view);
+mrender_job_idx push_render_job(rmanifest *m, mpass_idx pass, mview_idx view, render_job_cb *cb, void *cb_params);
 u32 push_draw(rmanifest *m, const mdraw_params &dp);
 
 } // namespace nslib

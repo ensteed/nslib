@@ -19,6 +19,10 @@
 
 #define set_flag_from_bool(bitmask, flag, boolval) ((boolval) ? set_flags(bitmask, flag) : unset_flags(bitmask, flag))
 
+#define make_flag(val) (1 << val)
+
+#define ARR_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
 #define intern static
 
 #define SMALL_STR_LEN 24

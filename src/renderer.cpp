@@ -499,7 +499,7 @@ intern bool fill_geometry_layout_entry(geom_buffer_layout_entry *layout,
     return !failed;
 }
 
-intern void terminate_geometry_stream_group(geom_streams_group *gp, const vkr_context *vk)
+intern void terminate_geometry_stream_group(geom_stream_group *gp, const vkr_context *vk)
 {
     ilog("Terminating geometry stream group %s (%lu)", gp->indice_stream.name, gp->id);
     for (u32 i = 0; i < gp->layouts.size; ++i) {
@@ -798,11 +798,11 @@ intern void terminate_geometry_stream_groups(renderer *rndr)
     hmap_terminate(&rndr->geom_group_id_map);
 }
 
-intern void terminate_shader(renderer *rndr, rshader_info* shdr)
+intern void terminate_shader(renderer *rndr, rshader_info *shdr)
 {
     ilog("Terminating shader %s", shdr->name);
     for (u8 t = 0; t < RSHADER_STAGE_TYPE_COUNT; ++t) {
-        vkr_terminate_shader_module(shdr->sm[t], &rndr->vk);
+        vkr_terminate_shader_module(shdr->stages[t].sm, &rndr->vk);
     }
     *shdr = {};
 }
@@ -1090,7 +1090,7 @@ void terminate_renderer(renderer *rndr)
     terminate_arena(&rndr->persist_fl);
 }
 
-u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
+geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
     asrt(desc.layouts.size > 0);
@@ -1144,6 +1144,15 @@ u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc 
     cur_group->id = hash_type(cur_group->indice_stream.name);
     hmap_insert(&rndr->geom_group_id_map, cur_group->id, geom_id);
     return geom_id;
+}
+
+#define get_idx_item(array, id) is_valid(id) ? &array[id] : nullptr
+#define get_idxn_item(array, id, n) (id < n) ? &array[id] : nullptr
+#define get_idxn_arr_item(array, id) get_idxn_item(array, id, array.size)
+
+const geom_stream_group *get_geometry_stream_group(const renderer *rndr, geom_stream_group_idx gid)
+{
+    return get_idx_item(rndr->geom_groups, gid);
 }
 
 geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count)
@@ -1346,18 +1355,26 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
     rshader_ref sref = acquire_slot(&rndr->shaders);
     strncpy(sref.item->name, sdr_info.name, SMALL_STR_LEN - 1);
     for (u8 i = 0; i < sdr_info.stage_cnt; ++i) {
-        auto shdr_mod = &sref.item->sm[sdr_info.stages[i].stype];
-        s32 result = vkr_init_shader_module(shdr_mod, sdr_info.stages[i].src, sdr_info.stages[i].src_byte_size, &rndr->vk);
+        auto cur_desc = &sdr_info.stages[i];
+        auto cur_st = &sref.item->stages[cur_desc->stype];
+
+        s32 result = vkr_init_shader_module(&cur_st->sm, cur_desc->src, cur_desc->src_byte_size, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
             terminate_shader(rndr, sref.item);
             release_slot(&rndr->shaders, sref.hndl);
             return {};
         }
+
+        strncpy(cur_st->entry_point, cur_desc->entry_point, SMALL_STR_LEN - 1);
+
+        // Might want to add stuff here in the future - for now, null
+        cur_st->specialized_info = nullptr;
     }
     return sref.hndl;
 }
 
-void terminate_rtechnique(renderer *rndr, rtechnique_info *info) {
+void terminate_rtechnique(renderer *rndr, rtechnique_info *info)
+{
     ilog("Terminating technique %s with %lu pass pipelines", info->name, info->rpass_plines.size);
     for (u32 i = 0; i < info->rpass_plines.size; ++i) {
         vkr_terminate_pipeline((VkPipeline)info->rpass_plines[i].pline, &rndr->vk);
@@ -1370,24 +1387,59 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinf
         return {};
     }
     rtechnique_ref rtech = acquire_slot(&rndr->techniques);
-    strncpy(rtech.item->name, ctinfo.name, SMALL_STR_LEN-1);
+    strncpy(rtech.item->name, ctinfo.name, SMALL_STR_LEN - 1);
 
     for (u32 i = 0; i < ctinfo.pass_count; ++i) {
         auto cur_desc = &ctinfo.passes[i];
-
         auto rbp_bp = get_render_blueprint(rndr, cur_desc->bp_info.bp);
-        if (!rbp_bp) {
-            wlog("Invlaid render blueprint for pass %d of %s", cur_desc->bp_info.pid, ctinfo.name);
-            terminate_rtechnique(rndr, rtech.item);
-            release_slot(&rndr->techniques, rtech.hndl);
-            return {};
-        }
-        
+        asrt(rbp_bp);
+
+        asrt(cur_desc->bp_info.pid < rbp_bp->passes.size);
+        auto rbp_pass = &rbp_bp->passes[cur_desc->bp_info.pid];
+        asrt(cur_desc->bp_info.subpass_ind < rbp_pass->subpasses.size);
+
+        auto shdr = get_slot_item(&rndr->shaders, cur_desc->shader);
+        asrt(shdr);
+
+        // Stream group stuff
+        geom_stream_group_idx geom_gp = find_geometry_stream_group(rndr, rbp_pass->geom_streams_group);
+        geom_stream_group *gsg = get_idxn_arr_item(rndr->geom_groups, geom_gp);
+        asrt(gsg);
+        asrt(cur_desc->geom_buffer_layout < gsg->layouts.size);
+        auto vert_layout = get_idxn_arr_item(gsg->layouts, cur_desc->geom_buffer_layout);
+        asrt(vert_layout);
+
         vkr_pipeline_cfg cfg{};
-        cfg.dynamic_states = {
+        cfg.rpass = (VkRenderPass)rbp_pass->vk_handle;
+        cfg.subpass = cur_desc->bp_info.subpass_ind;
+        cfg.vert_desc = vert_layout->vert_layout;
+        cfg.layout_hndl = rndr->g_layout;
+
+        ////////////////////
+        // Shader Modules //
+        ////////////////////
+        vkr_pipeline_cfg_shader_stage stages[RSHADER_STAGE_TYPE_COUNT];
+        cfg.stage_cnt = 0;
+        for (u32 i = 0; i < RSHADER_STAGE_TYPE_COUNT; ++i) {
+            if (shdr->stages[i].sm != VK_NULL_HANDLE) {
+                auto stype = (rshader_stage_type)i;
+                ++cfg.stage_cnt;
+                stages[i].stage = get_vk_shader_stage_flag_bit(stype);
+                stages[i].entry_point = shdr->stages[i].entry_point;
+                stages[i].module = shdr->stages[i].sm;
+                stages[i].specialized_info = shdr->stages[i].specialized_info;
+            }
+        }
+        cfg.stages = stages;
+
+        ////////////////////
+        // Dynamic States //
+        ////////////////////
+        VkDynamicState dyn_states[] = {
             VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR,
             VK_DYNAMIC_STATE_DEPTH_BIAS,
+            VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE,
             VK_DYNAMIC_STATE_BLEND_CONSTANTS,
             VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
             VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
@@ -1398,12 +1450,98 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinf
             VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
             VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
             VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE,
-            VK_DYNAMIC_STATE_STENCIL_OP
+            VK_DYNAMIC_STATE_STENCIL_OP,
         };
-        cfg.dynamic_states.size = 14;
-        
+        cfg.dynamic_states = dyn_states;
+        cfg.dynamic_state_count = ARR_SIZE(dyn_states);
+
+        //////////////
+        // Viewports //
+        //////////////
+        // Dynamic - don't care
+        cfg.viewports = nullptr;
+        // Fixed
+        cfg.vp_count = 1;
+
+        /////////////
+        // Scissor //
+        /////////////
+        // Dynamic - don't care
+        cfg.scissors = nullptr;
+        // Fixed
+        cfg.scissor_count = 1;
+
+        ////////////////////
+        // Input Assembly //
+        ////////////////////
+        cfg.input_assembly.primitive_restart_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_PRIMITIVE_RESTART_ENABLED);
+        cfg.input_assembly.primitive_topology = get_vk_prim_topoloty(cur_desc->topology);
+
+        /////////////////
+        // Tesselation //
+        /////////////////
+        cfg.tessellation.patch_control_points = cur_desc->tess_patch_control_points;
+
+        ///////////////////
+        // Rasterization //
+        ///////////////////
+        cfg.raster.depth_clamp_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_CLAMP_DEPTH);
+        cfg.raster.rasterizer_discard_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DISCARD_RASTERIZER);
+        cfg.raster.polygon_mode = get_vk_polygon_mode(cur_desc->poly_mode);
+        // Fixed
+        cfg.raster.line_width = 1.0f;
+        cfg.raster.depth_bias_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_BIAS);
+        // Dynamic - don't care
+        cfg.raster.cull_mode = VK_CULL_MODE_BACK_BIT;
+        // Dynamic - don't care
+        cfg.raster.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        // All of these valuess are dynamic - don't care
+        cfg.raster.depth_bias_constant_factor = 0.0f;
+        cfg.raster.depth_bias_slope_factor = 0.0f;
+        cfg.raster.depth_bias_clamp = 0.0f;
+
+        ///////////////
+        // Blending  //
+        ///////////////
+        // Dynmic - don't care
+        cfg.col_blend.blend_constants = {1.0f};
+        cfg.col_blend.logic_op = get_vk_logic_op(cur_desc->logic_op);
+        cfg.col_blend.logic_op_enabled = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_BLEND_LOGIC_OP);
+        cfg.col_blend.attachments.size = get_rbp_attachment_count(rbp_pass);
+        for (u32 i = 0; i < cfg.col_blend.attachments.size; ++i) {
+            auto cfg_att = &cfg.col_blend.attachments[i];
+            auto desc_att = &cur_desc->atts_blending[i];
+            cfg_att->blendEnable = desc_att->blend_enable;
+            // Directly converts - just typedeffed u32
+            cfg_att->colorWriteMask = desc_att->write_mask;
+
+            // Color op
+            cfg_att->colorBlendOp = get_vk_blend_op(desc_att->color.op);
+            cfg_att->srcColorBlendFactor = get_vk_blend_factor(desc_att->color.src);
+            cfg_att->dstColorBlendFactor = get_vk_blend_factor(desc_att->color.dst);
+
+            // Alpha op
+            cfg_att->alphaBlendOp = get_vk_blend_op(desc_att->alpha.op);
+            cfg_att->srcAlphaBlendFactor = get_vk_blend_factor(desc_att->alpha.src);
+            cfg_att->dstAlphaBlendFactor = get_vk_blend_factor(desc_att->alpha.dst);
+        }
+
+        ///////////////////
+        // Depth Stencil //
+        ///////////////////
+        cfg.depth_stencil.depth_test_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_TEST);
+        cfg.depth_stencil.depth_write_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_WRITE);
+        cfg.depth_stencil.depth_compare_op = get_vk_compare_op(cur_desc->depth_compare_op);
+        cfg.depth_stencil.depth_bounds_test_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_BOUNDS_TEST);
+        cfg.depth_stencil.min_depth_bounds = cur_desc->depth_bounds.x;
+        cfg.depth_stencil.max_depth_bounds = cur_desc->depth_bounds.y;
+        // Dynamic - don't care
+        cfg.depth_stencil.stencil_test_enable = false;
+        // Dynamic - don't care
+        cfg.depth_stencil.front = {};
+        // Dynamic - don't care
+        cfg.depth_stencil.back = {};
     }
-    
 
     return {};
 }
@@ -1760,7 +1898,7 @@ intern rbuffer_state get_updated_buffer_state(const rbp_pass &rbpp, const rbp_re
     return updated;
 }
 
-intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mrender_job_id rjid, VkCommandBuffer buf, u32 fif)
+intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mrender_job_idx rjid, VkCommandBuffer buf, u32 fif)
 {
     const mrender_job &rj = m->jobs[rjid];
     const mpass &mp = m->passes[rj.pid];

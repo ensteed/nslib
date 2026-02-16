@@ -1,5 +1,6 @@
 #pragma once
 #include "vkr_context.h"
+#include "render_defs.h"
 #include "rformat.h"
 
 namespace nslib
@@ -7,6 +8,7 @@ namespace nslib
 struct rbp_resource_requirement;
 struct mpass_clear_value;
 struct rbp_pass;
+struct rstencil_op_state;
 
 VkImageLayout get_vk_layout_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &req, bool is_final);
 VkAccessFlags get_vk_access_from_requirement(const rbp_pass &pass, const rbp_resource_requirement &r);
@@ -24,6 +26,17 @@ VkRect2D get_vk_rect(const urect &r);
 
 VkViewport get_vk_viewport(const rect &norm_vp, const vec2 &depth_min_max, const uvec2 &dims);
 VkViewport get_vk_viewport(const rect &vp, const vec2 &depth_min_max);
+
+VkLogicOp get_vk_logic_op(rlogic_op lop);
+VkBlendOp get_vk_blend_op(rblend_op lop);
+VkCompareOp get_vk_compare_op(rcompare_op cop);
+VkStencilOp get_vk_stencil_op(rstencil_op sop);
+VkBlendFactor get_vk_blend_factor(rblend_factor bf);
+VkShaderStageFlagBits get_vk_shader_stage_flag_bit(rshader_stage_type type);
+VkPrimitiveTopology get_vk_prim_topoloty(rgeom_topology gt);
+VkPolygonMode get_vk_polygon_mode(rpolygon_mode pm);
+VkFrontFace get_vk_front_face(rfront_face_winding ffw);
+void fill_vk_stencil_op_state(VkStencilOpState *to_fill, const rstencil_op_state &src);
 
 constexpr rformat get_rformat(VkFormat format)
 {
@@ -526,7 +539,8 @@ constexpr bool is_sint_type(VkFormat format)
     }
 }
 
-constexpr bool is_depth_stencil(VkFormat format) {
+constexpr bool is_depth_stencil(VkFormat format)
+{
     switch (format) {
     case VK_FORMAT_D16_UNORM:
     case VK_FORMAT_D32_SFLOAT:
@@ -649,6 +663,5 @@ constexpr sizet get_bytes_per_component(VkFormat format)
         return (sizet)-1;
     }
 }
-
 
 } // namespace nslib

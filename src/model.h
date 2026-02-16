@@ -44,25 +44,26 @@ struct texture
 enum raster_flag
 {
     RASTER_FLAG_NONE,
-    RASTER_FLAG_CULL_FRONT = (1 << 0),
-    RASTER_FLAG_CULL_BACK = (1 << 1),
-    RASTER_FLAG_DEPTH_TEST = (1 << 2),
-    RASTER_FLAG_DEPTH_WRITE = (1 << 3),
-    RASTER_FLAG_STENCIL_TEST = (1 << 4),
+    RASTER_FLAG_CULL_FRONT = make_flag(0),
+    RASTER_FLAG_CULL_BACK = make_flag(1),
+    RASTER_FLAG_DEPTH_TEST = make_flag(2),
+    RASTER_FLAG_DEPTH_WRITE = make_flag(3),
+    RASTER_FLAG_STENCIL_TEST = make_flag(4),
 };
 using raster_flags = u8;
 
 enum raster_state_flag
 {
     RASTER_STATE_NONE = 0,
-    RASTER_STATE_CULLING = (1 << 0),
-    RASTER_STATE_DEPTH_TEST = (1 << 1),
-    RASTER_STATE_DEPTH_WRITE = (1 << 2),
-    RASTER_STATE_DEPTH_MODE = (1 << 3),
-    RASTER_STATE_STENCIL_TEST = (1 << 4),
-    RASTER_STATE_STENCIL_MODE = (1 << 5),
+    RASTER_STATE_CULLING = make_flag(0),
+    RASTER_STATE_DEPTH_TEST = make_flag(1),
+    RASTER_STATE_DEPTH_WRITE = make_flag(2),
+    RASTER_STATE_DEPTH_MODE = make_flag(3),
+    RASTER_STATE_STENCIL_TEST = make_flag(4),
+    RASTER_STATE_STENCIL_MODE = make_flag(5),
+    RASTER_STATE_BLEND_CONSTANTS = make_flag(6),
     RASTER_STATE_ALL = (RASTER_STATE_CULLING | RASTER_STATE_DEPTH_TEST | RASTER_STATE_DEPTH_WRITE | RASTER_STATE_DEPTH_MODE |
-                        RASTER_STATE_STENCIL_TEST | RASTER_STATE_STENCIL_MODE),
+                        RASTER_STATE_STENCIL_TEST | RASTER_STATE_STENCIL_MODE | RASTER_STATE_BLEND_CONSTANTS),
 };
 using raster_state_flags = u8;
 
@@ -79,7 +80,9 @@ enum blend_mode
     BLEND_MODE_OPAQUE,
     BLEND_MODE_MASKED,
     BLEND_MODE_TRANSPARENT,
-    BLEND_MODE_ADDITIVE
+    BLEND_MODE_ADDITIVE,
+    // Used blend mode constants
+    BLEND_MODE_CONSTANT,
 };
 
 enum depth_mode
@@ -118,6 +121,8 @@ struct raster_state
     raster_flags rmask;
     stencil_mode sm;
     depth_mode dm;
+    // Only used by blend mode constant
+    vec4 blend_constants;
 };
 
 struct technique_pass
@@ -125,11 +130,10 @@ struct technique_pass
     asset_id shader;
     // Default state is provided for each material referencing this technique - we use these values unless the material
     // specifically overrides it
-    raster_state dflt_st{
-        .rmask = RASTER_FLAG_CULL_BACK | RASTER_FLAG_DEPTH_TEST | RASTER_FLAG_DEPTH_WRITE,
-        .sm = STENCIL_MODE_OFF,
-        .dm = DEPTH_MODE_NORMAL,
-    };
+    raster_state dflt_st{.rmask = RASTER_FLAG_CULL_BACK | RASTER_FLAG_DEPTH_TEST | RASTER_FLAG_DEPTH_WRITE,
+                         .sm = STENCIL_MODE_OFF,
+                         .dm = DEPTH_MODE_NORMAL,
+                         .blend_constants{1.0f}};
     // This is a mask of all raster properties that CAN be overridden
     raster_state_flags can_override{RASTER_STATE_ALL};
     blend_mode bm{BLEND_MODE_OPAQUE};
@@ -248,14 +252,14 @@ void release_ram_data(texture *tex);
 void terminate_asset(texture *tex);
 sizet get_texture_memsize(const texture *tex);
 u32 get_texture_layer_pixel_count(const texture *tex);
-const char* load_texture(texture *tex, const char *path);
+const char *load_texture(texture *tex, const char *path);
 
 // SHADER
 void init_asset(shader *shdr);
 void release_ram_data(shader *shdr);
 void terminate_asset(shader *shdr);
-const char* load_shader(shader *shdr, const char *path);
-const char* get_shader_stage_str(shader_stage_type stype);
+const char *load_shader(shader *shdr, const char *path);
+const char *get_shader_stage_str(shader_stage_type stype);
 
 // TECHNIQUE
 void init_asset(technique *tech);

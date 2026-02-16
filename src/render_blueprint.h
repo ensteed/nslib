@@ -170,7 +170,7 @@ struct render_blueprint
     small_str name{};
     rres_id id;
     static_array<rbp_pass, MAX_BP_PASS_COUNT> passes{};
-    hmap<rres_id, rbp_pass_id> pass_idmap{};
+    hmap<rres_id, rbp_pass_idx> pass_idmap{};
 };
 
 pup_func(render_blueprint)
@@ -189,15 +189,15 @@ inline bool is_valid(const rbp_resource_slot_info &si)
 u32 get_rbp_attachment_count(rbp_pass *rbp);
 bool is_usage_attachment(rbp_resource_usage usage);
 
-rbp_slot_id add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_slot_desc &desc);
-rbp_resource_req_id add_rbp_resource_requirement(render_blueprint *rbp,
-                                                 rbp_pass_id pid,
+rbp_slot_idx add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_idx pid, const rbp_resource_slot_desc &desc);
+rbp_resource_req_idx add_rbp_resource_requirement(render_blueprint *rbp,
+                                                 rbp_pass_idx pid,
                                                  const rbp_resource_requirement &req,
-                                                 rbp_subpass_id spid = 0);
-rbp_subpass_id add_rbp_subpass(render_blueprint *rbp, rbp_pass_id pid);
+                                                 rbp_subpass_idx spid = 0);
+rbp_subpass_idx add_rbp_subpass(render_blueprint *rbp, rbp_pass_idx pid);
 
-rbp_pass_id add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc);
-rbp_pass_id find_rbp_pass(render_blueprint *rbp, rres_id id);
+rbp_pass_idx add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc);
+rbp_pass_idx find_rbp_pass(render_blueprint *rbp, rres_id id);
 
 // Renderer takes ownership of blueprint
 render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name);

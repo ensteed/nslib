@@ -4,9 +4,9 @@
 namespace nslib
 {
 
-mpass_id push_pass_helper(rmanifest *m, rbp_pass_id pid, mpass_slot_assignment *assignments, sizet assignment_count)
+mpass_idx push_pass_helper(rmanifest *m, rbp_pass_idx pid, mpass_slot_assignment *assignments, sizet assignment_count)
 {
-    mpass_id pind = (mpass_id)m->passes.size;
+    mpass_idx pind = (mpass_idx)m->passes.size;
     arr_resize(&m->passes, pind + 1);
     m->passes[pind].rbp_pid = pid;
     if (assignment_count && assignment_count != 0) {
@@ -20,7 +20,7 @@ mpass_id push_pass_helper(rmanifest *m, rbp_pass_id pid, mpass_slot_assignment *
     return pind;
 }
 
-mpass_id push_pass(rmanifest *m, rbp_pass_id pid, const rect &norm_render_area, mpass_slot_assignment *assignments, sizet assignment_count)
+mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const rect &norm_render_area, mpass_slot_assignment *assignments, sizet assignment_count)
 {
     auto pind = push_pass_helper(m, pid, assignments, assignment_count);
     m->passes[pind].ra_size_mode = rect_size_mode::NORMALIZED;
@@ -28,7 +28,7 @@ mpass_id push_pass(rmanifest *m, rbp_pass_id pid, const rect &norm_render_area, 
     return pind;
 }
 
-mpass_id push_pass(rmanifest *m, rbp_pass_id pid, const srect &render_area, mpass_slot_assignment *assignments, sizet assignment_count) {
+mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const srect &render_area, mpass_slot_assignment *assignments, sizet assignment_count) {
     auto pind = push_pass_helper(m, pid, assignments, assignment_count);
     m->passes[pind].ra_size_mode = rect_size_mode::ABSOLUTE;
     m->passes[pind].render_area = render_area;
@@ -36,7 +36,7 @@ mpass_id push_pass(rmanifest *m, rbp_pass_id pid, const srect &render_area, mpas
     
 }
 
-u32 push_slot_assignment(rmanifest *m, mpass_id pid, const mpass_slot_assignment &sa)
+u32 push_slot_assignment(rmanifest *m, mpass_idx pid, const mpass_slot_assignment &sa)
 {
     // We cannot add more assignments than slots!
     auto bp = get_render_blueprint(m->rndr, m->rbp);
@@ -47,16 +47,16 @@ u32 push_slot_assignment(rmanifest *m, mpass_id pid, const mpass_slot_assignment
     return sa_ind;
 }
 
-mview_id push_view(rmanifest *m, const mview &view)
+mview_idx push_view(rmanifest *m, const mview &view)
 {
-    mview_id ind = (mview_id)m->views.size;
+    mview_idx ind = (mview_idx)m->views.size;
     arr_push_back(&m->views, view);
     return ind;
 }
 
-mrender_job_id push_render_job(rmanifest *m, mpass_id pass, mview_id view, render_job_cb *cb, void *cb_params)
+mrender_job_idx push_render_job(rmanifest *m, mpass_idx pass, mview_idx view, render_job_cb *cb, void *cb_params)
 {
-    mrender_job_id ind = (mrender_job_id)m->jobs.size;
+    mrender_job_idx ind = (mrender_job_idx)m->jobs.size;
     auto rj = arr_emplace_back(&m->jobs, pass, view, array<mdraw_call>{}, cb, cb_params);
     arr_init(&rj->draw_calls, m->jobs.arena, 64);
     return ind;

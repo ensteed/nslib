@@ -23,7 +23,7 @@ intern VkSubpassDependency get_bookend_dependency(const rbp_pass &pass, u32 subp
         // In case we have zero subpasses that is logical no recovery type of problem
         asrt(subpass_ind < pass.subpasses.size);
     }
-    
+
     dep.srcSubpass = is_front_bookend ? VK_SUBPASS_EXTERNAL : subpass_ind;
     dep.dstSubpass = is_front_bookend ? subpass_ind : VK_SUBPASS_EXTERNAL;
     dep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
@@ -152,7 +152,7 @@ u32 get_rbp_attachment_count(rbp_pass *rbp)
     return cnt;
 }
 
-rbp_slot_id add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_slot_desc &desc)
+rbp_slot_idx add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_idx pid, const rbp_resource_slot_desc &desc)
 {
     auto pass = &rbp->passes[pid];
     auto ind = pass->slots.size++;
@@ -166,7 +166,7 @@ rbp_slot_id add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_id pid, const 
     return ind;
 }
 
-rbp_resource_req_id add_rbp_resource_requirement(render_blueprint *rbp, rbp_pass_id pid, const rbp_resource_requirement &req, rbp_subpass_id spid)
+rbp_resource_req_idx add_rbp_resource_requirement(render_blueprint *rbp, rbp_pass_idx pid, const rbp_resource_requirement &req, rbp_subpass_idx spid)
 {
     auto ind = rbp->passes[pid].subpasses[spid].resources.size++;
     asrt(ind < rbp->passes[pid].subpasses[spid].resources.capacity);
@@ -175,7 +175,7 @@ rbp_resource_req_id add_rbp_resource_requirement(render_blueprint *rbp, rbp_pass
     return ind;
 }
 
-rbp_subpass_id add_rbp_subpass(render_blueprint *rbp, rbp_pass_id pid)
+rbp_subpass_idx add_rbp_subpass(render_blueprint *rbp, rbp_pass_idx pid)
 {
     auto pass = &rbp->passes[pid];
     auto ret = pass->subpasses.size++;
@@ -183,9 +183,9 @@ rbp_subpass_id add_rbp_subpass(render_blueprint *rbp, rbp_pass_id pid)
     return ret;
 }
 
-rbp_pass_id add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
+rbp_pass_idx add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
 {
-    rbp_pass_id ind = (u32)rbp->passes.size++;
+    rbp_pass_idx ind = (u32)rbp->passes.size++;
     asrt(ind < rbp->passes.capacity);
     rbp_pass *pass = &rbp->passes[ind];
     strncpy(pass->name, pdesc.name, SMALL_STR_LEN - 1);
@@ -197,12 +197,12 @@ rbp_pass_id add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
     // Only enable override for MS if not null
     pass->msi.use_override = pdesc.override;
     if (pdesc.override) pass->msi.override = *pdesc.override;
-    
+
     asrt(hmap_insert(&rbp->pass_idmap, pass->id, ind));
     return ind;
 }
 
-rbp_pass_id find_rbp_pass(render_blueprint *rbp, rres_id id)
+rbp_pass_idx find_rbp_pass(render_blueprint *rbp, rres_id id)
 {
     auto fiter = hmap_find(&rbp->pass_idmap, id);
     return fiter ? fiter->val : INVALID_ID;
@@ -231,7 +231,7 @@ bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
     return hmap_remove(&rndr->blueprint_id_map, item->id) && release_slot(&rndr->blueprints, hndl);
 }
 
-render_blueprint* get_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
+render_blueprint *get_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
 {
     return get_slot_item(&rndr->blueprints, hndl);
 }

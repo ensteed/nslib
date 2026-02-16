@@ -1119,8 +1119,8 @@ int vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, const vkr_c
     // Dynamic state
     VkPipelineDynamicStateCreateInfo dyn_state{};
     dyn_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dyn_state.dynamicStateCount = (u32)cfg.dynamic_states.size;
-    dyn_state.pDynamicStates = cfg.dynamic_states.data;
+    dyn_state.dynamicStateCount = (u32)cfg.dynamic_state_count;
+    dyn_state.pDynamicStates = cfg.dynamic_states;
 
     // Vertex Input
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
@@ -1143,10 +1143,10 @@ int vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, const vkr_c
     // Viewport and scissors (default)
     VkPipelineViewportStateCreateInfo viewport_state{};
     viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewport_state.viewportCount = (u32)cfg.viewports.size;
-    viewport_state.pViewports = cfg.viewports.data;
-    viewport_state.scissorCount = (u32)cfg.scissors.size;
-    viewport_state.pScissors = cfg.scissors.data;
+    viewport_state.viewportCount = (u32)cfg.vp_count;
+    viewport_state.pViewports = cfg.viewports;
+    viewport_state.scissorCount = (u32)cfg.scissor_count;
+    viewport_state.pScissors = cfg.scissors;
 
     // Rasterizer
     VkPipelineRasterizationStateCreateInfo rstr{};

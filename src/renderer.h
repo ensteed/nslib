@@ -38,14 +38,16 @@ struct rtexture_desc
     u32 flags;
 };
 
-struct rshader_stage_desc {
+struct rshader_stage_desc
+{
     const void *src;
     sizet src_byte_size;
     const char *entry_point;
     rshader_stage_type stype;
 };
 
-struct rshader_desc {
+struct rshader_desc
+{
     const char *name;
     rshader_stage_desc *stages;
     u8 stage_cnt;
@@ -54,19 +56,8 @@ struct rshader_desc {
 struct rbp_info
 {
     render_blueprint_handle bp;
-    rbp_pass_id pid;
+    rbp_pass_idx pid;
     u32 subpass_ind{0};
-};
-
-struct rstencip_op_state
-{
-    rstencil_op on_fail;
-    rstencil_op on_pass;
-    rstencil_op on_depth_fail;
-    rcompare_op comp;
-    u32 comp_mask;
-    u32 write_mask;
-    u32 ref;
 };
 
 struct rblend_info
@@ -84,25 +75,39 @@ struct rattachment_blend_info
     rcolor_component_flags write_mask;
 };
 
+enum rtechnique_desc_flag
+{
+    RTECHNIQUE_DESC_FLAG_PRIMITIVE_RESTART_ENABLED = RTECHNIQUE_FLAG_PRIMITIVE_RESTART_ENABLED,
+    RTECHNIQUE_DESC_FLAG_CLAMP_DEPTH = RTECHNIQUE_FLAG_CLAMP_DEPTH,
+    RTECHNIQUE_DESC_FLAG_DISCARD_RASTERIZER = RTECHNIQUE_FLAG_DISCARD_RASTERIZER,
+    RTECHNIQUE_DESC_FLAG_SAMPLE_SHADING = RTECHNIQUE_FLAG_SAMPLE_SHADING,
+    RTECHNIQUE_DESC_FLAG_MS_ALPHA_TO_COVERAGE = RTECHNIQUE_FLAG_MS_ALPHA_TO_COVERAGE,
+    RTECHNIQUE_DESC_FLAG_MS_ALPHA_TO_ONE = RTECHNIQUE_FLAG_MS_ALPHA_TO_ONE,
+    RTECHNIQUE_DESC_FLAG_DEPTH_TEST = RTECHNIQUE_FLAG_DEPTH_TEST,
+    RTECHNIQUE_DESC_FLAG_DEPTH_WRITE = RTECHNIQUE_FLAG_DEPTH_WRITE,
+    RTECHNIQUE_DESC_FLAG_DEPTH_BOUNDS_TEST = RTECHNIQUE_FLAG_DEPTH_BOUNDS_TEST,
+    RTECHNIQUE_DESC_FLAG_DEPTH_BIAS = RTECHNIQUE_FLAG_DEPTH_BIAS,
+    RTECHNIQUE_DESC_FLAG_BLEND_LOGIC_OP = RTECHNIQUE_FLAG_BLEND_LOGIC_OP,
+};
+using rtechnique_desc_flags = u32;
 
 // TODO: Add depth bias to dynamic state along with viewports and scissor
 struct rtechnique_pass_desc
 {
-    u32 geom_buffer_layout;
     rgeom_topology topology;
     rpolygon_mode poly_mode;
-    rfront_face_winding ffw;
     u32 tess_patch_control_points;
-    rcompare_op depth_comp_op;
-    rstencip_op_state stencil_front;
-    rstencip_op_state stencil_back;
+    // Depth op
+    rcompare_op depth_compare_op;
+    // Should leave as this unless doing something with depth bounds test turned on. Otherwise this isn't even looked at.
+    vec2 depth_bounds{0.0f, 1.0f};
     rlogic_op logic_op;
     // Must match exactly the number of attachments in the blueprint or else will fail to create
     rattachment_blend_info atts_blending[MAX_FRAMEBUFFER_ATTACHMENT_COUNT];
-    vec4 blend_constants;
+    rtechnique_desc_flags tmask;
+    rshader_handle shader;
     rbp_info bp_info{};
-    rtechnique_flags tmask;
-    
+    geom_buffer_layout_idx geom_buffer_layout;
 };
 
 struct rtechnique_desc
@@ -211,7 +216,6 @@ struct geometry_stream_group_desc
 
 struct imgui_ctxt;
 
-
 struct rtexture_info
 {
     small_str name;
@@ -227,14 +231,23 @@ struct rsampler_info
 struct rmaterial_info
 {};
 
-struct rshader_info {
+struct rshader_stage_info
+{
+    // Don't name your entry point longer than this
+    small_str entry_point{};
+    const VkSpecializationInfo *specialized_info{nullptr};
+    VkShaderModule sm{VK_NULL_HANDLE};
+};
+
+struct rshader_info
+{
     small_str name;
-    VkShaderModule sm[RSHADER_STAGE_TYPE_COUNT]{};
+    rshader_stage_info stages[RSHADER_STAGE_TYPE_COUNT]{};
 };
 
 struct rtechnique_pass_entry
 {
-    rbp_pass_id bp_pass;
+    rbp_pass_idx bp_pass;
     gpu_handle pline;
 };
 
@@ -293,7 +306,7 @@ struct geom_buffer_layout_entry
 };
 
 // Geometry stream groups all share the same indice buffer, so can all bound bound at the same time
-struct geom_streams_group
+struct geom_stream_group
 {
     // The name is stored in the stream buffer entry for indices - the id is generated from that name
     rres_id id{INVALID_IND};
@@ -514,8 +527,8 @@ struct renderer
     static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
 
     // Really a single
-    hmap<rres_id, u32> geom_group_id_map{};
-    static_array<geom_streams_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
+    hmap<rres_id, geom_stream_group_idx> geom_group_id_map{};
+    static_array<geom_stream_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
     // global pipeline layout
     VkPipelineLayout g_layout{VK_NULL_HANDLE};
@@ -568,7 +581,8 @@ void terminate_renderer(renderer *rndr);
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
 
-u32 push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
+geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
+geom_stream_group_idx find_geometry_stream_group(renderer *rndr, rres_id group_id);
 
 // Geometry group desc builder
 geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count);

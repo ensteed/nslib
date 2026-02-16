@@ -325,7 +325,6 @@ struct vkr_pipeline_cfg_raster
     float line_width{1.0f};
     VkCullModeFlags cull_mode;
     VkFrontFace front_face;
-    // Do dynamically
     bool depth_bias_enable;
     float depth_bias_constant_factor{0.0f};
     float depth_bias_clamp{0.0f};
@@ -396,22 +395,29 @@ struct vkr_vertex_layout
 
 struct vkr_pipeline_cfg
 {
-    const vkr_pipeline_cfg_shader_stage *stages;
-    sizet stage_cnt;
-
     // Render pass info
     VkRenderPass rpass{};
     u32 subpass{};
 
-    // Dynamic states
-    static_array<VkDynamicState, 32> dynamic_states;
-
     // Vertex Input
     vkr_vertex_layout vert_desc;
 
+    // Descriptor Sets and push constants
+    VkPipelineLayout layout_hndl;
+
+    // Shader modules
+    const vkr_pipeline_cfg_shader_stage *stages;
+    sizet stage_cnt;
+
+    // Dynamic states
+    const VkDynamicState* dynamic_states;
+    sizet dynamic_state_count;
+    
     // Default Scissor/Viewport
-    static_array<VkViewport, 16> viewports;
-    static_array<VkRect2D, 16> scissors;
+    const VkViewport* viewports;
+    const VkRect2D* scissors;
+    sizet vp_count;
+    sizet scissor_count;
 
     // Input assembly
     vkr_pipeline_cfg_input_assembly input_assembly;
@@ -430,9 +436,6 @@ struct vkr_pipeline_cfg
 
     // Depth stencil state
     vkr_pipeline_cfg_depth_stencil depth_stencil;
-
-    // Descriptor Sets and push constants
-    VkPipelineLayout layout_hndl;
 };
 
 struct vkr_descriptor_set_layout_cfg

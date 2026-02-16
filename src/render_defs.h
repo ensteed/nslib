@@ -96,17 +96,22 @@ using render_blueprint_handle = slot_handle<render_blueprint>;
 using render_blueprint_ref = slot_item_ref<render_blueprint>;
 
 using gpu_handle = u64;
-using rbp_pass_id = u32;
-using rbp_subpass_id = u32;
-using rbp_resource_req_id = u32;
-using rbp_slot_id = u32;
 
-using mpass_id = u32;
-using mview_id = u32;
-using mrender_job_id = u32;
+using rbp_pass_idx = u32;
+using rbp_subpass_idx = u32;
+using rbp_resource_req_idx = u32;
+using rbp_slot_idx = u32;
+using mpass_idx = u32;
+using mview_idx = u32;
+using mrender_job_idx = u32;
+using instance_idx = u32;
+using geom_stream_group_idx = u32;
+using geom_buffer_layout_idx = u32;
+
+#define get_idx_item(array, id) is_valid(id) ? &array[id] : nullptr
+
 using pipeline_key = u64;
 using framebuffer_key = u64;
-using instance_id = u32;
 
 enum rshader_stage_type
 {
@@ -116,11 +121,13 @@ enum rshader_stage_type
     RSHADER_STAGE_TYPE_COUNT,
 };
 
+#define RSHADER_STAGE_FLAG(stage_type) make_flag(stage_type)
+
 enum rshader_stage_flag
 {
-    RSHADER_STAGE_VERTEX_BIT = (1 << RSHADER_STAGE_TYPE_VERTEX),
-    RSHADER_STAGE_FRAGMENT_BIT = (1 << RSHADER_STAGE_TYPE_FRAGMENT),
-    RSHADER_STAGE_COMPUTE_BIT = (1 << RSHADER_STAGE_TYPE_COMPUTE),
+    RSHADER_STAGE_VERTEX_BIT = make_flag(RSHADER_STAGE_TYPE_VERTEX),
+    RSHADER_STAGE_FRAGMENT_BIT = make_flag(RSHADER_STAGE_TYPE_FRAGMENT),
+    RSHADER_STAGE_COMPUTE_BIT = make_flag(RSHADER_STAGE_TYPE_COMPUTE),
 };
 using rshader_stage_flags = u8;
 
@@ -133,19 +140,20 @@ enum rpolygon_mode
 
 enum rtechnique_flag
 {
-    RTECHNIQUE_FLAG_PRIMITIVE_RESTART_ENABLED = (1 << 0),
-    RTECHNIQUE_FLAG_CULL_BACK = (1 << 1),
-    RTECHNIQUE_FLAG_CULL_FRONT = (1 << 2),
-    RTECHNIQUE_FLAG_CLAMP_DEPTH = (1 << 3),
-    RTECHNIQUE_FLAG_DISCARD_RASTERIZER = (1 << 4),
-    RTECHNIQUE_FLAG_SAMPLE_SHADING = (1 << 5),
-    RTECHNIQUE_FLAG_MS_ALPHA_TO_COVERAGE = (1 << 6),
-    RTECHNIQUE_FLAG_MS_ALPHA_TO_ONE = (1 << 7),
-    RTECHNIQUE_FLAG_DEPTH_TEST = (1 << 8),
-    RTECHNIQUE_FLAG_DEPTH_WRITE = (1 << 9),
-    RTECHNIQUE_FLAG_DEPTH_BOUNDS_TEST = (1 << 10),
-    RTECHNIQUE_FLAG_STENCIL_TEST = (1 << 11),
-    RTECHNIQUE_FLAG_BLEND_LOGIC_OP = (1 << 12),
+    RTECHNIQUE_FLAG_PRIMITIVE_RESTART_ENABLED = make_flag(0),
+    RTECHNIQUE_FLAG_CULL_BACK = make_flag(1),
+    RTECHNIQUE_FLAG_CULL_FRONT = make_flag(2),
+    RTECHNIQUE_FLAG_CLAMP_DEPTH = make_flag(3),
+    RTECHNIQUE_FLAG_DISCARD_RASTERIZER = make_flag(4),
+    RTECHNIQUE_FLAG_SAMPLE_SHADING = make_flag(5),
+    RTECHNIQUE_FLAG_MS_ALPHA_TO_COVERAGE = make_flag(6),
+    RTECHNIQUE_FLAG_MS_ALPHA_TO_ONE = make_flag(7),
+    RTECHNIQUE_FLAG_DEPTH_TEST = make_flag(8),
+    RTECHNIQUE_FLAG_DEPTH_WRITE = make_flag(9),
+    RTECHNIQUE_FLAG_DEPTH_BIAS = make_flag(10),
+    RTECHNIQUE_FLAG_DEPTH_BOUNDS_TEST = make_flag(11),
+    RTECHNIQUE_FLAG_STENCIL_TEST = make_flag(12),
+    RTECHNIQUE_FLAG_BLEND_LOGIC_OP = make_flag(13),
 };
 using rtechnique_flags = u32;
 
@@ -228,10 +236,10 @@ enum rblend_factor
 
 enum rcolor_component_flag
 {
-    RCOLOR_COMPONENT_R = (1 << 0),
-    RCOLOR_COMPONENT_G = (1 << 1),
-    RCOLOR_COMPONENT_B = (1 << 2),
-    RCOLOR_COMPONENT_A = (1 << 3),
+    RCOLOR_COMPONENT_R = make_flag(0),
+    RCOLOR_COMPONENT_G = make_flag(1),
+    RCOLOR_COMPONENT_B = make_flag(2),
+    RCOLOR_COMPONENT_A = make_flag(3),
 };
 using rcolor_component_flags = u32;
 
@@ -240,6 +248,8 @@ enum rfront_face_winding
     RFRONT_FACE_WINDING_CCW,
     RFRONT_FACE_WINDING_CW,
 };
+
+inline constexpr rfront_face_winding DEFAULT_FRONT_FACE_WINDING = RFRONT_FACE_WINDING_CCW;
 
 enum rsample_count : u8
 {
