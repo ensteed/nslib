@@ -64,7 +64,6 @@ inline constexpr sizet MAX_FRAMES_IN_FLIGHT = 2;
 inline constexpr u32 VKR_INVALID = (u32)-1;
 inline constexpr u32 MEM_ALLOC_TYPE_COUNT = VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE + 1;
 inline constexpr u32 VKR_API_VERSION = VK_API_VERSION_1_3;
-inline constexpr sizet MAX_DESCRIPTOR_SET_LAYOUT_COUNT = 4;
 inline constexpr sizet MAX_PUSH_CONSTANT_RANGES = 12;
 inline constexpr sizet MAX_VERT_BINDINGS = 12;
 inline constexpr sizet MAX_VERT_ATTRIBS = 12;
@@ -370,7 +369,8 @@ struct vkr_pipeline_cfg_color_blending
 
 struct vkr_descriptor_set_layout_desc
 {
-    static_array<VkDescriptorSetLayoutBinding, 16> bindings;
+    const VkDescriptorSetLayoutBinding *bindings;
+    sizet binding_count;
 };
 
 struct vkr_pipeline_cfg_depth_stencil
@@ -440,7 +440,8 @@ struct vkr_pipeline_cfg
 
 struct vkr_descriptor_set_layout_cfg
 {
-    static_array<vkr_descriptor_set_layout_desc, MAX_DESCRIPTOR_SET_LAYOUT_COUNT> set_layout_descs;
+    const vkr_descriptor_set_layout_desc *dset_layouts;
+    sizet dset_layout_count;
 };
 
 struct vkr_pipeline_layout_cfg

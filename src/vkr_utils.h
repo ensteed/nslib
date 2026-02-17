@@ -26,17 +26,79 @@ VkRect2D get_vk_rect(const urect &r);
 
 VkViewport get_vk_viewport(const rect &norm_vp, const vec2 &depth_min_max, const uvec2 &dims);
 VkViewport get_vk_viewport(const rect &vp, const vec2 &depth_min_max);
-
-VkLogicOp get_vk_logic_op(rlogic_op lop);
-VkBlendOp get_vk_blend_op(rblend_op lop);
-VkCompareOp get_vk_compare_op(rcompare_op cop);
-VkStencilOp get_vk_stencil_op(rstencil_op sop);
-VkBlendFactor get_vk_blend_factor(rblend_factor bf);
-VkShaderStageFlagBits get_vk_shader_stage_flag_bit(rshader_stage_type type);
-VkPrimitiveTopology get_vk_prim_topoloty(rgeom_topology gt);
-VkPolygonMode get_vk_polygon_mode(rpolygon_mode pm);
-VkFrontFace get_vk_front_face(rfront_face_winding ffw);
 void fill_vk_stencil_op_state(VkStencilOpState *to_fill, const rstencil_op_state &src);
+
+constexpr VkDescriptorType get_vk_descriptor_type(rdescriptor_type dt)
+{
+    switch (dt) {
+    case (RDESCRIPTOR_TYPE_SAMPLER):
+    case (RDESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER):
+    case (RDESCRIPTOR_TYPE_SAMPLED_IMAGE):
+    case (RDESCRIPTOR_TYPE_STORAGE_IMAGE):
+    case (RDESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER):
+    case (RDESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER):
+    case (RDESCRIPTOR_TYPE_UNIFORM_BUFFER):
+    case (RDESCRIPTOR_TYPE_STORAGE_BUFFER):
+    case (RDESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC):
+    case (RDESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC):
+    case (RDESCRIPTOR_TYPE_INPUT_ATTACHMENT):
+        return (VkDescriptorType)dt;
+    case (RDESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK):
+        return VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK;
+    case (RDESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR):
+        return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    case (RDESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV):
+        return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
+    default:
+        asrt_break("Unhandled case");
+        return VK_DESCRIPTOR_TYPE_MAX_ENUM;
+    }
+}
+
+constexpr VkLogicOp get_vk_logic_op(rlogic_op lop)
+{
+    return (VkLogicOp)lop;
+}
+
+constexpr VkBlendOp get_vk_blend_op(rblend_op lop)
+{
+    return (VkBlendOp)lop;
+}
+
+constexpr VkCompareOp get_vk_compare_op(rcompare_op cop)
+{
+    return (VkCompareOp)cop;
+}
+
+constexpr VkStencilOp get_vk_stencil_op(rstencil_op sop)
+{
+    return (VkStencilOp)sop;
+}
+
+constexpr VkBlendFactor get_vk_blend_factor(rblend_factor bf)
+{
+    return (VkBlendFactor)bf;
+}
+
+constexpr VkShaderStageFlagBits get_vk_shader_stage_flag_bit(rshader_stage_type type)
+{
+    return (VkShaderStageFlagBits)RSHADER_STAGE_FLAG(type);
+}
+
+constexpr VkPrimitiveTopology get_vk_prim_topoloty(rgeom_topology gt)
+{
+    return (VkPrimitiveTopology)gt;
+}
+
+constexpr VkPolygonMode get_vk_polygon_mode(rpolygon_mode pm)
+{
+    return (VkPolygonMode)pm;
+}
+
+constexpr VkFrontFace get_vk_front_face(rfront_face_winding ffw)
+{
+    return (VkFrontFace)ffw;
+}
 
 constexpr rformat get_rformat(VkFormat format)
 {

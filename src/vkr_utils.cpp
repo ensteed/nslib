@@ -246,51 +246,6 @@ VkViewport get_vk_viewport(const rect &norm_vp, const vec2 &depth_min_max, const
     };
 }
 
-VkLogicOp get_vk_logic_op(rlogic_op lop)
-{
-    return (VkLogicOp)lop;
-}
-
-VkBlendOp get_vk_blend_op(rblend_op lop)
-{
-    return (VkBlendOp)lop;
-}
-
-VkCompareOp get_vk_compare_op(rcompare_op cop)
-{
-    return (VkCompareOp)cop;
-}
-
-VkStencilOp get_vk_stencil_op(rstencil_op sop)
-{
-    return (VkStencilOp)sop;
-}
-
-VkBlendFactor get_vk_blend_factor(rblend_factor bf)
-{
-    return (VkBlendFactor)bf;
-}
-
-VkShaderStageFlagBits get_vk_shader_stage_flag_bit(rshader_stage_type type)
-{
-    return (VkShaderStageFlagBits)RSHADER_STAGE_FLAG(type);
-}
-
-VkPrimitiveTopology get_vk_prim_topoloty(rgeom_topology gt)
-{
-    return (VkPrimitiveTopology)gt;
-}
-
-VkPolygonMode get_vk_polygon_mode(rpolygon_mode pm)
-{
-    return (VkPolygonMode)pm;
-}
-
-VkFrontFace get_vk_front_face(rfront_face_winding ffw)
-{
-    return (VkFrontFace)ffw;
-}
-
 void fill_vk_stencil_op_state(VkStencilOpState *to_fill, const rstencil_op_state &src)
 {
     to_fill->failOp = get_vk_stencil_op(src.on_fail);

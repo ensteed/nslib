@@ -24,8 +24,8 @@ struct hset_item
     using const_iterator = const hset_item<Val> *;
 
     Val val{};
-    sizet next{INVALID_IND};
-    sizet prev{INVALID_IND};
+    sizet next{INVALID_ID};
+    sizet prev{INVALID_ID};
 };
 
 template<typename Val>
@@ -119,7 +119,7 @@ template<typename Val>
 bool hset_remove(hset<Val> *hs, const Val &v)
 {
     sizet bckt_ind = hash_table_find_bucket(hs, v);
-    if (bckt_ind != INVALID_IND) {
+    if (bckt_ind != INVALID_ID) {
         hash_table_remove_bucket(hs, bckt_ind);
         return true;
     }
@@ -130,7 +130,7 @@ template<typename Val>
 hset<Val>::iterator hset_find(const hset<Val> *hs, const Val &v)
 {
     sizet bucket_ind = hash_table_find_bucket(hs, v);
-    if (bucket_ind != INVALID_IND) {
+    if (bucket_ind != INVALID_ID) {
         return &hs->buckets[bucket_ind].item;
     }
     return nullptr;

@@ -65,7 +65,7 @@ mrender_job_idx push_render_job(rmanifest *m, mpass_idx pass, mview_idx view, re
 u32 push_draw(rmanifest *m, const mdraw_params &dp)
 {
     u32 push_cnt{0};
-    rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.technique);
+    rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.technique.hndl);
     for (u32 i = 0; i < tptr->rpass_plines.size; ++i) {
         for (u32 rji = 0; rji < m->jobs.size; ++rji) {
             mrender_job *cur_rj = &m->jobs[rji];

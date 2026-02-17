@@ -77,7 +77,7 @@ u32 vkr_acquire_chunk(vkr_chunked_buffer *chunk_buf)
 {
     asrt(chunk_buf);
     asrt(chunk_buf->buffer.mem_info.pMappedData);
-    u32 ret{INVALID_ID};
+    u32 ret{INVALID_IDX};
 
     // Use any available chunks from free list first
     if (chunk_buf->free_chunks.size > 0) {

@@ -120,7 +120,7 @@ struct rtechnique_desc
 struct rmaterial_desc
 {
     const char *name;
-    rtechnique_handle thndl;
+    rtechnique_handle tch_rhndl;
     rtexture_handle slots[RMATERIAL_TEXTURE_COUNT];
 };
 
@@ -220,12 +220,16 @@ struct rtexture_info
 {
     small_str name;
     vkr_image im;
-    VkImageView im_view;
+    VkImageView iview;
 };
 
 struct rsampler_info
 {
-    VkSampler vk_hndl;
+    gpu_handle sampler;
+};
+
+struct rdset_layout_info {
+    gpu_handle slayout;
 };
 
 struct rmaterial_info
@@ -236,7 +240,7 @@ struct rshader_stage_info
     // Don't name your entry point longer than this
     small_str entry_point{};
     const VkSpecializationInfo *specialized_info{nullptr};
-    VkShaderModule sm{VK_NULL_HANDLE};
+    gpu_handle sm{0};
 };
 
 struct rshader_info
@@ -309,7 +313,7 @@ struct geom_buffer_layout_entry
 struct geom_stream_group
 {
     // The name is stored in the stream buffer entry for indices - the id is generated from that name
-    rres_id id{INVALID_IND};
+    rres_id id{INVALID_ID};
     static_array<geom_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
     stream_buffer_entry indice_stream;
@@ -524,7 +528,8 @@ struct renderer
     static_array<frame_context, MAX_FRAMES_IN_FLIGHT> fifs{};
 
     // Global descriptor set layouts (used for creating descriptor sets and pipelines)
-    static_array<VkDescriptorSetLayout, RDESC_SET_LAYOUT_COUNT> set_layouts{};
+    hmap<rres_id, dset_layout_idx> set_layout_id_map{};
+    static_array<VkDescriptorSetLayout, MAX_DESCRIPTOR_SET_LAYOUT_COUNT> set_layouts{};
 
     // Really a single
     hmap<rres_id, geom_stream_group_idx> geom_group_id_map{};
@@ -580,6 +585,23 @@ void terminate_renderer(renderer *rndr);
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
+
+struct dset_layout_binding {
+    rdescriptor_type type;
+    u32 binding;
+    u32 count;
+    rshader_stage_flags stages;
+    
+};
+
+struct dset_layout_desc {
+    const dset_layout_binding *bindings;
+    sizet binding_count;
+};
+
+dset_layout_idx push_dset_layout(renderer *rndr, const dset_layout_desc &desc);
+dset_layout_idx push_dset_layouts(renderer *rndr, const dset_layout_desc *descs, sizet count);
+dset_layout_idx find_dset_layout(renderer *rndr, rres_id dset_id);
 
 geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 geom_stream_group_idx find_geometry_stream_group(renderer *rndr, rres_id group_id);

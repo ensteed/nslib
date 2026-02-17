@@ -11,8 +11,8 @@ struct hash_bucket
 {
     Item item{};
     u64 hashed_v{};
-    sizet next{INVALID_IND};
-    sizet prev{INVALID_IND};
+    sizet next{INVALID_ID};
+    sizet prev{INVALID_ID};
 };
 
 template<typename Item>
@@ -31,7 +31,7 @@ struct hash_table
     u64 seed0{};
     u64 seed1{};
     float load_factor{0.0f};
-    sizet head{INVALID_IND};
+    sizet head{INVALID_ID};
     sizet count{0};
     array<hash_bucket<Item>> buckets{};
 };
@@ -41,10 +41,10 @@ sizet hash_table_find_bucket(const hash_table<Item> *hc, const typename hash_tab
 {
     asrt(hc->hashf);
     if (hc->buckets.size == 0) {
-        return INVALID_IND;
+        return INVALID_ID;
     }
     u64 hashval = hc->hashf(k, hc->seed0, hc->seed1);
-    sizet fnd_bckt = INVALID_IND;
+    sizet fnd_bckt = INVALID_ID;
     sizet bckt_ind = hashval % hc->buckets.size;
     sizet cur_bckt_ind = bckt_ind;
     sizet i = 0;
@@ -66,7 +66,7 @@ sizet hash_table_find_bucket(const hash_table<Item> *hc, const typename hash_tab
             }
             else {
                 fnd_bckt = cur_bckt_ind;
-                cur_bckt_ind = INVALID_IND;
+                cur_bckt_ind = INVALID_ID;
             }
         }
     }
@@ -118,7 +118,7 @@ typename hash_table<Item>::iterator hash_table_insert_or_set(hash_table<Item> *h
     // bucket index pointing to the last item in the bucket (the last item does not have its next pointing to the first
     // item however).
     auto cur_bckt_ind = bckt_ind;
-    auto head_bckt_ind = INVALID_IND;
+    auto head_bckt_ind = INVALID_ID;
     sizet i{};
     while (is_valid(hc->buckets[cur_bckt_ind].prev) && i < hc->buckets.size) {
         // If we found a match (both hashed_v and the actual key) then return null
@@ -220,7 +220,7 @@ void hash_table_init(hash_table<Item> *hc, typename hash_table<Item>::hash_func 
     hc->hashf = hashf;
     hc->seed0 = generate_rand_seed();
     hc->seed1 = generate_rand_seed();
-    hc->head = INVALID_IND;
+    hc->head = INVALID_ID;
     hc->load_factor = load_factor;
     hc->count = 0;
     arr_init(&hc->buckets, arena, initial_capacity);
@@ -339,11 +339,11 @@ auto hash_table_clear_bucket(hash_table<Item> *hc, sizet bckt_ind)
     // node. The thing is, in that case, our next index will already be invalid anyways.
     if (is_valid(hc->buckets[hc->buckets[bckt_ind].prev].next)) { // || hc->buckets[bckt_ind].prev == bckt_ind) {
         hc->buckets[hc->buckets[bckt_ind].prev].next = hc->buckets[bckt_ind].next;
-        hc->buckets[bckt_ind].next = INVALID_IND;
+        hc->buckets[bckt_ind].next = INVALID_ID;
     }
 
     // Set the previous ind to invalid - we don't set the hashed_v on purpose that is never used
-    hc->buckets[bckt_ind].prev = INVALID_IND;
+    hc->buckets[bckt_ind].prev = INVALID_ID;
 
     // Do the same thing we did for the bucket indexes except now with the item indices
     if (is_valid(hc->buckets[bckt_ind].item.next)) {
@@ -390,7 +390,7 @@ void hash_table_remove_bucket(hash_table<Item> *hc, sizet bckt_ind)
     hc->buckets[hole_ind] = {};
     --hc->count;
     if (was_last) {
-        hc->head = INVALID_IND;
+        hc->head = INVALID_ID;
     }
 }
 
@@ -422,7 +422,7 @@ bool hash_table_empty(const hash_table<Item> *hc)
 template<typename Item>
 void hash_table_clear(hash_table<Item> *hc)
 {
-    hc->head = INVALID_IND;
+    hc->head = INVALID_ID;
     hc->count = 0;
     arr_clear_to(&hc->buckets, {});
 }

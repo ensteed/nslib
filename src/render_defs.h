@@ -34,7 +34,8 @@ inline constexpr u8 MAX_BUFFER_TARGET_COUNT = 32;
 inline constexpr u8 MAX_TEXTURE_RRESOURCE_COUNT = 16;
 // Max number of rendering buffer resources supported
 inline constexpr u8 MAX_BUFFER_RRESOURCE_COUNT = 16;
-
+// Max number of descriptor set layouts which are referenced by techniques
+inline constexpr u8 MAX_DESCRIPTOR_SET_LAYOUT_COUNT = 32;
 // Max subpasses supported in a blueprint pass
 inline constexpr u8 MAX_BP_SUBPASS_COUNT = 16;
 // Max number of blueprint passes in a render blueprint
@@ -105,10 +106,13 @@ using mpass_idx = u32;
 using mview_idx = u32;
 using mrender_job_idx = u32;
 using instance_idx = u32;
+using dset_layout_idx = u32;
 using geom_stream_group_idx = u32;
 using geom_buffer_layout_idx = u32;
 
 #define get_idx_item(array, id) is_valid(id) ? &array[id] : nullptr
+#define get_idxn_item(array, id, n) (id < n) ? &array[id] : nullptr
+#define get_idxn_arr_item(array, id) get_idxn_item(array, id, array.size)
 
 using pipeline_key = u64;
 using framebuffer_key = u64;
@@ -289,14 +293,21 @@ enum struct rgeom_topology : u8
     RGEOM_TOPOLOGY_TRIANGLE_FAN,
 };
 
-enum rdesc_set_layout : u32
-{
-    // Bound once per frame.
-    RDESC_SET_LAYOUT_FRAME,
-    // Bound per material change.
-    RDESC_SET_LAYOUT_MATERIAL,
-    // Count
-    RDESC_SET_LAYOUT_COUNT,
+enum rdescriptor_type {
+    RDESCRIPTOR_TYPE_SAMPLER,
+    RDESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+    RDESCRIPTOR_TYPE_SAMPLED_IMAGE,
+    RDESCRIPTOR_TYPE_STORAGE_IMAGE,
+    RDESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+    RDESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
+    RDESCRIPTOR_TYPE_UNIFORM_BUFFER,
+    RDESCRIPTOR_TYPE_STORAGE_BUFFER,
+    RDESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+    RDESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+    RDESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+    RDESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK,
+    RDESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+    RDESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV,
 };
 
 } // namespace nslib

@@ -538,7 +538,7 @@ sizet arr_index_of(T *bufobj, typename T::value_type *item)
     if (offset < bufobj->size) {
         return offset;
     }
-    return INVALID_IND;
+    return INVALID_ID;
 }
 
 using byte_array = array<u8>;

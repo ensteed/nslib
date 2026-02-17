@@ -30,8 +30,8 @@ struct hmap_item
     Val val{};
     // Mess with these outside of the hmap functions at your own risk - they are used for the linked list of items in
     // the hmap
-    sizet next{INVALID_IND};
-    sizet prev{INVALID_IND};
+    sizet next{INVALID_ID};
+    sizet prev{INVALID_ID};
 };
 
 template<typename Key, typename Val>
@@ -127,7 +127,7 @@ template<typename Key, typename Val>
 bool hmap_remove(hmap<Key, Val> *hm, const Key &k, Val *val = nullptr)
 {
     sizet bckt_ind = hash_table_find_bucket(hm, k);
-    if (bckt_ind != INVALID_IND) {
+    if (bckt_ind != INVALID_ID) {
         if (val) {
             *val = hm->buckets[bckt_ind].item.val;
         }
@@ -196,7 +196,7 @@ template<typename Key, typename Val>
 hmap<Key, Val>::iterator hmap_find_or_insert(hmap<Key, Val> *hm, const Key &k)
 {
     sizet bucket_ind = hash_table_find_bucket(hm, k);
-    if (bucket_ind != INVALID_IND) {
+    if (bucket_ind != INVALID_ID) {
         return &hm->buckets[bucket_ind].item;
     }
     else {
@@ -209,7 +209,7 @@ template<typename Key, typename Val>
 hmap<Key, Val>::iterator hmap_find(hmap<Key, Val> *hm, const Key &k)
 {
     sizet bucket_ind = hash_table_find_bucket(hm, k);
-    if (bucket_ind != INVALID_IND) {
+    if (bucket_ind != INVALID_ID) {
         return &hm->buckets[bucket_ind].item;
     }
     return nullptr;
@@ -219,7 +219,7 @@ template<typename Key, typename Val>
 hmap<Key, Val>::const_iterator hmap_find(const hmap<Key, Val> *hm, const Key &k)
 {
     sizet bucket_ind = hash_table_find_bucket(hm, k);
-    if (bucket_ind != INVALID_IND) {
+    if (bucket_ind != INVALID_ID) {
         return &hm->buckets[bucket_ind].item;
     }
     return nullptr;

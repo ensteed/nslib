@@ -145,52 +145,6 @@ void terminate_imgui(renderer *rndr)
 }
 #endif
 
-intern void fill_default_pipeline_config(vkr_pipeline_cfg *cfg, renderer *rndr)
-{
-
-    arr_push_back(&cfg->dynamic_states, VK_DYNAMIC_STATE_VIEWPORT);
-    arr_push_back(&cfg->dynamic_states, VK_DYNAMIC_STATE_SCISSOR);
-
-    // Must be set to 1 at least
-    cfg->viewports.size = 1;
-    cfg->scissors.size = 1;
-
-    // Input Assembly
-    cfg->input_assembly.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    cfg->input_assembly.primitive_restart_enable = false;
-
-    // Raster options
-    cfg->raster.depth_clamp_enable = false;
-    cfg->raster.rasterizer_discard_enable = false;
-    cfg->raster.polygon_mode = VK_POLYGON_MODE_FILL;
-    cfg->raster.line_width = 1.0f;
-    cfg->raster.cull_mode = VK_CULL_MODE_NONE;
-    cfg->raster.front_face = VK_FRONT_FACE_CLOCKWISE;
-    cfg->raster.depth_bias_enable = false;
-    cfg->raster.depth_bias_constant_factor = 0.0f;
-    cfg->raster.depth_bias_clamp = 0.0f;
-    cfg->raster.depth_bias_slope_factor = 0.0f;
-
-    // Multisampling defaults are good
-
-    // Color blending - none for this pipeline
-    VkPipelineColorBlendAttachmentState col_blnd_att{};
-    col_blnd_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    col_blnd_att.blendEnable = false;
-    arr_push_back(&cfg->col_blend.attachments, col_blnd_att);
-
-    // Depth Stencil
-    cfg->depth_stencil.depth_test_enable = true;
-    cfg->depth_stencil.depth_write_enable = true;
-    cfg->depth_stencil.depth_compare_op = VK_COMPARE_OP_LESS;
-    cfg->depth_stencil.depth_bounds_test_enable = false;
-    cfg->depth_stencil.min_depth_bounds = 0.0f;
-    cfg->depth_stencil.max_depth_bounds = 1.0f;
-
-    // Global layout for desc sets
-    cfg->layout_hndl = rndr->g_layout;
-}
-
 intern void terminate_geometry(renderer *rndr, rgeom_info *gref)
 {
     ilog("Terminating geometry %s", gref->name);
@@ -699,41 +653,41 @@ intern void terminate_resource_target_registry(renderer *rndr)
     hmap_terminate(&rndr->rtargets.buffer_id_map);
 }
 
-intern int init_global_descriptor_set_layouts(renderer *rndr)
-{
-    vkr_descriptor_set_layout_cfg cfg{};
+// intern int init_global_descriptor_set_layouts(renderer *rndr)
+// {
+//     vkr_descriptor_set_layout_cfg cfg{};
 
-    // Descripitor Set Layouts - Just one layout for the moment with a binding at 0 for uniforms and a binding at 1 for
-    // image sampler
-    cfg.set_layout_descs.size = RDESC_SET_LAYOUT_COUNT;
+//     // Descripitor Set Layouts - Just one layout for the moment with a binding at 0 for uniforms and a binding at 1 for
+//     // image sampler
+//     cfg.set_layout_descs.size = RDESC_SET_LAYOUT_COUNT;
 
-    // Descriptor layouts
-    // Single Uniform buffer
-    VkDescriptorSetLayoutBinding b{};
-    b.binding = 0;
-    b.descriptorCount = 1;
-    b.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+//     // Descriptor layouts
+//     // Single Uniform buffer
+//     VkDescriptorSetLayoutBinding b{};
+//     b.binding = 0;
+//     b.descriptorCount = 1;
+//     b.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+//     b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
-    // Add uniform buffer binding to each set, and image sampler to material set as well
-    arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_FRAME].bindings, b);
+//     // Add uniform buffer binding to each set, and image sampler to material set as well
+//     arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_FRAME].bindings, b);
 
-    // Add image sampler to material
-    b.binding = 0;
-    b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_MATERIAL].bindings, b);
+//     // Add image sampler to material
+//     b.binding = 0;
+//     b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+//     b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+//     arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_MATERIAL].bindings, b);
 
-    // Add image sampler to material
-    b.binding = 1;
-    b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_MATERIAL].bindings, b);
+//     // Add image sampler to material
+//     b.binding = 1;
+//     b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+//     b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+//     arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_MATERIAL].bindings, b);
 
-    // Set the size to the same as config
-    rndr->set_layouts.size = cfg.set_layout_descs.size;
-    return vkr_init_desc_set_layouts(rndr->set_layouts.data, cfg, &rndr->vk);
-}
+//     // Set the size to the same as config
+//     rndr->set_layouts.size = cfg.set_layout_descs.size;
+//     return vkr_init_desc_set_layouts(rndr->set_layouts.data, cfg, &rndr->vk);
+// }
 
 intern void terminate_global_descriptor_set_layouts(renderer *rndr)
 {
@@ -762,7 +716,7 @@ intern int init_global_samplers(renderer *rndr)
     samp_cfg.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
     rsampler_info sdata{};
-    int err = vkr_init_sampler(&sdata.vk_hndl, samp_cfg, &rndr->vk);
+    int err = vkr_init_sampler((VkSampler*)&sdata.sampler, samp_cfg, &rndr->vk);
     if (err != err_code::VKR_NO_ERROR) {
         wlog("Failed to initialize sampler - vk err code: %d", err);
         return err_code::RENDER_INIT_SAMPLER_FAIL;
@@ -775,7 +729,7 @@ intern void terminate_global_samplers(renderer *rndr)
 {
     // Terminate all texture samplers
     for (u32 i = 0; i < rndr->samplers.size; ++i) {
-        vkr_terminate_sampler(rndr->samplers[i].vk_hndl, &rndr->vk);
+        vkr_terminate_sampler((VkSampler)rndr->samplers[i].sampler, &rndr->vk);
     }
     arr_clear(&rndr->samplers);
 }
@@ -802,7 +756,7 @@ intern void terminate_shader(renderer *rndr, rshader_info *shdr)
 {
     ilog("Terminating shader %s", shdr->name);
     for (u8 t = 0; t < RSHADER_STAGE_TYPE_COUNT; ++t) {
-        vkr_terminate_shader_module(shdr->stages[t].sm, &rndr->vk);
+        vkr_terminate_shader_module((VkShaderModule)shdr->stages[t].sm, &rndr->vk);
     }
     *shdr = {};
 }
@@ -820,7 +774,7 @@ intern void terminate_texture(renderer *rndr, rtexture_info *im)
 {
     ilog("Terminating texture %s", im->name);
     vkr_terminate_image(&im->im, &rndr->vk);
-    vkr_terminate_image_view(im->im_view, &rndr->vk);
+    vkr_terminate_image_view(im->iview, &rndr->vk);
     *im = {};
 }
 
@@ -1001,19 +955,19 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
         return result;
     }
 
-    // Descriptor set layouts
-    result = init_global_descriptor_set_layouts(rndr);
-    if (result != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup global descriptor set layouts");
-        return result;
-    }
+    // // Descriptor set layouts
+    // result = init_global_descriptor_set_layouts(rndr);
+    // if (result != err_code::VKR_NO_ERROR) {
+    //     elog("Failed to setup global descriptor set layouts");
+    //     return result;
+    // }
 
-    // Pipeline layout
-    result = init_global_pipeline_layout(rndr);
-    if (result != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup global pipeline layout");
-        return result;
-    }
+    // // Pipeline layout
+    // result = init_global_pipeline_layout(rndr);
+    // if (result != err_code::VKR_NO_ERROR) {
+    //     elog("Failed to setup global pipeline layout");
+    //     return result;
+    // }
 
     // Samplers
     result = init_global_samplers(rndr);
@@ -1139,20 +1093,17 @@ geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_
     if (failed) {
         terminate_geometry_stream_group(cur_group, &rndr->vk);
         --rndr->geom_groups.size;
-        return INVALID_ID;
+        return INVALID_IDX;
     }
     cur_group->id = hash_type(cur_group->indice_stream.name);
     hmap_insert(&rndr->geom_group_id_map, cur_group->id, geom_id);
     return geom_id;
 }
 
-#define get_idx_item(array, id) is_valid(id) ? &array[id] : nullptr
-#define get_idxn_item(array, id, n) (id < n) ? &array[id] : nullptr
-#define get_idxn_arr_item(array, id) get_idxn_item(array, id, array.size)
-
-const geom_stream_group *get_geometry_stream_group(const renderer *rndr, geom_stream_group_idx gid)
+geom_stream_group_idx find_geometry_stream_group(renderer *rndr, rres_id group_id)
 {
-    return get_idx_item(rndr->geom_groups, gid);
+    auto id_fiter = hmap_find(&rndr->geom_group_id_map, group_id);
+    return id_fiter ? id_fiter->val : INVALID_IDX;
 }
 
 geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count)
@@ -1330,7 +1281,7 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo)
     // Create image view
     vkr_image_view_cfg iview_cfg{};
     iview_cfg.image = &ti.im;
-    vk_ret = vkr_init_image_view(&ti.im_view, iview_cfg, &rndr->vk);
+    vk_ret = vkr_init_image_view(&ti.iview, iview_cfg, &rndr->vk);
     if (vk_ret != err_code::VKR_NO_ERROR) {
         vkr_terminate_image(&ti.im, &rndr->vk);
         return {};
@@ -1339,7 +1290,7 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo)
     rtexture_ref tref = acquire_slot(&rndr->textures);
     if (!is_valid(tref)) {
         vkr_terminate_image(&ti.im, &rndr->vk);
-        vkr_terminate_image_view(ti.im_view, &rndr->vk);
+        vkr_terminate_image_view(ti.iview, &rndr->vk);
         return {};
     }
     asrt(tref.item);
@@ -1358,7 +1309,7 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
         auto cur_desc = &sdr_info.stages[i];
         auto cur_st = &sref.item->stages[cur_desc->stype];
 
-        s32 result = vkr_init_shader_module(&cur_st->sm, cur_desc->src, cur_desc->src_byte_size, &rndr->vk);
+        s32 result = vkr_init_shader_module((VkShaderModule*)&cur_st->sm, cur_desc->src, cur_desc->src_byte_size, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
             terminate_shader(rndr, sref.item);
             release_slot(&rndr->shaders, sref.hndl);
@@ -1421,12 +1372,12 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinf
         vkr_pipeline_cfg_shader_stage stages[RSHADER_STAGE_TYPE_COUNT];
         cfg.stage_cnt = 0;
         for (u32 i = 0; i < RSHADER_STAGE_TYPE_COUNT; ++i) {
-            if (shdr->stages[i].sm != VK_NULL_HANDLE) {
+            if (shdr->stages[i].sm) {
                 auto stype = (rshader_stage_type)i;
                 ++cfg.stage_cnt;
                 stages[i].stage = get_vk_shader_stage_flag_bit(stype);
                 stages[i].entry_point = shdr->stages[i].entry_point;
-                stages[i].module = shdr->stages[i].sm;
+                stages[i].module = (VkShaderModule)shdr->stages[i].sm;
                 stages[i].specialized_info = shdr->stages[i].specialized_info;
             }
         }
@@ -1439,16 +1390,12 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinf
             VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR,
             VK_DYNAMIC_STATE_DEPTH_BIAS,
-            VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE,
             VK_DYNAMIC_STATE_BLEND_CONSTANTS,
             VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
             VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
             VK_DYNAMIC_STATE_STENCIL_REFERENCE,
             VK_DYNAMIC_STATE_CULL_MODE,
             VK_DYNAMIC_STATE_FRONT_FACE,
-            VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
-            VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
-            VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
             VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE,
             VK_DYNAMIC_STATE_STENCIL_OP,
         };

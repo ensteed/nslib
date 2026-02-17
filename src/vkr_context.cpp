@@ -1051,11 +1051,11 @@ void vkr_terminate_render_pass(VkRenderPass hndl, const vkr_context *vk)
 int vkr_init_desc_set_layouts(VkDescriptorSetLayout *hndls, const vkr_descriptor_set_layout_cfg &cfg, const vkr_context *vk)
 {
     sizet created{0};
-    for (int desc_i = 0; desc_i < cfg.set_layout_descs.size; ++desc_i) {
+    for (int desc_i = 0; desc_i < cfg.dset_layout_count; ++desc_i) {
         VkDescriptorSetLayoutCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        ci.bindingCount = (u32)cfg.set_layout_descs[desc_i].bindings.size;
-        ci.pBindings = cfg.set_layout_descs[desc_i].bindings.data;
+        ci.bindingCount = (u32)cfg.dset_layouts[desc_i].binding_count;
+        ci.pBindings = cfg.dset_layouts[desc_i].bindings;
         int res = vkCreateDescriptorSetLayout(vk->inst.device.hndl, &ci, &vk->alloc_cbs, &hndls[created]);
         if (res == VK_SUCCESS) {
             ++created;

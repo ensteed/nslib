@@ -52,20 +52,18 @@ enum raster_flag
 };
 using raster_flags = u8;
 
-enum raster_state_flag
+// The parts of technique pass state that can be overwritten by a material
+enum raster_override_state_flag
 {
-    RASTER_STATE_NONE = 0,
-    RASTER_STATE_CULLING = make_flag(0),
-    RASTER_STATE_DEPTH_TEST = make_flag(1),
-    RASTER_STATE_DEPTH_WRITE = make_flag(2),
-    RASTER_STATE_DEPTH_MODE = make_flag(3),
-    RASTER_STATE_STENCIL_TEST = make_flag(4),
-    RASTER_STATE_STENCIL_MODE = make_flag(5),
-    RASTER_STATE_BLEND_CONSTANTS = make_flag(6),
-    RASTER_STATE_ALL = (RASTER_STATE_CULLING | RASTER_STATE_DEPTH_TEST | RASTER_STATE_DEPTH_WRITE | RASTER_STATE_DEPTH_MODE |
-                        RASTER_STATE_STENCIL_TEST | RASTER_STATE_STENCIL_MODE | RASTER_STATE_BLEND_CONSTANTS),
+    RASTER_OVERRIDE_STATE_NONE = 0,
+    RASTER_OVERRIDE_STATE_CULLING = make_flag(0),
+    RASTER_OVERRIDE_STATE_STENCIL_TEST = make_flag(1),
+    RASTER_OVERRIDE_STATE_STENCIL_MODE = make_flag(2),
+    RASTER_OVERRIDE_STATE_BLEND_CONSTANTS = make_flag(3),
+    RASTER_OVERRIDE_STATE_ALL = (RASTER_OVERRIDE_STATE_CULLING | RASTER_OVERRIDE_STATE_STENCIL_TEST | RASTER_OVERRIDE_STATE_STENCIL_MODE |
+                                 RASTER_OVERRIDE_STATE_BLEND_CONSTANTS),
 };
-using raster_state_flags = u8;
+using raster_override_state_flags = u8;
 
 enum shader_stage_type
 {
@@ -120,7 +118,7 @@ struct raster_state
 {
     raster_flags rmask;
     stencil_mode sm;
-    depth_mode dm;
+
     // Only used by blend mode constant
     vec4 blend_constants;
 };
@@ -132,10 +130,10 @@ struct technique_pass
     // specifically overrides it
     raster_state dflt_st{.rmask = RASTER_FLAG_CULL_BACK | RASTER_FLAG_DEPTH_TEST | RASTER_FLAG_DEPTH_WRITE,
                          .sm = STENCIL_MODE_OFF,
-                         .dm = DEPTH_MODE_NORMAL,
                          .blend_constants{1.0f}};
     // This is a mask of all raster properties that CAN be overridden
-    raster_state_flags can_override{RASTER_STATE_ALL};
+    raster_override_state_flags can_override{RASTER_OVERRIDE_STATE_ALL};
+    depth_mode dm{DEPTH_MODE_NORMAL};
     blend_mode bm{BLEND_MODE_OPAQUE};
 };
 
@@ -158,10 +156,12 @@ struct material
     hmap<rres_id, asset_id> bp_techniques;
 
     // Techniuqe overrides (if override_mask contains bit for thing to override)
+    // NOTE: The bits set in rmask here that don't pertain to bits in override_mask do nothing if set. For example,
+    // setting DEPTH_TEST will never do anything because it's not something a material can override
     raster_state overrides;
 
     // Which state to override, if can be overridden
-    raster_state_flags override_mask;
+    raster_override_state_flags override_mask;
 
     // Textures used by material
     static_array<asset_id, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};

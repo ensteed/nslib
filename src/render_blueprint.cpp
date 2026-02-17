@@ -129,7 +129,7 @@ intern u32 get_next_att_ind(const rbp_pass &pass, sizet slot_size)
 {
     u32 ind{};
     for (u32 i = 0; i < slot_size; ++i) {
-        if (pass.slots[i].att_ind != INVALID_ID) {
+        if (pass.slots[i].att_ind != INVALID_IDX) {
             ind = pass.slots[i].att_ind + 1;
         }
     }
@@ -162,7 +162,7 @@ rbp_slot_idx add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_idx pid, cons
     slot->format = desc.format;
     slot->usage = desc.usage;
     // don't include the current slot we just made
-    slot->att_ind = is_usage_attachment(slot->usage) ? get_next_att_ind(*pass, pass->slots.size - 1) : INVALID_ID;
+    slot->att_ind = is_usage_attachment(slot->usage) ? get_next_att_ind(*pass, pass->slots.size - 1) : INVALID_IDX;
     return ind;
 }
 
@@ -205,7 +205,7 @@ rbp_pass_idx add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
 rbp_pass_idx find_rbp_pass(render_blueprint *rbp, rres_id id)
 {
     auto fiter = hmap_find(&rbp->pass_idmap, id);
-    return fiter ? fiter->val : INVALID_ID;
+    return fiter ? fiter->val : INVALID_IDX;
 }
 
 render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name)

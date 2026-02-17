@@ -46,7 +46,7 @@ struct rbp_resource_slot_info
     rformat format{rformat::INVALID};
     rbp_resource_usage usage{rbp_resource_usage::UNDEFINED};
     // Only valid if slot corresponds with attachment (not necessarily true for sampled images and storage buffers)
-    u32 att_ind{INVALID_ID};
+    u32 att_ind{INVALID_IDX};
 };
 
 pup_func(rbp_resource_slot_info)
@@ -155,7 +155,7 @@ struct rbp_pass_desc
 struct rbp_resouce_requirement_desc
 {
     rbp_resource_requirement req;
-    u32 subpass_ind{INVALID_ID};
+    u32 subpass_ind{INVALID_IDX};
 };
 
 struct rbp_resource_slot_desc

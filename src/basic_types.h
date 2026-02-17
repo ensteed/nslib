@@ -89,16 +89,17 @@ const sizet MB_SIZE = 1024 * KB_SIZE;
 
 using small_str = char[SMALL_STR_LEN];
 
+inline constexpr const u64 INVALID_ID = ~(0UL);
 inline constexpr const sizet INVALID_IND = ~(0UL);
-inline constexpr const u32 INVALID_ID = ~(0U);
+inline constexpr const u32 INVALID_IDX = ~(0U);
 
-inline bool is_valid(sizet v)
+inline bool is_valid(u64 v)
 {
-    return (v != INVALID_IND);
+    return (v != INVALID_ID);
 }
 inline bool is_valid(u32 v)
 {
-    return (v != INVALID_ID);
+    return (v != INVALID_IDX);
 }
 
 } // namespace nslib

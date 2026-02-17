@@ -72,7 +72,7 @@ bool remove_entity(u32 ent_id, sim_region *reg)
     if (!rem) {
         return rem;
     }
-    asrt(ent_ind!=INVALID_IND);
+    asrt(ent_ind!=INVALID_ID);
     asrt(ent_ind < reg->ents.size);
     if (arr_swap_remove(&reg->ents, ent_ind)) {
         if (ent_ind < reg->ents.size) {
