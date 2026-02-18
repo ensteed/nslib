@@ -93,6 +93,10 @@ inline constexpr const u64 INVALID_ID = ~(0UL);
 inline constexpr const sizet INVALID_IND = ~(0UL);
 inline constexpr const u32 INVALID_IDX = ~(0U);
 
+inline bool is_valid(sizet v)
+{
+    return (v != INVALID_IND);
+}
 inline bool is_valid(u64 v)
 {
     return (v != INVALID_ID);

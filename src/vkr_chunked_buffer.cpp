@@ -28,18 +28,17 @@ VkDescriptorBufferInfo vkr_get_chunk_desc_info(const vkr_chunked_buffer *chunk_b
     return info;
 }
 
-int vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buffer_cfg *cfg)
+int vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buffer_cfg &cfg)
 {
     asrt(chunk_buf);
     asrt(chunk_buf->free_chunks.size == 0 && chunk_buf->free_chunks.capacity == 0);
-    asrt(cfg);
-    asrt(cfg->chunk_size && !cfg->buffer_cfg.buffer_size && !cfg->buffer_cfg.vma_alloc);
-    asrt(cfg->buffer_cfg.buffer_size % cfg->chunk_size != 0);
+    asrt(cfg.chunk_size && !cfg.buffer_cfg.buffer_size && !cfg.buffer_cfg.vma_alloc);
+    asrt(cfg.buffer_cfg.buffer_size % cfg.chunk_size != 0);
 
-    sizet chunk_count = cfg->buffer_cfg.buffer_size / cfg->chunk_size;
+    sizet chunk_count = cfg.buffer_cfg.buffer_size / cfg.chunk_size;
     asrt(chunk_count != 0 && chunk_count < UINT_MAX);
 
-    vkr_buffer_cfg buf_cfg = cfg->buffer_cfg;
+    vkr_buffer_cfg buf_cfg = cfg.buffer_cfg;
     // We need this memory to be host visible and mapped no matter what - thats the whole point of this thing
     buf_cfg.alloc_flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
@@ -51,12 +50,12 @@ int vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buf
     // Mapping needs to have worked or this whole program is invalid
     asrt(chunk_buf->buffer.mem_info.pMappedData);
     
-    chunk_buf->chunk_size = cfg->chunk_size;
+    chunk_buf->chunk_size = cfg.chunk_size;
     chunk_buf->chunk_count = chunk_count;
     chunk_buf->used_chunk_count = 0;
     chunk_buf->next_chunk_index = 0;
 
-    mem_arena *arena = cfg->chunk_tracking_arena ? cfg->chunk_tracking_arena : get_global_arena();
+    mem_arena *arena = cfg.chunk_tracking_arena ? cfg.chunk_tracking_arena : get_global_arena();
     arr_init(&chunk_buf->free_chunks, arena, chunk_buf->chunk_count);
     return err_code::VKR_NO_ERROR;
 }

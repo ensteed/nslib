@@ -574,9 +574,16 @@ int vkr_init_device(vkr_device *dev,
     // For now we will leave this blank - but probably enable geometry shaders later
     VkPhysicalDeviceFeatures features{};
     features.samplerAnisotropy = vk->inst.pdev_info.features.samplerAnisotropy;
-    ilog("Creating %d queues", create_size);
 
+    VkPhysicalDeviceDescriptorIndexingFeatures added_feats{};
+    added_feats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    added_feats.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    added_feats.runtimeDescriptorArray = VK_TRUE;
+    added_feats.descriptorBindingPartiallyBound = VK_TRUE;
+
+    ilog("Creating device with %d queues", create_size);
     VkDeviceCreateInfo create_inf{};
+    create_inf.pNext = &added_feats;
     create_inf.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create_inf.queueCreateInfoCount = create_size;
     create_inf.pQueueCreateInfos = qinfo;
@@ -1054,6 +1061,7 @@ int vkr_init_desc_set_layouts(VkDescriptorSetLayout *hndls, const vkr_descriptor
     for (int desc_i = 0; desc_i < cfg.dset_layout_count; ++desc_i) {
         VkDescriptorSetLayoutCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        ci.flags = cfg.dset_layouts[desc_i].flags;
         ci.bindingCount = (u32)cfg.dset_layouts[desc_i].binding_count;
         ci.pBindings = cfg.dset_layouts[desc_i].bindings;
         int res = vkCreateDescriptorSetLayout(vk->inst.device.hndl, &ci, &vk->alloc_cbs, &hndls[created]);
@@ -1085,8 +1093,8 @@ int vkr_init_pipeline_layout(VkPipelineLayout *hndl, const vkr_pipeline_layout_c
     pipeline_layout_create_inf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_create_inf.setLayoutCount = (u32)cfg.set_layout_count;
     pipeline_layout_create_inf.pSetLayouts = cfg.set_layouts;
-    pipeline_layout_create_inf.pushConstantRangeCount = (u32)cfg.push_constant_ranges.size;
-    pipeline_layout_create_inf.pPushConstantRanges = cfg.push_constant_ranges.data;
+    pipeline_layout_create_inf.pushConstantRangeCount = (u32)cfg.push_const_range_count;
+    pipeline_layout_create_inf.pPushConstantRanges = cfg.push_const_ranges;
     if (vkCreatePipelineLayout(vk->inst.device.hndl, &pipeline_layout_create_inf, &vk->alloc_cbs, hndl) != VK_SUCCESS) {
         elog("Failed to create pileline layout");
         return err_code::VKR_CREATE_PIPELINE_LAYOUT_FAIL;

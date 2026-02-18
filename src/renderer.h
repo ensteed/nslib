@@ -6,6 +6,7 @@
 #include "vkr_context.h"
 #include "render_blueprint.h"
 #include "rformat.h"
+#include "vkr_chunked_buffer.h"
 
 struct ImGuiContext;
 
@@ -171,7 +172,7 @@ struct rgeom_info
     VmaVirtualAllocation vert_mem{VK_NULL_HANDLE};
 
     // This is the block that was used for the virtual block allocation above
-    VmaVirtualBlock vert_block;
+    VmaVirtualBlock vert_block{VK_NULL_HANDLE};
 
     // This is determined by taking the byte offset / sizeof(stream element)
     u32 vert_offset;
@@ -180,7 +181,7 @@ struct rgeom_info
     VmaVirtualAllocation ind_mem{VK_NULL_HANDLE};
 
     // This is the block that was used for the ind virtual block allocations
-    VmaVirtualBlock ind_block;
+    VmaVirtualBlock ind_block{VK_NULL_HANDLE};
 
     // This is determined by taking the byte offset / sizeof(stream element)
     u32 ind_offset;
@@ -220,16 +221,7 @@ struct rtexture_info
 {
     small_str name;
     vkr_image im;
-    VkImageView iview;
-};
-
-struct rsampler_info
-{
-    gpu_handle sampler;
-};
-
-struct rdset_layout_info {
-    gpu_handle slayout;
+    VkImageView iview{VK_NULL_HANDLE};
 };
 
 struct rmaterial_info
@@ -240,7 +232,7 @@ struct rshader_stage_info
     // Don't name your entry point longer than this
     small_str entry_point{};
     const VkSpecializationInfo *specialized_info{nullptr};
-    gpu_handle sm{0};
+    VkShaderModule sm{0};
 };
 
 struct rshader_info
@@ -252,7 +244,7 @@ struct rshader_info
 struct rtechnique_pass_entry
 {
     rbp_pass_idx bp_pass;
-    gpu_handle pline;
+    VkPipeline pline{VK_NULL_HANDLE};
 };
 
 struct rtechnique_info
@@ -264,28 +256,26 @@ struct rtechnique_info
 struct imgui_ctxt
 {
     ImGuiContext *ctxt;
-    VkDescriptorPool pool;
-    VkRenderPass rpass;
+    VkDescriptorPool pool{VK_NULL_HANDLE};
+    VkRenderPass rpass{VK_NULL_HANDLE};
     mem_arena fl;
 };
 
 struct frame_thread_cmd
 {
-    VkCommandPool pool;
-    VkCommandBuffer buf;
+    VkCommandPool pool{VK_NULL_HANDLE};
+    VkCommandBuffer buf{VK_NULL_HANDLE};
 };
 
 struct frame_context
 {
     // Updated at the start of each render frame once the image ind is acquired
+    // The only reason to keep it per frame is for debug reasons we can see what the im was last frame
     u32 cur_im_ind;
 
     // Frame cmd pool
     // TODO: There should really be a command pool for each frame, and a command buffer allocated for each draw set
     array<frame_thread_cmd> thread_pools;
-
-    // Reset every frame
-    VkDescriptorPool desc_pool;
 
     // Synchronization
     VkFence in_flight;
@@ -502,6 +492,64 @@ using pipeline_entry = gpu_resource_entry<gpu_handle>;
 using pipeline_handle = slot_handle<pipeline_entry>;
 using pipeline_cache = gpu_resource_cache<gpu_handle>;
 
+// // This data is used in uniform buffer - needs to be aligned to 16 bytes
+// struct rinstance_draw_ubo_data {
+//     u32 material_idx;
+//     u32 instance_idx;
+//     // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
+//     svec2 suser;
+//     vec4 fuser;
+// };
+
+// struct rframe_ubo_data {
+//     mat4 view;
+//     mat4 proj;
+//     mat4 view_proj;
+//     mat4 inv_view_proj;
+
+//     float elapsed;
+//     float dt;
+//     u32 frame_count;
+//     u32 padding;
+
+//     vec2 resolution;
+//     vec2 inv_resolution;
+// };
+
+enum rdset_layout_type
+{
+    RDSET_LAYOUT_NON_FIF,
+    RDSET_LAYOUT_FIF,
+    RDSET_LAYOUT_IMAGES,
+    RDSET_LAYOUT_COUNT,
+};
+
+struct global_descriptor_fif
+{
+    VkDescriptorSet dset;
+    vkr_buffer frame_ubo;
+    // Filled every frame with rinstance_draw_data
+    vkr_buffer instance_draw_ubo;
+};
+
+struct global_descriptor_info
+{
+    VkDescriptorSetLayout dset_layouts[RDSET_LAYOUT_COUNT];
+    VkPipelineLayout pline_layout;
+    // Global pool
+    VkDescriptorPool desc_pool;
+    // Globally bound and infrequently updated
+    // Descriptor array of all images - updated whenever a new image is uploaded or removed
+    VkDescriptorSet image_dset;
+    VkDescriptorSet non_fif_dset;
+    // All instance data
+    vkr_chunked_buffer instance_ssbo;
+    // All material data
+    vkr_chunked_buffer material_ssbo;
+    // Also globablly bound, but the buffers are updated every frame so we need one per FIF
+    global_descriptor_fif pfdata[MAX_FRAMES_IN_FLIGHT];
+};
+
 struct renderer
 {
     // Owned vulkan context and mem arenas used only for vulkan stuff
@@ -528,21 +576,17 @@ struct renderer
     static_array<frame_context, MAX_FRAMES_IN_FLIGHT> fifs{};
 
     // Global descriptor set layouts (used for creating descriptor sets and pipelines)
-    hmap<rres_id, dset_layout_idx> set_layout_id_map{};
-    static_array<VkDescriptorSetLayout, MAX_DESCRIPTOR_SET_LAYOUT_COUNT> set_layouts{};
+    global_descriptor_info desc_info{};
 
     // Really a single
     hmap<rres_id, geom_stream_group_idx> geom_group_id_map{};
     static_array<geom_stream_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
-    // global pipeline layout
-    VkPipelineLayout g_layout{VK_NULL_HANDLE};
-
     // Transient pool for image transfers and such
     VkCommandPool transient_pool;
 
     // Global texture samplers
-    static_array<rsampler_info, RSAMPLER_TYPE_COUNT> samplers{};
+    VkSampler samplers[RSAMPLER_TYPE_COUNT];
 
 // ImGUI context
 #ifdef USE_IMGUI
@@ -551,9 +595,6 @@ struct renderer
 
     // Stored on reset render frame - used in subsequent frame calls to get the current frame
     s32 finished_frames{0};
-
-    // This is incremented every frame there are no resize events
-    f64 no_resize_frames;
 
     // Render blueprints
     hmap<rres_id, render_blueprint_handle> blueprint_id_map{};
@@ -564,7 +605,22 @@ struct renderer
     profile_timepoints pt{};
 };
 
-struct init_renderer_params
+struct sbuffer_init_params
+{
+    sizet block_count;
+    sizet block_size;
+};
+
+struct rdescriptor_init_params
+{
+    sizet max_image_count{256};
+    sbuffer_init_params instance_ssbo{1000,64};
+    sbuffer_init_params material_ssbo{256, 64};
+    sbuffer_init_params frame_ubo{1,64};
+    sbuffer_init_params instance_draw_ubo{1, 32};
+};
+
+struct renderer_init_params
 {
     void *win_hndl;
     mem_arena *upsream;
@@ -572,6 +628,7 @@ struct init_renderer_params
     sizet persist_fl_size;
     sizet persist_stack_size;
     sizet frame_linear_size;
+    rdescriptor_init_params desc;
 };
 
 // DRAW FUNCTIONS
@@ -580,28 +637,11 @@ void draw_imgui(const render_job_cb_params &, void *);
 #endif
 void draw_geometry(const render_job_cb_params &, void *);
 
-int init_renderer(renderer *rndr, const init_renderer_params &p);
+int init_renderer(renderer *rndr, const renderer_init_params &p);
 void terminate_renderer(renderer *rndr);
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
-
-struct dset_layout_binding {
-    rdescriptor_type type;
-    u32 binding;
-    u32 count;
-    rshader_stage_flags stages;
-    
-};
-
-struct dset_layout_desc {
-    const dset_layout_binding *bindings;
-    sizet binding_count;
-};
-
-dset_layout_idx push_dset_layout(renderer *rndr, const dset_layout_desc &desc);
-dset_layout_idx push_dset_layouts(renderer *rndr, const dset_layout_desc *descs, sizet count);
-dset_layout_idx find_dset_layout(renderer *rndr, rres_id dset_id);
 
 geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 geom_stream_group_idx find_geometry_stream_group(renderer *rndr, rres_id group_id);

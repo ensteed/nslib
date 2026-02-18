@@ -119,6 +119,7 @@ struct vkr_buffer_cfg
     VkSharingMode sharing_mode{VK_SHARING_MODE_EXCLUSIVE};
     VmaMemoryUsage mem_usage;
     VmaAllocationCreateFlags alloc_flags;
+    // Only set these for specific edge cases - otherwise vma takes care of it
     VkMemoryPropertyFlags required_flags;
     VkMemoryPropertyFlags preferred_flags;
     void *user_data{nullptr};
@@ -371,6 +372,7 @@ struct vkr_descriptor_set_layout_desc
 {
     const VkDescriptorSetLayoutBinding *bindings;
     sizet binding_count;
+    VkDescriptorSetLayoutCreateFlags flags;
 };
 
 struct vkr_pipeline_cfg_depth_stencil
@@ -448,7 +450,8 @@ struct vkr_pipeline_layout_cfg
 {
     const VkDescriptorSetLayout *set_layouts;
     sizet set_layout_count;
-    static_array<VkPushConstantRange, MAX_PUSH_CONSTANT_RANGES> push_constant_ranges;
+    const VkPushConstantRange *push_const_ranges;
+    sizet push_const_range_count;
 };
 
 struct vkr_device_queue_fam_info

@@ -554,17 +554,6 @@ intern int init_frame_contexts(renderer *rndr, sizet thread_cnt)
             return result;
         }
 
-        // Get a count of the number of descriptors we are making avaialable for each desc type
-        vkr_desc_cfg desc_cfg{};
-        desc_cfg.max_sets = MAX_MATERIAL_COUNT;
-        desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = MAX_MATERIAL_COUNT;
-        desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER] = MAX_MATERIAL_COUNT;
-        result = vkr_init_desc_pool(&cur_fif->desc_pool, desc_cfg, &rndr->vk);
-        if (result != VK_SUCCESS) {
-            elog("Failed to create descriptor pool for frame %d - aborting init", framei);
-            return result;
-        }
-
         // Create frame command pool
         arr_init(&cur_fif->thread_pools, &rndr->persist_fl, thread_cnt);
         arr_resize(&cur_fif->thread_pools, thread_cnt);
@@ -598,7 +587,6 @@ intern void terminate_frame_contexts(renderer *rndr)
         auto cur_fif = &rndr->fifs[framei];
         vkr_terminate_fence(cur_fif->in_flight, &rndr->vk);
         vkr_terminate_semaphore(cur_fif->image_avail, &rndr->vk);
-        vkr_terminate_desc_pool(cur_fif->desc_pool, &rndr->vk);
         for (u32 i = 0; i < cur_fif->thread_pools.size; ++i) {
             vkr_terminate_cmd_pool(cur_fif->thread_pools[i].pool, &rndr->vk);
         }
@@ -653,55 +641,132 @@ intern void terminate_resource_target_registry(renderer *rndr)
     hmap_terminate(&rndr->rtargets.buffer_id_map);
 }
 
-// intern int init_global_descriptor_set_layouts(renderer *rndr)
-// {
-//     vkr_descriptor_set_layout_cfg cfg{};
-
-//     // Descripitor Set Layouts - Just one layout for the moment with a binding at 0 for uniforms and a binding at 1 for
-//     // image sampler
-//     cfg.set_layout_descs.size = RDESC_SET_LAYOUT_COUNT;
-
-//     // Descriptor layouts
-//     // Single Uniform buffer
-//     VkDescriptorSetLayoutBinding b{};
-//     b.binding = 0;
-//     b.descriptorCount = 1;
-//     b.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-//     b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-
-//     // Add uniform buffer binding to each set, and image sampler to material set as well
-//     arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_FRAME].bindings, b);
-
-//     // Add image sampler to material
-//     b.binding = 0;
-//     b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-//     b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-//     arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_MATERIAL].bindings, b);
-
-//     // Add image sampler to material
-//     b.binding = 1;
-//     b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-//     b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-//     arr_push_back(&cfg.set_layout_descs[RDESC_SET_LAYOUT_MATERIAL].bindings, b);
-
-//     // Set the size to the same as config
-//     rndr->set_layouts.size = cfg.set_layout_descs.size;
-//     return vkr_init_desc_set_layouts(rndr->set_layouts.data, cfg, &rndr->vk);
-// }
-
 intern void terminate_global_descriptor_set_layouts(renderer *rndr)
 {
     // Terminate our default descriptor layout sets
-    ilog("Terminating %d global desc set layouts", rndr->set_layouts.size);
-    vkr_terminate_desc_set_layouts(rndr->set_layouts.data, rndr->set_layouts.size, &rndr->vk);
-    arr_clear(&rndr->set_layouts);
+    ilog("Terminating %d global desc set layouts and pipeline layout", RDSET_LAYOUT_COUNT);
+    vkr_terminate_desc_pool((VkDescriptorPool)rndr->desc_info.desc_pool, &rndr->vk);
+    vkr_terminate_chunked_buffer(&rndr->desc_info.material_ssbo, &rndr->vk);
+    vkr_terminate_chunked_buffer(&rndr->desc_info.instance_ssbo, &rndr->vk);
+    vkr_terminate_desc_set_layouts((VkDescriptorSetLayout *)rndr->desc_info.dset_layouts, RDSET_LAYOUT_COUNT, &rndr->vk);
+    vkr_terminate_pipeline_layout((VkPipelineLayout)rndr->desc_info.pline_layout, &rndr->vk);
+}
+
+intern bool init_global_descriptor_info(renderer *rndr, const rdescriptor_init_params &dip)
+{
+    vkr_descriptor_set_layout_desc dsets[3]{};
+    
+    // Not exactly needed for SSBO but its best to align to 16 bytes anyways
+    asrt(dip.instance_ssbo.block_size % 16 == 0);
+    asrt(dip.material_ssbo.block_size % 16 == 0);
+    // Absolute requirement for uniform buffers
+    asrt(dip.instance_draw_ubo.block_size % 16 == 0);
+    asrt(dip.frame_ubo.block_size % 16 == 0);
+
+    VkDescriptorSetLayoutBinding non_fif_bindings[3]{};
+    // Instance ssbo
+    non_fif_bindings[0].binding = 0;
+    non_fif_bindings[0].descriptorCount = 1;
+    non_fif_bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    non_fif_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+    // Material ssbo
+    non_fif_bindings[1].binding = 1;
+    non_fif_bindings[1].descriptorCount = 1;
+    non_fif_bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    non_fif_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+    // Immutable samplers
+    non_fif_bindings[2].binding = 2;
+    non_fif_bindings[2].descriptorCount = RSAMPLER_TYPE_COUNT;
+    non_fif_bindings[2].stageFlags = VK_SHADER_STAGE_ALL;
+    non_fif_bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    non_fif_bindings[2].pImmutableSamplers = rndr->samplers;
+
+    dsets[0].bindings = non_fif_bindings;
+    dsets[0].binding_count = ARR_SIZE(non_fif_bindings);
+
+    VkDescriptorSetLayoutBinding fif_bindings[2]{};
+    // Frame data
+    fif_bindings[0].binding = 0;
+    fif_bindings[0].descriptorCount = 1;
+    fif_bindings[0].stageFlags = VK_SHADER_STAGE_ALL;
+    fif_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    // Per instance data
+    fif_bindings[1].binding = 1;
+    fif_bindings[1].descriptorCount = 1;
+    fif_bindings[1].stageFlags = VK_SHADER_STAGE_ALL;
+    fif_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+    dsets[1].bindings = fif_bindings;
+    dsets[1].binding_count = ARR_SIZE(fif_bindings);
+
+    VkDescriptorSetLayoutBinding all_images{};
+    // All images
+    all_images.binding = 0;
+    all_images.descriptorCount = dip.max_image_count;
+    all_images.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    all_images.stageFlags = VK_SHADER_STAGE_ALL;
+    dsets[2].bindings = &all_images;
+    dsets[2].binding_count = 1;
+
+    vkr_descriptor_set_layout_cfg cfg{};
+    cfg.dset_layouts = dsets;
+    cfg.dset_layout_count = ARR_SIZE(dsets);
+    int result = vkr_init_desc_set_layouts(rndr->desc_info.dset_layouts, cfg, &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) {
+        return false;
+    }
+
+    vkr_pipeline_layout_cfg pl_cfg{};
+    pl_cfg.set_layouts = rndr->desc_info.dset_layouts;
+    pl_cfg.set_layout_count = RDSET_LAYOUT_COUNT;
+    result = vkr_init_pipeline_layout(&rndr->desc_info.pline_layout, pl_cfg, &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) {
+        terminate_global_descriptor_set_layouts(rndr);
+        return false;
+    }
+
+    vkr_chunked_buffer_cfg cb_cfg{};    
+    cb_cfg.buffer_cfg.buffer_size = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count;
+    cb_cfg.buffer_cfg.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    cb_cfg.buffer_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    cb_cfg.buffer_cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    cb_cfg.buffer_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+    cb_cfg.chunk_size = dip.instance_ssbo.block_size;
+    result = vkr_init_chunked_buffer(&rndr->desc_info.instance_ssbo, cb_cfg);
+    if (result != VK_SUCCESS) {
+        terminate_global_descriptor_set_layouts(rndr);
+        return false;
+    }
+
+    cb_cfg.buffer_cfg.buffer_size = dip.material_ssbo.block_size * dip.material_ssbo.block_count;
+    cb_cfg.chunk_size = dip.material_ssbo.block_size;
+    result = vkr_init_chunked_buffer(&rndr->desc_info.material_ssbo, cb_cfg);
+    if (result != VK_SUCCESS) {
+        terminate_global_descriptor_set_layouts(rndr);
+        return false;
+    }
+
+    // Get a count of the number of descriptors we are making avaialable for each desc type
+    vkr_desc_cfg desc_cfg{};
+    desc_cfg.max_sets = RDSET_LAYOUT_COUNT + MAX_FRAMES_IN_FLIGHT - 1;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = 2;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = dip.max_image_count;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLER] = RSAMPLER_TYPE_COUNT;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = 2 * MAX_FRAMES_IN_FLIGHT;
+
+    result = vkr_init_desc_pool(&rndr->desc_info.desc_pool, desc_cfg, &rndr->vk);
+    if (result != VK_SUCCESS) {
+        terminate_global_descriptor_set_layouts(rndr);
+        return false;
+    }
+
+    return true;
 }
 
 intern int init_global_samplers(renderer *rndr)
 {
-    auto dev = &rndr->vk.inst.device;
-    rndr->samplers.size = RSAMPLER_TYPE_COUNT;
-
     // Create image sampler
     vkr_sampler_cfg samp_cfg{};
     for (int i = 0; i < 3; ++i) {
@@ -715,23 +780,20 @@ intern int init_global_samplers(renderer *rndr)
     samp_cfg.compare_op = VK_COMPARE_OP_ALWAYS;
     samp_cfg.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
-    rsampler_info sdata{};
-    int err = vkr_init_sampler((VkSampler*)&sdata.sampler, samp_cfg, &rndr->vk);
+    int err = vkr_init_sampler(rndr->samplers, samp_cfg, &rndr->vk);
     if (err != err_code::VKR_NO_ERROR) {
         wlog("Failed to initialize sampler - vk err code: %d", err);
         return err_code::RENDER_INIT_SAMPLER_FAIL;
     }
-    rndr->samplers[RSAMPLER_TYPE_LINEAR_REPEAT] = sdata;
     return err_code::RENDER_NO_ERROR;
 }
 
 intern void terminate_global_samplers(renderer *rndr)
 {
     // Terminate all texture samplers
-    for (u32 i = 0; i < rndr->samplers.size; ++i) {
-        vkr_terminate_sampler((VkSampler)rndr->samplers[i].sampler, &rndr->vk);
+    for (u32 i = 0; i < RSAMPLER_TYPE_COUNT; ++i) {
+        vkr_terminate_sampler(rndr->samplers[i], &rndr->vk);
     }
-    arr_clear(&rndr->samplers);
 }
 
 intern void init_geometry_stream_groups(renderer *rndr)
@@ -756,7 +818,7 @@ intern void terminate_shader(renderer *rndr, rshader_info *shdr)
 {
     ilog("Terminating shader %s", shdr->name);
     for (u8 t = 0; t < RSHADER_STAGE_TYPE_COUNT; ++t) {
-        vkr_terminate_shader_module((VkShaderModule)shdr->stages[t].sm, &rndr->vk);
+        vkr_terminate_shader_module(shdr->stages[t].sm, &rndr->vk);
     }
     *shdr = {};
 }
@@ -817,27 +879,6 @@ intern void terminate_render_resources(renderer *rndr)
     terminate_slot_pool(&rndr->shaders);
 }
 
-intern int init_global_pipeline_layout(renderer *rndr)
-{
-    vkr_pipeline_layout_cfg cfg{};
-    cfg.set_layouts = rndr->set_layouts.data;
-    cfg.set_layout_count = rndr->set_layouts.size;
-
-    // Setup our push constant
-    ++cfg.push_constant_ranges.size;
-    cfg.push_constant_ranges[0].offset = 0;
-    cfg.push_constant_ranges[0].size = sizeof(push_constants);
-    cfg.push_constant_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    return vkr_init_pipeline_layout(&rndr->g_layout, cfg, &rndr->vk);
-}
-
-intern void terminate_global_pipeline_layout(renderer *rndr)
-{
-    ilog("Terminating pipeline layout");
-    vkr_terminate_pipeline_layout(rndr->g_layout, &rndr->vk);
-}
-
 template<typename T>
 void init_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, u32 elements)
 {
@@ -895,7 +936,7 @@ intern void terminate_blueprints(renderer *rndr)
     hmap_terminate(&rndr->blueprint_id_map);
 }
 
-int init_renderer(renderer *rndr, const init_renderer_params &p)
+int init_renderer(renderer *rndr, const renderer_init_params &p)
 {
     asrt(p.upsream->alloc_type != mem_alloc_type::POOL); // Cannot use pool arena here
     init_fl_arena(&rndr->persist_fl, p.persist_fl_size, p.upsream, "rndr-persist-fl");
@@ -955,24 +996,17 @@ int init_renderer(renderer *rndr, const init_renderer_params &p)
         return result;
     }
 
-    // // Descriptor set layouts
-    // result = init_global_descriptor_set_layouts(rndr);
-    // if (result != err_code::VKR_NO_ERROR) {
-    //     elog("Failed to setup global descriptor set layouts");
-    //     return result;
-    // }
-
-    // // Pipeline layout
-    // result = init_global_pipeline_layout(rndr);
-    // if (result != err_code::VKR_NO_ERROR) {
-    //     elog("Failed to setup global pipeline layout");
-    //     return result;
-    // }
-
-    // Samplers
+    // Samplers - must come before descriptor set layouts
     result = init_global_samplers(rndr);
     if (result != err_code::VKR_NO_ERROR) {
         elog("Failed to setup global samplers");
+        return result;
+    }
+
+    // Descriptor set layouts
+    result = init_global_descriptor_info(rndr, p.desc);
+    if (result != err_code::VKR_NO_ERROR) {
+        elog("Failed to setup global descriptor set layouts");
         return result;
     }
 
@@ -997,14 +1031,11 @@ void terminate_renderer(renderer *rndr)
     terminate_imgui(rndr);
 #endif
 
-    // Global samplers
-    terminate_global_samplers(rndr);
-
-    // Global pipeline layout
-    terminate_global_pipeline_layout(rndr);
-
     // Global descriptor set layouts
     terminate_global_descriptor_set_layouts(rndr);
+
+    // Global samplers - must come after descriptor set layouts
+    terminate_global_samplers(rndr);
 
     // Frame context
     terminate_frame_contexts(rndr);
@@ -1309,7 +1340,7 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
         auto cur_desc = &sdr_info.stages[i];
         auto cur_st = &sref.item->stages[cur_desc->stype];
 
-        s32 result = vkr_init_shader_module((VkShaderModule*)&cur_st->sm, cur_desc->src, cur_desc->src_byte_size, &rndr->vk);
+        s32 result = vkr_init_shader_module(&cur_st->sm, cur_desc->src, cur_desc->src_byte_size, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
             terminate_shader(rndr, sref.item);
             release_slot(&rndr->shaders, sref.hndl);
@@ -1328,7 +1359,7 @@ void terminate_rtechnique(renderer *rndr, rtechnique_info *info)
 {
     ilog("Terminating technique %s with %lu pass pipelines", info->name, info->rpass_plines.size);
     for (u32 i = 0; i < info->rpass_plines.size; ++i) {
-        vkr_terminate_pipeline((VkPipeline)info->rpass_plines[i].pline, &rndr->vk);
+        vkr_terminate_pipeline(info->rpass_plines[i].pline, &rndr->vk);
     }
 }
 
@@ -1364,7 +1395,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinf
         cfg.rpass = (VkRenderPass)rbp_pass->vk_handle;
         cfg.subpass = cur_desc->bp_info.subpass_ind;
         cfg.vert_desc = vert_layout->vert_layout;
-        cfg.layout_hndl = rndr->g_layout;
+        cfg.layout_hndl = rndr->desc_info.pline_layout;
 
         ////////////////////
         // Shader Modules //
@@ -1372,12 +1403,12 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinf
         vkr_pipeline_cfg_shader_stage stages[RSHADER_STAGE_TYPE_COUNT];
         cfg.stage_cnt = 0;
         for (u32 i = 0; i < RSHADER_STAGE_TYPE_COUNT; ++i) {
-            if (shdr->stages[i].sm) {
+            if (shdr->stages[i].sm != VK_NULL_HANDLE) {
                 auto stype = (rshader_stage_type)i;
                 ++cfg.stage_cnt;
                 stages[i].stage = get_vk_shader_stage_flag_bit(stype);
                 stages[i].entry_point = shdr->stages[i].entry_point;
-                stages[i].module = (VkShaderModule)shdr->stages[i].sm;
+                stages[i].module = shdr->stages[i].sm;
                 stages[i].specialized_info = shdr->stages[i].specialized_info;
             }
         }

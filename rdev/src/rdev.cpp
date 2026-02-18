@@ -241,7 +241,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     create_shaders(shdr_pool);
 
     // Initialize our renderer - fail early if init fails
-    init_renderer_params p{
+    renderer_init_params p{
         .win_hndl = ctxt->win_hndl,
         .upsream = &ctxt->arenas.free_list,
         .persist_fl_size = 200 * MB_SIZE,
