@@ -216,7 +216,7 @@ const char *load_shader(shader *shdr, const char *path)
         string str(path, shdr->frame_lin);
         str_append(&str, cur_stage->stype == SHADER_STAGE_TYPE_VERTEX ? ".vert.spv" : ".frag.spv");
         arr_init(&cur_stage->src, shdr->fl);
-        platform_file_err_desc err;
+        platform_file_err_desc err{};
         read_file(str_cstr(str), &cur_stage->src, 0, &err);
         if (err.code != err_code::file::FILE_NO_ERROR) {
             release_ram_data(shdr);
