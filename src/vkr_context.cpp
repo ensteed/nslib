@@ -1451,9 +1451,6 @@ VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, bool need_stenci
 
 VkIndexType get_vk_index_type(sizet ind_size)
 {
-    if (ind_size == 1) {
-        return VK_INDEX_TYPE_UINT8;
-    }
     if (ind_size == 2) {
         return VK_INDEX_TYPE_UINT16;
     }
