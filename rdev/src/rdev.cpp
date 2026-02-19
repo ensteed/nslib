@@ -215,7 +215,8 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     return rbp;
 }
 
-intern void create_shaders(shader_pool * pool) {
+intern void create_shaders(shader_pool *pool)
+{
     auto shdr = create_asset(pool, "fwd-diffuse");
     const char *path = "data/shaders/fwd-diffuse";
     const char *err = load_shader(shdr.item, path);
@@ -224,7 +225,7 @@ intern void create_shaders(shader_pool * pool) {
     }
 }
 
-intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
+intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     init_asset_cache_default_types(
         &app->cg,
@@ -234,7 +235,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     auto geom_pool = get_asset_pool<geometry>(&app->cg);
     auto tex_pool = get_asset_pool<texture>(&app->cg);
     auto shdr_pool = get_asset_pool<shader>(&app->cg);
-    
+
     geometry *rect, *cube;
     create_geometry(geom_pool, &rect, &cube);
     create_textures(tex_pool);
@@ -248,11 +249,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
         .persist_stack_size = 10 * MB_SIZE,
         .frame_linear_size = 10 * MB_SIZE,
     };
-    int ret = init_renderer(&app->rndr, p);
-
-    if (ret != err_code::RENDER_NO_ERROR) {
-        return ret;
-    }
+    if (!init_renderer(&app->rndr, p)) return false;
 
     auto geom_stream_gp = setup_geometry_stream_group(&app->rndr);
     auto rbp = build_and_compile_render_blueprint(&app->rndr, app);
@@ -265,7 +262,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     upload_geometries(&app->rndr, geom_stream_gp, geom_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
     upload_shaders(&app->rndr, shdr_pool, &ctxt->arenas.stack);
-    
+
     // Create render targets
     // create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));
     create_rtexture_target(&app->rndr, TEXTURE_TARGET_DEPTH(MAIN_PASS_DEPTH_NAME));
@@ -284,7 +281,7 @@ intern int init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     // Create and setup input for camera
     setup_camera_controller(ctxt, app);
     create_entity_grid(&app->rgn, *cube, *rect);
-    return ret;
+    return true;
 }
 
 intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
@@ -416,12 +413,8 @@ int main(int argc, char **argv)
     if (result != err_code::PLATFORM_NO_ERROR) {
         return result;
     }
-
-    result = init_rdev(&ctxt, &app);
-    if (result != err_code::RENDER_NO_ERROR) {
-        elog("User init failed with code %d", result);
-        return terminate_platform(&ctxt);
-    }
+    ctxt.running = init_rdev(&ctxt, &app);
+    if (!ctxt.running) elog("User init failed with code %d", result);
 
     while (ctxt.running && run_frame(&ctxt, &app))
         ;

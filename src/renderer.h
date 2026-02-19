@@ -142,7 +142,6 @@ enum render
     RENDER_RESET_FENCE_FAIL,
     RENDER_SUBMIT_QUEUE_FAIL,
     RENDER_PRESENT_KHR_FAIL,
-    RENDER_INIT_SAMPLER_FAIL,
 };
 }
 
@@ -637,7 +636,7 @@ void draw_imgui(const render_job_cb_params &, void *);
 #endif
 void draw_geometry(const render_job_cb_params &, void *);
 
-int init_renderer(renderer *rndr, const renderer_init_params &p);
+bool init_renderer(renderer *rndr, const renderer_init_params &p);
 void terminate_renderer(renderer *rndr);
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);

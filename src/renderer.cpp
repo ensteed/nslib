@@ -535,7 +535,7 @@ intern void handle_window_resize(renderer *rndr)
     }
 }
 
-intern int init_frame_contexts(renderer *rndr, sizet thread_cnt)
+intern bool init_frame_contexts(renderer *rndr, sizet thread_cnt)
 {
     auto dev = &rndr->vk.inst.device;
     rndr->fifs.size = rndr->fifs.capacity;
@@ -546,12 +546,12 @@ intern int init_frame_contexts(renderer *rndr, sizet thread_cnt)
 
         int result = vkr_init_fence(&cur_fif->in_flight, VK_FENCE_CREATE_SIGNALED_BIT, &rndr->vk);
         if (result != VK_SUCCESS) {
-            return result;
+            return false;
         }
 
         result = vkr_init_semaphore(&cur_fif->image_avail, {}, &rndr->vk);
         if (result != VK_SUCCESS) {
-            return result;
+            return false;
         }
 
         // Create frame command pool
@@ -563,7 +563,7 @@ intern int init_frame_contexts(renderer *rndr, sizet thread_cnt)
                                        VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
                                        &rndr->vk);
             if (result != err_code::VKR_NO_ERROR) {
-                return result;
+                return false;
             }
 
             vkr_alloc_cmd_bufs_cfg buf_cfgs{};
@@ -571,12 +571,12 @@ intern int init_frame_contexts(renderer *rndr, sizet thread_cnt)
             buf_cfgs.pool = cur_fif->thread_pools[i].pool;
             result = vkr_alloc_cmd_bufs(&cur_fif->thread_pools[i].buf, buf_cfgs, &rndr->vk);
             if (result != err_code::VKR_NO_ERROR) {
-                return result;
+                return false;
             }
         }
     }
     ilog("Successfully initialized %lu render frames in flight", rndr->fifs.size);
-    return err_code::VKR_NO_ERROR;
+    return true;
 }
 
 intern void terminate_frame_contexts(renderer *rndr)
@@ -641,21 +641,22 @@ intern void terminate_resource_target_registry(renderer *rndr)
     hmap_terminate(&rndr->rtargets.buffer_id_map);
 }
 
-intern void terminate_global_descriptor_set_layouts(renderer *rndr)
+intern void terminate_global_descriptor_info(renderer *rndr)
 {
     // Terminate our default descriptor layout sets
-    ilog("Terminating %d global desc set layouts and pipeline layout", RDSET_LAYOUT_COUNT);
-    vkr_terminate_desc_pool((VkDescriptorPool)rndr->desc_info.desc_pool, &rndr->vk);
+    ilog("Terminating global desc info");
+    vkr_terminate_desc_pool(rndr->desc_info.desc_pool, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.material_ssbo, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.instance_ssbo, &rndr->vk);
-    vkr_terminate_desc_set_layouts((VkDescriptorSetLayout *)rndr->desc_info.dset_layouts, RDSET_LAYOUT_COUNT, &rndr->vk);
-    vkr_terminate_pipeline_layout((VkPipelineLayout)rndr->desc_info.pline_layout, &rndr->vk);
+    vkr_terminate_desc_set_layouts(rndr->desc_info.dset_layouts, RDSET_LAYOUT_COUNT, &rndr->vk);
+    vkr_terminate_pipeline_layout(rndr->desc_info.pline_layout, &rndr->vk);
 }
 
-intern bool init_global_descriptor_info(renderer *rndr, const rdescriptor_init_params &dip)
+intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_init_params &dip)
 {
+    ilog("Initializing global descriptor info");
     vkr_descriptor_set_layout_desc dsets[3]{};
-    
+
     // Not exactly needed for SSBO but its best to align to 16 bytes anyways
     asrt(dip.instance_ssbo.block_size % 16 == 0);
     asrt(dip.material_ssbo.block_size % 16 == 0);
@@ -723,28 +724,31 @@ intern bool init_global_descriptor_info(renderer *rndr, const rdescriptor_init_p
     pl_cfg.set_layout_count = RDSET_LAYOUT_COUNT;
     result = vkr_init_pipeline_layout(&rndr->desc_info.pline_layout, pl_cfg, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
-        terminate_global_descriptor_set_layouts(rndr);
+        terminate_global_descriptor_info(rndr);
         return false;
     }
 
-    vkr_chunked_buffer_cfg cb_cfg{};    
+    vkr_chunked_buffer_cfg cb_cfg{};
     cb_cfg.buffer_cfg.buffer_size = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count;
     cb_cfg.buffer_cfg.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     cb_cfg.buffer_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     cb_cfg.buffer_cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     cb_cfg.buffer_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+    cb_cfg.chunk_tracking_arena = &rndr->persist_fl;
     cb_cfg.chunk_size = dip.instance_ssbo.block_size;
+    cb_cfg.buffer_cfg.vma_alloc_name = "instance_ssbo";
     result = vkr_init_chunked_buffer(&rndr->desc_info.instance_ssbo, cb_cfg);
     if (result != VK_SUCCESS) {
-        terminate_global_descriptor_set_layouts(rndr);
+        terminate_global_descriptor_info(rndr);
         return false;
     }
 
     cb_cfg.buffer_cfg.buffer_size = dip.material_ssbo.block_size * dip.material_ssbo.block_count;
     cb_cfg.chunk_size = dip.material_ssbo.block_size;
+    cb_cfg.buffer_cfg.vma_alloc_name = "material_ssbo";
     result = vkr_init_chunked_buffer(&rndr->desc_info.material_ssbo, cb_cfg);
     if (result != VK_SUCCESS) {
-        terminate_global_descriptor_set_layouts(rndr);
+        terminate_global_descriptor_info(rndr);
         return false;
     }
 
@@ -758,14 +762,14 @@ intern bool init_global_descriptor_info(renderer *rndr, const rdescriptor_init_p
 
     result = vkr_init_desc_pool(&rndr->desc_info.desc_pool, desc_cfg, &rndr->vk);
     if (result != VK_SUCCESS) {
-        terminate_global_descriptor_set_layouts(rndr);
+        terminate_global_descriptor_info(rndr);
         return false;
     }
 
     return true;
 }
 
-intern int init_global_samplers(renderer *rndr)
+intern b32 init_global_samplers(renderer *rndr)
 {
     // Create image sampler
     vkr_sampler_cfg samp_cfg{};
@@ -783,9 +787,9 @@ intern int init_global_samplers(renderer *rndr)
     int err = vkr_init_sampler(rndr->samplers, samp_cfg, &rndr->vk);
     if (err != err_code::VKR_NO_ERROR) {
         wlog("Failed to initialize sampler - vk err code: %d", err);
-        return err_code::RENDER_INIT_SAMPLER_FAIL;
+        return false;
     }
-    return err_code::RENDER_NO_ERROR;
+    return true;
 }
 
 intern void terminate_global_samplers(renderer *rndr)
@@ -936,7 +940,7 @@ intern void terminate_blueprints(renderer *rndr)
     hmap_terminate(&rndr->blueprint_id_map);
 }
 
-int init_renderer(renderer *rndr, const renderer_init_params &p)
+bool init_renderer(renderer *rndr, const renderer_init_params &p)
 {
     asrt(p.upsream->alloc_type != mem_alloc_type::POOL); // Cannot use pool arena here
     init_fl_arena(&rndr->persist_fl, p.persist_fl_size, p.upsream, "rndr-persist-fl");
@@ -962,7 +966,7 @@ int init_renderer(renderer *rndr, const renderer_init_params &p)
                  .validation_layer_count = VALIDATION_LAYER_COUNT};
     s32 result = vkr_init(&vkii, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
-        return err_code::RENDER_INIT_FAIL;
+        return false;
     }
 
     // Blueprints
@@ -984,37 +988,26 @@ int init_renderer(renderer *rndr, const renderer_init_params &p)
     init_resource_target_registry(rndr);
 
     // Create transient command pool
-    vkr_init_cmd_pool(&rndr->transient_pool,
-                      rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
-                      VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                      &rndr->vk);
+    result = vkr_init_cmd_pool(&rndr->transient_pool,
+                               rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
+                               VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                               &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) return false;
 
     // Setup frames in flight
-    result = init_frame_contexts(rndr, p.thread_count);
-    if (result != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup frame contexts");
-        return result;
-    }
+    if (!init_frame_contexts(rndr, p.thread_count)) return false;
 
     // Samplers - must come before descriptor set layouts
-    result = init_global_samplers(rndr);
-    if (result != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup global samplers");
-        return result;
-    }
+    if (!init_global_samplers(rndr)) return false;
 
     // Descriptor set layouts
-    result = init_global_descriptor_info(rndr, p.desc);
-    if (result != err_code::VKR_NO_ERROR) {
-        elog("Failed to setup global descriptor set layouts");
-        return result;
-    }
+    if (!init_global_descriptor_info(rndr, p.desc)) return false;
 
     // Start timeer
     ptimer_restart(&rndr->pt);
 
     // Setup our indice and vert buffer sbuffer
-    return err_code::RENDER_NO_ERROR;
+    return true;
 }
 
 void terminate_renderer(renderer *rndr)
@@ -1032,7 +1025,7 @@ void terminate_renderer(renderer *rndr)
 #endif
 
     // Global descriptor set layouts
-    terminate_global_descriptor_set_layouts(rndr);
+    terminate_global_descriptor_info(rndr);
 
     // Global samplers - must come after descriptor set layouts
     terminate_global_samplers(rndr);

@@ -97,10 +97,6 @@ inline bool is_valid(sizet v)
 {
     return (v != INVALID_IND);
 }
-inline bool is_valid(u64 v)
-{
-    return (v != INVALID_ID);
-}
 inline bool is_valid(u32 v)
 {
     return (v != INVALID_IDX);

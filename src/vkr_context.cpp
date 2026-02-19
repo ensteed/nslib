@@ -1064,12 +1064,13 @@ int vkr_init_desc_set_layouts(VkDescriptorSetLayout *hndls, const vkr_descriptor
         ci.flags = cfg.dset_layouts[desc_i].flags;
         ci.bindingCount = (u32)cfg.dset_layouts[desc_i].binding_count;
         ci.pBindings = cfg.dset_layouts[desc_i].bindings;
+        ilog("Creating set layout %d with %d bindings", desc_i, ci.bindingCount);
         int res = vkCreateDescriptorSetLayout(vk->inst.device.hndl, &ci, &vk->alloc_cbs, &hndls[created]);
         if (res == VK_SUCCESS) {
             ++created;
         }
         else {
-            elog("Could not create descriptor set layout with vk err %d", res);
+            elog("Could not create descriptor set layout %d with vk err %d", desc_i, res);
             for (int i = 0; i < created; ++i) {
                 vkDestroyDescriptorSetLayout(vk->inst.device.hndl, hndls[i], &vk->alloc_cbs);
             }
@@ -1410,11 +1411,13 @@ int vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg)
     alloc_info.preferredFlags = cfg.preferred_flags;
     alloc_info.pUserData = cfg.user_data;
 
-    int err = vmaCreateBuffer(cfg.vma_alloc->hndl, &cinfo, &alloc_info, &buffer->hndl, &buffer->mem_hndl, &buffer->mem_info);
+    int err = vmaCreateBuffer(cfg.vma_alloc->hndl, &cinfo, &alloc_info, &buffer->hndl, &buffer->mem_hndl, nullptr);
     if (err != VK_SUCCESS) {
         elog("Failed in creating buffer with vk err %d", err);
         return err_code::VKR_CREATE_BUFFER_FAIL;
     }
+    vmaSetAllocationName(cfg.vma_alloc->hndl, buffer->mem_hndl, cfg.vma_alloc_name);
+    vmaGetAllocationInfo(cfg.vma_alloc->hndl, buffer->mem_hndl, &buffer->mem_info);
     return err_code::VKR_NO_ERROR;
 }
 
@@ -1490,11 +1493,13 @@ int vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg)
     image->format = cinfo.format;
     image->dims = cfg.dims;
 
-    int err = vmaCreateImage(cfg.vma_alloc->hndl, &cinfo, &alloc_info, &image->hndl, &image->mem_hndl, &image->mem_info);
+    int err = vmaCreateImage(cfg.vma_alloc->hndl, &cinfo, &alloc_info, &image->hndl, &image->mem_hndl, nullptr);
     if (err != VK_SUCCESS) {
         elog("Failed in creating image with vk err %d", err);
         return err_code::VKR_CREATE_IMAGE_FAIL;
     }
+    vmaSetAllocationName(cfg.vma_alloc->hndl, image->mem_hndl, cfg.vma_alloc_name);
+    vmaGetAllocationInfo(cfg.vma_alloc->hndl, image->mem_hndl, &image->mem_info);
     return err_code::VKR_NO_ERROR;
 }
 

@@ -123,6 +123,7 @@ struct vkr_buffer_cfg
     VkMemoryPropertyFlags required_flags;
     VkMemoryPropertyFlags preferred_flags;
     void *user_data{nullptr};
+    const char *vma_alloc_name{nullptr};
     const vkr_gpu_allocator *vma_alloc;
 };
 
@@ -153,6 +154,7 @@ struct vkr_image_cfg
     VkMemoryPropertyFlags preferred_flags;
     f32 priority{0.0f};
     void *user_data;
+    const char *vma_alloc_name{nullptr};
     const vkr_gpu_allocator *vma_alloc;
 };
 
