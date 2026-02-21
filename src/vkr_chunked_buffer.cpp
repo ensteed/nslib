@@ -28,7 +28,7 @@ VkDescriptorBufferInfo vkr_get_chunk_desc_info(const vkr_chunked_buffer *chunk_b
     return info;
 }
 
-int vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buffer_cfg &cfg)
+b32 vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buffer_cfg &cfg)
 {
     asrt(chunk_buf);
     asrt(chunk_buf->free_chunks.size == 0 && chunk_buf->free_chunks.capacity == 0);
@@ -51,8 +51,7 @@ int vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buf
 
     int err = vkr_init_buffer(&chunk_buf->buffer, buf_cfg);
     if (err != err_code::VKR_NO_ERROR) {
-        wlog("Failed to initialized %s with code %d", cfg.buffer_cfg.vma_alloc_name, err);
-        return err;
+        return false;
     }
 
     // Mapping needs to have worked or this whole program is invalid
@@ -64,7 +63,7 @@ int vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buf
     chunk_buf->next_chunk_index = 0;
 
     arr_init(&chunk_buf->free_chunks, cfg.chunk_tracking_arena, chunk_buf->chunk_count);
-    return err_code::VKR_NO_ERROR;
+    return true;
 }
 
 void vkr_terminate_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_context *vk)

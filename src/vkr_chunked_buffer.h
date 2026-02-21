@@ -26,7 +26,7 @@ struct vkr_chunked_buffer
 u64 vkr_get_chunk_offset(const vkr_chunked_buffer *chunk_buf, u32 chunk_index);
 void *vkr_get_chunk_ptr(const vkr_chunked_buffer *chunk_buf, u32 chunk_index);
 VkDescriptorBufferInfo vkr_get_chunk_desc_info(const vkr_chunked_buffer *chunk_buf, u32 chunk_index, u64 range_override = 0);
-int vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buffer_cfg &cfg);
+b32 vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buffer_cfg &cfg);
 void vkr_terminate_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_context *vk);
 u32 vkr_acquire_chunk(vkr_chunked_buffer *chunk_buf);
 void vkr_release_chunk(vkr_chunked_buffer *chunk_buf, u32 chunk_index);
