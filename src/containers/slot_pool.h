@@ -100,23 +100,28 @@ void clear_slot_pool(slot_pool<T> *pool)
 }
 
 template<typename T>
-bool is_slot_available(const slot_pool<T> *pool)
+u32 get_slots_available_count(const slot_pool<T> &pool)
 {
-    return (pool->free_list.size > 0) || (pool->slots.size < pool->slots.capacity);
+    asrt(pool.used_count <= pool.slots.size);
+    return (u32)pool.slots.size - pool.used_count;
 }
 
 template<typename T>
-u32 get_slot_used_count(const slot_pool<T> *pool)
+bool is_slot_available(const slot_pool<T> &pool)
 {
-    asrt(pool);
-    return pool->used_count;
+    return get_slots_available_count(pool) > 0;
 }
 
 template<typename T>
-bool slot_pool_empty(const slot_pool<T> *pool)
+u32 get_slot_used_count(const slot_pool<T> &pool)
 {
-    asrt(pool);
-    return pool->used_count == 0;
+    return pool.used_count;
+}
+
+template<typename T>
+bool slot_pool_empty(const slot_pool<T> &pool)
+{
+    return pool.used_count == 0;
 }
 
 template<typename T>
@@ -127,6 +132,16 @@ slot_handle<T> get_slot_current_handle(slot_pool<T> *pool, u32 index)
     }
     return {.index = index, .generation = pool->slots[index].gen_id};
 }
+
+template<typename T>
+slot_handle<const T> get_slot_current_handle(const slot_pool<T> &pool, u32 index)
+{
+    if (index >= pool.slots.size) {
+        return {};
+    }
+    return {.index = index, .generation = pool.slots[index].gen_id};
+}
+
 
 template<typename T>
 slot_item_ref<T> acquire_slot(slot_pool<T> *pool, const T &item = {})
@@ -174,12 +189,12 @@ T *get_slot_item(slot_pool<T> *pool, slot_handle<T> handle)
 }
 
 template<typename T>
-const T *get_slot_item(const slot_pool<T> *pool, slot_handle<T> handle)
+const T *get_slot_item(const slot_pool<T> &pool, slot_handle<T> handle)
 {
-    if (!is_valid(handle) || handle.index >= pool->slots.size) {
+    if (!is_valid(handle) || handle.index >= pool.slots.size) {
         return nullptr;
     }
-    auto *entry = &pool->slots[handle.index];
+    auto *entry = &pool.slots[handle.index];
     if (handle.generation == entry->gen_id) {
         return &entry->item;
     }
@@ -220,14 +235,13 @@ slot_pool<T>::iterator slot_pool_next(slot_pool<T> *pool, typename slot_pool<T>:
 }
 
 template<typename T>
-slot_pool<T>::const_iterator slot_pool_next(const slot_pool<T> *pool, typename slot_pool<T>::const_iterator iter)
+slot_pool<T>::const_iterator slot_pool_next(const slot_pool<T> &pool, typename slot_pool<T>::const_iterator iter)
 {
-    asrt(pool);
     u32 ind = iter.hndl.index + 1;
-    while (ind < pool->slots.size) {
+    while (ind < pool.slots.size) {
         auto hndl = get_slot_current_handle(pool, ind);
         if (is_valid(hndl)) {
-            return {.hndl = hndl, .item = &pool->slots[ind].item};
+            return {.hndl = hndl, .item = &pool.slots[ind].item};
         }
         ++ind;
     }
@@ -251,15 +265,15 @@ slot_pool<T>::iterator slot_pool_prev(slot_pool<T> *pool, typename slot_pool<T>:
 }
 
 template<typename T>
-slot_pool<T>::const_iterator slot_pool_prev(const slot_pool<T> *pool, typename slot_pool<T>::const_iterator iter)
+slot_pool<T>::const_iterator slot_pool_prev(const slot_pool<T> &pool, typename slot_pool<T>::const_iterator iter)
 {
     asrt(pool);
     u32 ind = iter.hndl.index - 1;
     // We utilize u32 wrapping here
-    while (ind < pool->slots.size) {
+    while (ind < pool.slots.size) {
         auto hndl = get_slot_current_handle(pool, ind);
         if (is_valid(hndl)) {
-            return {.hndl = hndl, .item = &pool->slots[ind].item};
+            return {.hndl = hndl, .item = &pool.slots[ind].item};
         }
         --ind;
     }
@@ -275,9 +289,8 @@ slot_pool<T>::iterator slot_pool_begin(slot_pool<T> *pool)
 }
 
 template<typename T>
-slot_pool<T>::const_iterator slot_pool_begin(const slot_pool<T> *pool)
+slot_pool<T>::const_iterator slot_pool_begin(const slot_pool<T> &pool)
 {
-    asrt(pool);
     slot_item_ref<T> tmp_ref{.hndl{.index= (u32)-1}};
     return slot_pool_next(pool, tmp_ref);
 }
@@ -291,10 +304,9 @@ slot_pool<T>::iterator slot_pool_rbegin(slot_pool<T> *pool)
 }
 
 template<typename T>
-slot_pool<T>::const_iterator slot_pool_rbegin(const slot_pool<T> *pool)
+slot_pool<T>::const_iterator slot_pool_rbegin(const slot_pool<T> &pool)
 {
-    asrt(pool);
-    slot_item_ref<T> tmp_ref{.hndl{.index=(u32)pool->slots.size}};
+    slot_item_ref<T> tmp_ref{.hndl{.index=(u32)pool.slots.size}};
     return slot_pool_prev(pool, tmp_ref);
 }
 

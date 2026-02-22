@@ -45,6 +45,7 @@ struct vkr_texture_pool_cfg
     const char *image_name{nullptr};
     const char *staging_buffer_name{"texture_pool_staging"};
     mem_arena *arena{nullptr};
+    mem_arena *frame_scratch{nullptr};
 };
 
 struct vkr_texture_source_image
@@ -59,22 +60,24 @@ struct vkr_texture_item
 };
 
 using texture_pool_handle = slot_handle<vkr_texture_item>;
+using texture_slot_item_ref = slot_item_ref<vkr_texture_item>;
 
 struct vkr_texture_pool
 {
     vkr_image image{};
     VkImageView view{VK_NULL_HANDLE};
 
-    uvec2 dims{};
-    VkFormat format{VK_FORMAT_UNDEFINED};
-    vkr_texture_pool_type type{VKR_TEXTURE_POOL_TYPE_2D_ARRAY};
-    slot_pool<vkr_texture_item> tpool{};
+    uvec2 dims;
+    u32 mip_levels;
+    VkFormat format;
+    vkr_texture_pool_type type;
+    slot_pool<vkr_texture_item> tpool;
 
     // These buffers back pending transfer commands and must stay alive until the caller
     // has finished submitting and waiting on the command buffer using this pool.
-    array<vkr_buffer> pending_staging_buffers{};
-
-    const vkr_context *vk{nullptr};
+    array<vkr_buffer> pending_staging_buffers;
+    mem_arena *frame_scratch;
+    const vkr_context *vk;
 };
 
 b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg, const vkr_context *vk);
@@ -82,32 +85,30 @@ void vkr_terminate_texture_pool(vkr_texture_pool *pool);
 
 void vkr_texture_pool_cleanup_staging_buffers(vkr_texture_pool *pool);
 
-int vkr_transition_pool_layout(vkr_texture_pool *pool,
-                               VkCommandBuffer cmd_buf,
-                               vkr_texture_pool_layout intent,
-                               const texture_pool_handle *handles,
-                               u32 handle_count);
+b32 vkr_transition_texture_layouts(vkr_texture_pool *pool,
+                                   VkCommandBuffer cmd_buf,
+                                   vkr_texture_pool_layout intent,
+                                   const texture_slot_item_ref *tslots,
+                                   u32 tslot_count);
 
-int vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, vkr_texture_pool_layout intent);
-int vkr_transition_pool_layout_layers(vkr_texture_pool *pool,
-                                      VkCommandBuffer cmd_buf,
-                                      vkr_texture_pool_layout intent,
-                                      u32 base_layer,
-                                      u32 layer_count);
-int vkr_transition_pool_layout_slot(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, vkr_texture_pool_layout intent, u32 slot_index);
+b32 vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, vkr_texture_pool_layout intent);
 
-bool vkr_pool_has_available_slots(const vkr_texture_pool *pool, u32 slot_count);
+void vkr_upload_to_texture_slots(vkr_texture_pool *pool,
+                                 VkCommandBuffer cmd_buf,
+                                 const void *src_image_data,
+                                 const texture_slot_item_ref *tslots,
+                                 u32 count);
 
-int vkr_acquire_slots(vkr_texture_pool *pool,
-                      VkCommandBuffer cmd_buf,
-                      const vkr_texture_source_image *src_images,
-                      u32 src_image_count,
-                      u32 slot_count,
-                      u32 *out_slots);
+b32 vkr_acquire_and_upload_texture_slots(vkr_texture_pool *pool,
+                              u32 src_image_count,
+                              texture_slot_item_ref *slots_out);
 
-int vkr_texture_pool_acquire_slot(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, const vkr_texture_source_image *src_image, u32 *out_slot);
 
-void vkr_texture_pool_release_slot(vkr_texture_pool *pool, u32 slot_index);
-void vkr_texture_pool_release_slots(vkr_texture_pool *pool, const u32 *slot_indices, u32 slot_count);
+// Handles out must be large enough to store a handle for each source image or there will be crashes/undefined behavior
+b32 vkr_acquire_texture_slots(vkr_texture_pool *pool,
+                              u32 src_image_count,
+                              texture_slot_item_ref *slots_out);
+
+void vkr_release_texture_slots(vkr_texture_pool *pool, const texture_pool_handle *tslots, u32 tslot_count);
 
 } // namespace nslib
