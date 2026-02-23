@@ -257,4 +257,152 @@ void fill_vk_stencil_op_state(VkStencilOpState *to_fill, const rstencil_op_state
     to_fill->reference = src.ref;
 }
 
+vk_format_info get_vk_format_info(VkFormat format)
+{
+    vk_format_info ret{
+        .block_width = 1u,
+        .block_height = 1u,
+        .components = get_component_count(format),
+    };
+    switch (format) {
+    case VK_FORMAT_R64G64B64A64_SFLOAT:
+    case VK_FORMAT_R64G64B64A64_UINT:
+    case VK_FORMAT_R64G64B64A64_SINT:
+    case VK_FORMAT_R64G64B64_SFLOAT:
+    case VK_FORMAT_R64G64B64_UINT:
+    case VK_FORMAT_R64G64B64_SINT:
+    case VK_FORMAT_R64G64_SFLOAT:
+    case VK_FORMAT_R64G64_UINT:
+    case VK_FORMAT_R64G64_SINT:
+    case VK_FORMAT_R64_SFLOAT:
+    case VK_FORMAT_R64_UINT:
+    case VK_FORMAT_R64_SINT:
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+    case VK_FORMAT_R32G32B32A32_UINT:
+    case VK_FORMAT_R32G32B32A32_SINT:
+    case VK_FORMAT_R32G32B32_SFLOAT:
+    case VK_FORMAT_R32G32B32_UINT:
+    case VK_FORMAT_R32G32B32_SINT:
+    case VK_FORMAT_R32G32_SFLOAT:
+    case VK_FORMAT_R32G32_UINT:
+    case VK_FORMAT_R32G32_SINT:
+    case VK_FORMAT_R32_SFLOAT:
+    case VK_FORMAT_R32_UINT:
+    case VK_FORMAT_R32_SINT:
+    case VK_FORMAT_D32_SFLOAT:
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case VK_FORMAT_R16G16B16A16_UNORM:
+    case VK_FORMAT_R16G16B16A16_SNORM:
+    case VK_FORMAT_R16G16B16A16_UINT:
+    case VK_FORMAT_R16G16B16A16_SINT:
+    case VK_FORMAT_R16G16B16_SFLOAT:
+    case VK_FORMAT_R16G16B16_UNORM:
+    case VK_FORMAT_R16G16B16_SNORM:
+    case VK_FORMAT_R16G16B16_UINT:
+    case VK_FORMAT_R16G16B16_SINT:
+    case VK_FORMAT_R16G16_SFLOAT:
+    case VK_FORMAT_R16G16_UNORM:
+    case VK_FORMAT_R16G16_SNORM:
+    case VK_FORMAT_R16G16_UINT:
+    case VK_FORMAT_R16G16_SINT:
+    case VK_FORMAT_R16_SFLOAT:
+    case VK_FORMAT_R16_UNORM:
+    case VK_FORMAT_R16_SNORM:
+    case VK_FORMAT_R16_UINT:
+    case VK_FORMAT_R16_SINT:
+    case VK_FORMAT_D16_UNORM:
+    case VK_FORMAT_R8G8B8A8_SRGB:
+    case VK_FORMAT_R8G8B8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_SNORM:
+    case VK_FORMAT_R8G8B8A8_UINT:
+    case VK_FORMAT_R8G8B8A8_SINT:
+    case VK_FORMAT_B8G8R8A8_SRGB:
+    case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_B8G8R8A8_SNORM:
+    case VK_FORMAT_B8G8R8A8_UINT:
+    case VK_FORMAT_B8G8R8A8_SINT:
+    case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+    case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+    case VK_FORMAT_R8G8B8_SRGB:
+    case VK_FORMAT_R8G8B8_UNORM:
+    case VK_FORMAT_R8G8B8_SNORM:
+    case VK_FORMAT_R8G8B8_UINT:
+    case VK_FORMAT_R8G8B8_SINT:
+    case VK_FORMAT_B8G8R8_SRGB:
+    case VK_FORMAT_B8G8R8_UNORM:
+    case VK_FORMAT_B8G8R8_SNORM:
+    case VK_FORMAT_B8G8R8_UINT:
+    case VK_FORMAT_B8G8R8_SINT:
+    case VK_FORMAT_R8G8_SRGB:
+    case VK_FORMAT_R8G8_UNORM:
+    case VK_FORMAT_R8G8_SNORM:
+    case VK_FORMAT_R8G8_UINT:
+    case VK_FORMAT_R8G8_SINT:
+    case VK_FORMAT_R8_SRGB:
+    case VK_FORMAT_R8_UNORM:
+    case VK_FORMAT_R8_SNORM:
+    case VK_FORMAT_R8_UINT:
+    case VK_FORMAT_R8_SINT:
+        ret.bytes_per_block = get_bytes_per_component(format) * ret.components;
+        break;
+    case VK_FORMAT_D16_UNORM_S8_UINT:
+    case VK_FORMAT_D24_UNORM_S8_UINT:
+        ret.bytes_per_block = 4;
+        break;
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        ret.bytes_per_block = 8;
+        break;
+    case VK_FORMAT_BC7_SRGB_BLOCK:
+    case VK_FORMAT_BC7_UNORM_BLOCK:
+    case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+    case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+    case VK_FORMAT_BC5_UNORM_BLOCK:
+    case VK_FORMAT_BC5_SNORM_BLOCK:
+        ret.block_width = 4u;
+        ret.block_height = 4u;
+        ret.bytes_per_block = 16u;
+        break;
+    case VK_FORMAT_BC4_UNORM_BLOCK:
+    case VK_FORMAT_BC4_SNORM_BLOCK:
+        ret.block_width = 4u;
+        ret.block_height = 4u;
+        ret.bytes_per_block = 8u;
+        break;
+    case VK_FORMAT_UNDEFINED:
+    default:
+        asrt_break("Uhandled format");
+    }
+    return ret;
+}
+
+sizet calculate_vk_image_size(const vk_format_info &info, u32 width, u32 height, u32 mip_level, u32 layer_count)
+{
+    // Calculate mip dimensions (clamped to 1)
+    u32 mip_width = std::max(1u, width >> mip_level);
+    u32 mip_height = std::max(1u, height >> mip_level);
+
+    // Calculate how many blocks are needed to cover this mip level
+    u32 num_blocks_x = (mip_width + info.block_width - 1) / info.block_width;
+    u32 num_blocks_y = (mip_height + info.block_height - 1) / info.block_height;
+
+    // Size for one layer of this mip
+    sizet mip_size = (sizet)(num_blocks_x * num_blocks_y * info.bytes_per_block);
+
+    // Add all layers for this mip level
+    return mip_size * layer_count;
+}
+
+
+sizet calculate_vk_image_buffer_size(const vk_format_info &info, u32 width, u32 height, u32 mip_levels, u32 layer_count)
+{
+    sizet total_size = 0;
+    for (u32 i = 0; i < mip_levels; ++i) {
+        total_size += calculate_vk_image_size(info, width, height, i, layer_count);
+    }
+    return total_size;
+}
+
 } // namespace nslib

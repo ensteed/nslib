@@ -93,22 +93,18 @@ b32 vkr_transition_texture_layouts(vkr_texture_pool *pool,
 
 b32 vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, vkr_texture_pool_layout intent);
 
-void vkr_upload_to_texture_slots(vkr_texture_pool *pool,
-                                 VkCommandBuffer cmd_buf,
-                                 const void *src_image_data,
-                                 const texture_slot_item_ref *tslots,
-                                 u32 count);
+b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
+                                VkCommandBuffer cmd_buf,
+                                const void *src_image_data,
+                                const texture_slot_item_ref *tslots,
+                                u32 count);
 
-b32 vkr_acquire_and_upload_texture_slots(vkr_texture_pool *pool,
-                              u32 src_image_count,
-                              texture_slot_item_ref *slots_out);
-
+b32 vkr_acquire_and_upload_texture_slots(vkr_texture_pool *pool, u32 src_image_count, texture_slot_item_ref *slots_out);
 
 // Handles out must be large enough to store a handle for each source image or there will be crashes/undefined behavior
-b32 vkr_acquire_texture_slots(vkr_texture_pool *pool,
-                              u32 src_image_count,
-                              texture_slot_item_ref *slots_out);
+b32 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, texture_slot_item_ref *slots_out);
 
-void vkr_release_texture_slots(vkr_texture_pool *pool, const texture_pool_handle *tslots, u32 tslot_count);
+// Returns the number of successful slots released. If a handle is no longer valid, the slot release will return false
+u32 vkr_release_texture_slots(vkr_texture_pool *pool, const texture_pool_handle *tslots, u32 tslot_count);
 
 } // namespace nslib

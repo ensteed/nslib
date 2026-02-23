@@ -1,27 +1,53 @@
 #include "rformat.h"
 #include "vkr_utils.h"
 
-namespace nslib {
+namespace nslib
+{
 
-sizet get_bytes_per_component(rformat format)
+u8 get_bytes_per_component(rformat format)
 {
     return get_bytes_per_component(get_vk_format(format));
 }
 
-bool is_sint_type(rformat format)
+u8 get_component_count(rformat format)
+{
+    return get_component_count(get_vk_format(format));
+}
+
+sizet calculate_image_buffer_size(rformat format, u32 width, u32 height, u32 mip_levels, u32 layer_count)
+{
+    return calculate_vk_image_buffer_size(get_vk_format(format), width, height, mip_levels, layer_count);
+}
+
+b32 is_sint_type(rformat format)
 {
     return is_sint_type(get_vk_format(format));
 }
 
-bool is_floating_point_type(rformat format)
+b32 is_floating_point_type(rformat format)
 {
     return is_floating_point_type(get_vk_format(format));
 }
 
-bool is_uint_type(rformat format)
+b32 is_uint_type(rformat format)
 {
     return is_uint_type(get_vk_format(format));
 }
 
-
+b32 is_depth_stencil(rformat format)
+{
+    return is_depth_stencil(get_vk_format(format));
 }
+
+rformat_info get_rformat_info(rformat format)
+{
+    auto vk_fmt = get_vk_format_info(get_vk_format(format));
+    return {
+        .block_width = vk_fmt.block_width,
+        .block_height = vk_fmt.block_height,
+        .bytes_per_block = vk_fmt.bytes_per_block,
+        .components = vk_fmt.components,
+    };
+}
+
+} // namespace nslib

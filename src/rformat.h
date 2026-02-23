@@ -113,19 +113,31 @@ enum struct rformat
     R64_UINT,
     R64_SINT,
     // Depth/Stencil formats
-    D16_UNORM, // 2 bytes
-    D16_UNORM_S8_UINT, // 3 bytes
-    D32_SFLOAT, // 4 bytes
-    D24_UNORM_S8_UINT, // 4 bytes
+    D16_UNORM,          // 2 bytes
+    D16_UNORM_S8_UINT,  // 3 bytes
+    D32_SFLOAT,         // 4 bytes
+    D24_UNORM_S8_UINT,  // 4 bytes
     D32_SFLOAT_S8_UINT, // 8 bytes
-    // Whatever format the swapchain is
+                        // Whatever format the swapchain is
     INVALID,
 };
 
-sizet get_bytes_per_component(rformat format);
-bool is_floating_point_type(rformat format);
-bool is_uint_type(rformat format);
-bool is_sint_type(rformat format);
+struct rformat_info
+{
+    u8 block_width;
+    u8 block_height;
+    u8 bytes_per_block;
+    u8 components;
+};
+
+u8 get_bytes_per_component(rformat format);
+u8 get_component_count(rformat format);
+sizet calculate_image_buffer_size(rformat format, u32 width, u32 height, u32 mip_levels, u32 layer_count);
+rformat_info get_rformat_info(rformat format);
+b32 is_floating_point_type(rformat format);
+b32 is_depth_stencil(rformat format);
+b32 is_uint_type(rformat format);
+b32 is_sint_type(rformat format);
 
 template<typename T>
 struct type_info
@@ -148,7 +160,7 @@ concept RequiresNormalization = (sizeof(typename type_info<T>::element_type) <= 
 template<typename T>
 concept FixedFormat = !RequiresNormalization<T>;
 
-// --- Version A: For Floats and 32/64-bit Ints (No bool needed) ---
+// --- Version A: For Floats and 32/64-bit Ints (No b32 needed) ---
 template<FixedFormat T>
 constexpr rformat get_rformat_for_type()
 {
@@ -199,9 +211,9 @@ constexpr rformat get_rformat_for_type()
     }
 }
 
-// --- Version B: For 8-bit and 16-bit Ints (MUST pass bool) ---
+// --- Version B: For 8-bit and 16-bit Ints (MUST pass b32) ---
 template<RequiresNormalization T>
-constexpr rformat get_rformat_for_type(bool normalize)
+constexpr rformat get_rformat_for_type(b32 normalize)
 {
     using Info = type_info<T>;
     using V = typename Info::element_type;
