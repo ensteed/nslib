@@ -37,6 +37,8 @@ VkViewport get_vk_viewport(const rect &vp, const vec2 &depth_min_max);
 void fill_vk_stencil_op_state(VkStencilOpState *to_fill, const rstencil_op_state &src);
 
 vk_format_info get_vk_format_info(VkFormat format);
+vk_format_info get_vk_format_info(rformat format);
+vk_format_info get_vk_format_info(const rformat_info &finfo);
 
 sizet calculate_vk_image_size(const vk_format_info &fmt_info, u32 width, u32 height, u32 mip_level, u32 layer_count);
 sizet calculate_vk_image_buffer_size(const vk_format_info &fmt_info, u32 width, u32 height, u32 mip_levels, u32 layer_count);
@@ -841,8 +843,6 @@ constexpr u8 get_component_count(VkFormat format)
     default:
         return (u8)~0;
     }
-}
-
 }
 
 } // namespace nslib

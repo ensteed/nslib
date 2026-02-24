@@ -257,6 +257,21 @@ void fill_vk_stencil_op_state(VkStencilOpState *to_fill, const rstencil_op_state
     to_fill->reference = src.ref;
 }
 
+vk_format_info get_vk_format_info(rformat format)
+{
+    return get_vk_format_info(get_vk_format(format));
+}
+
+vk_format_info get_vk_format_info(const rformat_info &finfo)
+{
+    return {
+        .block_width = finfo.block_width,
+        .block_height = finfo.block_height,
+        .bytes_per_block = finfo.bytes_per_block,
+        .components = finfo.components,
+    };
+}
+
 vk_format_info get_vk_format_info(VkFormat format)
 {
     vk_format_info ret{
@@ -394,7 +409,6 @@ sizet calculate_vk_image_size(const vk_format_info &info, u32 width, u32 height,
     // Add all layers for this mip level
     return mip_size * layer_count;
 }
-
 
 sizet calculate_vk_image_buffer_size(const vk_format_info &info, u32 width, u32 height, u32 mip_levels, u32 layer_count)
 {
