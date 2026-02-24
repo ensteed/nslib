@@ -7,21 +7,6 @@
 namespace nslib
 {
 
-namespace err_code
-{
-enum vkr_texture_pool
-{
-    VKR_TEXTURE_POOL_NO_ERROR,
-    VKR_TEXTURE_POOL_INIT_IMAGE_FAIL,
-    VKR_TEXTURE_POOL_INIT_IMAGE_VIEW_FAIL,
-    VKR_TEXTURE_POOL_INVALID_RANGE,
-    VKR_TEXTURE_POOL_INVALID_SOURCE_IMAGE,
-    VKR_TEXTURE_POOL_OUT_OF_SLOTS,
-    VKR_TEXTURE_POOL_UNSUPPORTED_LAYOUT,
-    VKR_TEXTURE_POOL_STAGE_BUFFER_FAIL,
-};
-}
-
 enum vkr_texture_pool_type
 {
     VKR_TEXTURE_POOL_TYPE_2D_ARRAY,
@@ -43,7 +28,6 @@ struct vkr_texture_pool_cfg
     vkr_texture_pool_type type{VKR_TEXTURE_POOL_TYPE_2D_ARRAY};
     VkImageUsageFlags image_usage{VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
     const char *image_name{nullptr};
-    const char *staging_buffer_name{"texture_pool_staging"};
     mem_arena *arena{nullptr};
     mem_arena *frame_scratch{nullptr};
 };
@@ -83,7 +67,7 @@ struct vkr_texture_pool
 b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_texture_pool(vkr_texture_pool *pool);
 
-void vkr_texture_pool_cleanup_staging_buffers(vkr_texture_pool *pool);
+void vkr_cleanup_staging_buffers(vkr_texture_pool *pool);
 
 b32 vkr_transition_texture_layouts(vkr_texture_pool *pool,
                                    VkCommandBuffer cmd_buf,
@@ -98,8 +82,6 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
                                 const void *src_image_data,
                                 const texture_slot_item_ref *tslots,
                                 u32 count);
-
-b32 vkr_acquire_and_upload_texture_slots(vkr_texture_pool *pool, u32 src_image_count, texture_slot_item_ref *slots_out);
 
 // Handles out must be large enough to store a handle for each source image or there will be crashes/undefined behavior
 b32 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, texture_slot_item_ref *slots_out);

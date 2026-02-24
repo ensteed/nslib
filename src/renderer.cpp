@@ -847,11 +847,11 @@ intern void terminate_texture(renderer *rndr, rtexture_info *im)
 intern void terminate_render_resources(renderer *rndr)
 {
     ilog("Terminating render resources (%lu geoms, %lu textures, %lu mats, %lu techniques, %lu shdrs)",
-         rndr->geometry.used_count,
-         rndr->textures.used_count,
-         rndr->materials.used_count,
-         rndr->techniques.used_count,
-         rndr->shaders.used_count);
+         get_slot_used_count(rndr->geometry),
+         get_slot_used_count(rndr->textures),
+         get_slot_used_count(rndr->materials),
+         get_slot_used_count(rndr->techniques),
+         get_slot_used_count(rndr->shaders));
     // Geometries
     for (auto iter = slot_pool_begin(&rndr->geometry); is_valid(iter); iter = slot_pool_next(&rndr->geometry, iter)) {
         terminate_geometry(rndr, iter.item);
@@ -894,7 +894,7 @@ template<typename T, typename TermFunc>
 intern void terminate_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, TermFunc term_func, const char *lname)
 {
     ilog("Terminating %u used %s (%u total size with %u free slots)",
-         cache->items.used_count,
+         get_slot_used_count(cache->items),
          lname,
          cache->items.slots.size,
          cache->items.free_list.size);
@@ -933,7 +933,7 @@ intern void init_blueprints(renderer *rndr)
 intern void terminate_blueprints(renderer *rndr)
 {
     ilog("Terminating render blueprints");
-    while (!slot_pool_empty(&rndr->blueprints)) {
+    while (!slot_pool_empty(rndr->blueprints)) {
         destroy_render_blueprint(rndr, slot_pool_begin(&rndr->blueprints).hndl);
     }
     terminate_slot_pool(&rndr->blueprints);

@@ -132,7 +132,10 @@ struct rformat_info
 
 u8 get_bytes_per_component(rformat format);
 u8 get_component_count(rformat format);
-sizet calculate_image_buffer_size(rformat format, u32 width, u32 height, u32 mip_levels, u32 layer_count);
+
+sizet calculate_image_size(const rformat_info finfo, u32 width, u32 height, u32 mip_levels, u32 layer_count);
+sizet calculate_image_buffer_size(const rformat_info finfo, u32 width, u32 height, u32 mip_levels, u32 layer_count);
+
 rformat_info get_rformat_info(rformat format);
 b32 is_floating_point_type(rformat format);
 b32 is_depth_stencil(rformat format);

@@ -124,22 +124,21 @@ intern b32 transition_ranges_to_intent(vkr_texture_pool *pool,
     VkPipelineStageFlags dst_stage_mask = 0;
 
     for (u32 range_i = 0; range_i < range_count; ++range_i) {
-        auto cur_slot_i = ranges[range_i].base_ind;
+        auto base_slot_i = ranges[range_i].base_ind;
         VkImageMemoryBarrier *cur_barrier{};
 
-        for (u32 soffset = 0; soffset < ranges[range_i].count; ++soffset) {
-            VkImageLayout old_layout = pool->tpool.slots[cur_slot_i + soffset].item.layout;
+        for (u32 slot_offset = 0; slot_offset < ranges[range_i].count; ++slot_offset) {
+            auto cur_slot_item = &pool->tpool.slots[base_slot_i + slot_offset].item;
+            VkImageLayout old_layout = cur_slot_item->layout;
+            
             if (!cur_barrier || old_layout != cur_barrier->oldLayout) {
-                cur_barrier = arr_push_back(&barriers, {});
-
                 VkAccessFlags src_access{};
                 VkAccessFlags dst_access{};
                 VkPipelineStageFlags src_stage{};
                 VkPipelineStageFlags dst_stage{};
-                if (!get_layout_transition_masks(
-                        pool->tpool.slots[cur_slot_i + soffset].item.layout, new_layout, &src_access, &dst_access, &src_stage, &dst_stage))
-                    return false;
-
+                asrt(get_layout_transition_masks(cur_slot_item->layout, new_layout, &src_access, &dst_access, &src_stage, &dst_stage));
+                
+                cur_barrier = arr_push_back(&barriers, {});
                 cur_barrier->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
                 cur_barrier->srcAccessMask = src_access;
                 cur_barrier->dstAccessMask = dst_access;
@@ -150,22 +149,25 @@ intern b32 transition_ranges_to_intent(vkr_texture_pool *pool,
                 cur_barrier->image = pool->image.hndl;
                 cur_barrier->subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
                 cur_barrier->subresourceRange.baseMipLevel = 0;
-                cur_barrier->subresourceRange.levelCount = pool->;
-                cur_barrier->subresourceRange.baseArrayLayer = get_layer_from_slot(*pool, cur_slot_i + soffset);
-
+                cur_barrier->subresourceRange.levelCount = pool->mip_levels;
+                cur_barrier->subresourceRange.baseArrayLayer = get_layer_from_slot(*pool, base_slot_i + slot_offset);
+                cur_barrier->subresourceRange.layerCount = get_layers_per_slot(*pool);
                 src_stage_mask |= src_stage;
                 dst_stage_mask |= dst_stage;
             }
             else {
                 cur_barrier->subresourceRange.layerCount += get_layers_per_slot(*pool);
             }
+            
+            // Update the slot layout
+            cur_slot_item->layout = new_layout;
         }
     }
 
     if (barriers.size > 0) {
         vkCmdPipelineBarrier(cmd_buf, src_stage_mask, dst_stage_mask, 0, 0, nullptr, 0, nullptr, (u32)barriers.size, barriers.data);
     }
-
+    
     arr_terminate(&barriers);
     return true;
 }
@@ -219,7 +221,6 @@ b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cf
     img_cfg.format = cfg.format;
     img_cfg.tiling = VK_IMAGE_TILING_OPTIMAL;
     img_cfg.usage = cfg.image_usage;
-    img_cfg.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     img_cfg.im_create_flags = (cfg.type == VKR_TEXTURE_POOL_TYPE_CUBE_ARRAY) ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     img_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     img_cfg.alloc_flags = 0;
@@ -233,7 +234,7 @@ b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cf
 
     int err = vkr_init_image(&pool->image, img_cfg);
     if (err != err_code::VKR_NO_ERROR) {
-        vkr_texture_pool_cleanup_staging_buffers(pool);
+        vkr_cleanup_staging_buffers(pool);
         terminate_slot_pool(&pool->tpool);
         return false;
     }
@@ -243,13 +244,13 @@ b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cf
     view_cfg.view_type = (cfg.type == VKR_TEXTURE_POOL_TYPE_CUBE_ARRAY) ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_2D_ARRAY;
     view_cfg.srange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     view_cfg.srange.baseMipLevel = 0;
-    view_cfg.srange.levelCount = 1;
+    view_cfg.srange.levelCount = cfg.mip_levels;
     view_cfg.srange.baseArrayLayer = 0;
     view_cfg.srange.layerCount = img_cfg.array_layers;
     err = vkr_init_image_view(&pool->view, view_cfg, vk);
     if (err != err_code::VKR_NO_ERROR) {
         vkr_terminate_image(&pool->image, vk);
-        vkr_texture_pool_cleanup_staging_buffers(pool);
+        vkr_cleanup_staging_buffers(pool);
         terminate_slot_pool(&pool->tpool);
         return false;
     }
@@ -257,7 +258,7 @@ b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cf
     return true;
 }
 
-void vkr_texture_pool_cleanup_staging_buffers(vkr_texture_pool *pool)
+void vkr_cleanup_staging_buffers(vkr_texture_pool *pool)
 {
     asrt(pool && pool->vk);
     for (sizet i = 0; i < pool->pending_staging_buffers.size; ++i) {
@@ -269,7 +270,7 @@ void vkr_texture_pool_cleanup_staging_buffers(vkr_texture_pool *pool)
 void vkr_terminate_texture_pool(vkr_texture_pool *pool)
 {
     asrt(pool && pool->vk);
-    vkr_texture_pool_cleanup_staging_buffers(pool);
+    vkr_cleanup_staging_buffers(pool);
     vkr_terminate_image_view(pool->view, pool->vk);
     vkr_terminate_image(&pool->image, pool->vk);
     terminate_slot_pool(&pool->tpool);
@@ -287,7 +288,9 @@ b32 vkr_transition_texture_layouts(vkr_texture_pool *pool,
     array<pool_slot_range> ranges{};
     arr_init(&ranges, pool->frame_scratch);
     build_contiguous_slot_ranges(tslots, tslot_count, &ranges);
-    return transition_ranges_to_intent(pool, cmd_buf, ranges.data, ranges.size, intent);
+    bool ret = transition_ranges_to_intent(pool, cmd_buf, ranges.data, ranges.size, intent);
+    arr_terminate(&ranges);
+    return ret;
 }
 
 b32 vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, vkr_texture_pool_layout intent)
@@ -315,8 +318,9 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     staging_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
     staging_cfg.vma_alloc = &pool->vk->inst.device.vma_alloc;
     staging_cfg.vma_alloc_name = "staging-buffer";
-    staging_cfg.buffer_size = calculate_vk_image_buffer_size(fmt_info, pool->dims.w, pool->dims.h, pool->mip_levels, get_layers_per_slot(*pool)*count);
-    vkr_buffer staging{};    
+    staging_cfg.buffer_size =
+        calculate_vk_image_buffer_size(fmt_info, pool->dims.w, pool->dims.h, pool->mip_levels, get_layers_per_slot(*pool) * count);
+    vkr_buffer staging{};
     s32 result = vkr_init_buffer(&staging, staging_cfg);
     if (result != err_code::VKR_NO_ERROR) {
         return false;
@@ -334,12 +338,12 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
         arr_terminate(&ranges);
         return false;
     }
-    
+
     array<VkBufferImageCopy> regions{};
     arr_init(&regions, pool->frame_scratch);
     sizet buff_offset{0};
     for (u32 mipi = 0; mipi < pool->mip_levels; ++mipi) {
-        for (u32 rangei = 0; rangei < count; ++rangei) {
+        for (u32 rangei = 0; rangei < ranges.size; ++rangei) {
             VkBufferImageCopy region{};
             region.bufferOffset = buff_offset;
             region.bufferRowLength = 0;
@@ -366,15 +370,10 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     return ret;
 }
 
-b32 vkr_acquire_texture_slots(vkr_texture_pool *pool,
-                              VkCommandBuffer cmd_buf,
-                              const vkr_texture_source_image *src_images,
-                              u32 src_image_count,
-                              texture_slot_item_ref *slots_out)
+b32 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, texture_slot_item_ref *slots_out)
 {
     asrt(pool);
     asrt(slots_out);
-    asrt(src_images);
     asrt(src_image_count > 0);
 
     u32 remaining_slots = get_slots_available_count(pool->tpool);

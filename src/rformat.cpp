@@ -14,9 +14,24 @@ u8 get_component_count(rformat format)
     return get_component_count(get_vk_format(format));
 }
 
+sizet calculate_image_size(const rformat_info finfo, u32 width, u32 height, u32 mip_levels, u32 layer_count)
+{
+    return calculate_vk_image_size(get_vk_format_info(finfo), width, height, mip_levels, layer_count);
+}
+
+sizet calculate_image_buffer_size(const rformat_info finfo, u32 width, u32 height, u32 mip_levels, u32 layer_count)
+{
+    return calculate_vk_image_buffer_size(get_vk_format_info(finfo), width, height, mip_levels, layer_count);
+}
+
+sizet calculate_image_size(rformat format, u32 width, u32 height, u32 mip_levels, u32 layer_count)
+{
+    return calculate_vk_image_buffer_size(get_vk_format_info(format), width, height, mip_levels, layer_count);
+}
+
 sizet calculate_image_buffer_size(rformat format, u32 width, u32 height, u32 mip_levels, u32 layer_count)
 {
-    return calculate_vk_image_buffer_size(get_vk_format(format), width, height, mip_levels, layer_count);
+    return calculate_vk_image_buffer_size(get_vk_format_info(format), width, height, mip_levels, layer_count);
 }
 
 b32 is_sint_type(rformat format)
