@@ -143,15 +143,13 @@ void test_cache_default_types()
 
     auto tex = create_asset<texture>(&cache, "texture_a");
     asrt_log(is_valid(tex));
-    tex.item->dims = uvec3(2, 4, 1);
+    tex.item->dims = uvec2(2, 4);
     tex.item->usage = texture_usage::ALBEDO;
 
     auto tex_copy = create_asset(tex_pool, *tex.item, "texture_b");
     asrt_log(is_valid(tex_copy));
     asrt_log(tex_copy.item->id != tex.item->id);
-    asrt_log(tex_copy.item->dims.w == tex.item->dims.w);
-    asrt_log(tex_copy.item->dims.h == tex.item->dims.h);
-    asrt_log(tex_copy.item->dims.layers == tex.item->dims.layers);
+    asrt_log(tex_copy.item->dims == tex.item->dims);
 
     string expected_name("texture_b");
     asrt_log(tex_copy.item->name == expected_name);

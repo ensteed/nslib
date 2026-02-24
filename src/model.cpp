@@ -134,14 +134,9 @@ void terminate_asset(texture *tex)
     release_ram_data(tex);
 }
 
-u32 get_texture_layer_pixel_count(const texture *tex)
+u32 get_texture_pixel_count(const texture *tex)
 {
-    return tex->dims.w * tex->dims.h;
-}
-
-u32 get_texture_total_pixel_count(const texture *tex)
-{
-    return get_texture_layer_pixel_count(tex) * tex->dims.layers;
+    return tex->dims.w * tex->dims.h * (test_flags(tex->flags, TEXTURE_FLAG_CUBEMAP) ? 6 : 1);
 }
 
 u8 get_pixel_byte_size(texture_usage usage)
@@ -163,14 +158,13 @@ u8 get_pixel_byte_size(texture_usage usage)
 
 sizet get_texture_memsize(const texture *tex)
 {
-    return get_texture_total_pixel_count(tex) * get_pixel_byte_size(tex->usage);
+    return get_texture_pixel_count(tex) * get_pixel_byte_size(tex->usage);
 }
 
 const char *load_texture(texture *tex, const char *path)
 {
     s32 channels{};
     auto stb_pixels = stbi_load(path, (s32 *)&tex->dims.w, (s32 *)&tex->dims.h, (s32 *)&channels, STBI_rgb_alpha);
-    tex->dims.layers = 1;
     if (!stb_pixels) {
         return stbi_failure_reason();
     }

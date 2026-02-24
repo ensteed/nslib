@@ -169,8 +169,8 @@ struct vkr_image
 
 struct vkr_image_view_cfg
 {
-    VkImageSubresourceRange srange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    VkImageViewType view_type{VK_IMAGE_VIEW_TYPE_2D};
+    VkImageSubresourceRange srange;
+    VkImageViewType view_type;
     VkImageViewCreateFlags create_flags;
     VkComponentMapping components;
     const vkr_image *image;

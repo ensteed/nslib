@@ -7,6 +7,7 @@
 #include "basic_types.h"
 #include "engine_rendering.h"
 #include "render_manifest.h"
+#include "vkr_texture_pool.h"
 #include "profiling.h"
 using namespace nslib;
 
@@ -242,7 +243,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     create_shaders(shdr_pool);
 
     // Initialize our renderer - fail early if init fails
-    renderer_init_params p{
+    renderer_cfg p{
         .win_hndl = ctxt->win_hndl,
         .upsream = &ctxt->arenas.free_list,
         .persist_fl_size = 200 * MB_SIZE,

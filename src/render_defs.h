@@ -64,9 +64,28 @@ struct slot_handle;
 template<typename T>
 struct slot_item_ref;
 
+template<typename T>
+struct slot_handle;
+
+using rtexture_pool_idx = u32;
+
+template<typename T>
+struct registry_handle
+{
+    rtexture_pool_idx pool_idx{INVALID_IDX};
+    slot_handle<T> hndl;
+};
+
+template<typename T>
+struct registry_ref
+{
+    rtexture_pool_idx pool_idx{INVALID_IDX};
+    slot_item_ref<T> ref;
+};
+
 struct rtexture_info;
-using rtexture_handle = slot_handle<rtexture_info>;
-using rtexture_ref = slot_item_ref<rtexture_info>;
+using rtexture_handle = registry_handle<rtexture_info>;
+using rtexture_ref = registry_ref<rtexture_info>;
 
 struct rmaterial_info;
 using rmaterial_handle = slot_handle<rmaterial_info>;

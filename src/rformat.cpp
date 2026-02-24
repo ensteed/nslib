@@ -49,8 +49,27 @@ b32 is_uint_type(rformat format)
     return is_uint_type(get_vk_format(format));
 }
 
-b32 is_depth_stencil(rformat format)
+b32 has_stencil_component(rformat format)
 {
+    return has_stencil_component(get_vk_format(format));
+}
+
+b32 has_depth_component(rformat format)
+{
+    return has_depth_component(get_vk_format(format));
+    
+}
+b32 is_depth_only(rformat format)
+{
+    return is_depth_only(get_vk_format(format));
+}
+
+b32 is_stencil_only(rformat format)
+{
+    return is_stencil_only(get_vk_format(format));
+}
+
+b32 is_depth_stencil(rformat format) {
     return is_depth_stencil(get_vk_format(format));
 }
 

@@ -159,14 +159,19 @@ u32 upload_geometries(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geom_
     return upload_assets_helper(geom_pool, upload_func);
 }
 
+intern rtexture_flags get_rtexture_flags(asset_flags flags) {
+    return test_flags(flags, TEXTURE_FLAG_CUBEMAP) ? RTEXTURE_FLAG_CUBEMAP : RTEXTURE_FLAG_NONE;
+}
+
 bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch)
 {
     rtexture_desc ctinfo{};
     ctinfo.name = ls(tex->name);
-    ctinfo.dims = tex->dims;
+    ctinfo.meta.dims = tex->dims;
+    ctinfo.meta.flags = get_rtexture_flags(tex->flags);
+    ctinfo.meta.fmt = get_rformat_for_usage(tex->usage);
     ctinfo.data = tex->pixels;
     ctinfo.data_size = get_texture_memsize(tex);
-    ctinfo.format = get_rformat_for_usage(tex->usage);
     tex->rhndl = create_rtexture(rndr, ctinfo);
     return get_and_log_upload_result(tex);
 }

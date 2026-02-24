@@ -9,7 +9,7 @@ namespace nslib
 
 enum mat_sampler_slot
 {
-    MAT_SAMPLER_SLOT_DIFFUSE,
+    MAT_SAMPLER_SLOT_ALBEDO,
     MAT_SAMPLER_SLOT_NORMAL,
     MAT_SAMPLER_SLOT_COUNT
 };
@@ -29,14 +29,20 @@ enum struct texture_usage : u8
     ALBEDO,
     NORMAL,
     GRAYSCALE,
-    HDR
+    HDR,
+};
+
+enum texture_flag
+{
+    TEXTURE_FLAG_CUBEMAP = make_flag_base(ASSET_FLAG_USER_BASE, 0),
 };
 
 struct texture
 {
     ASSET(TEXTURE, nsimg);
     void *pixels;
-    uvec3 dims;
+    uvec2 dims;
+    u32 mip_levels;
     texture_usage usage;
     rtexture_handle rhndl;
 };
@@ -251,7 +257,7 @@ void init_asset(texture *tex);
 void release_ram_data(texture *tex);
 void terminate_asset(texture *tex);
 sizet get_texture_memsize(const texture *tex);
-u32 get_texture_layer_pixel_count(const texture *tex);
+u32 get_texture_pixel_count(const texture *tex);
 const char *load_texture(texture *tex, const char *path);
 
 // SHADER

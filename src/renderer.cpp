@@ -652,7 +652,7 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     vkr_terminate_pipeline_layout(rndr->desc_info.pline_layout, &rndr->vk);
 }
 
-intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_init_params &dip)
+intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_cfg &dip)
 {
     ilog("Initializing global descriptor info");
     vkr_descriptor_set_layout_desc dsets[3]{};
@@ -827,21 +827,13 @@ intern void terminate_shader(renderer *rndr, rshader_info *shdr)
     *shdr = {};
 }
 
-intern void init_render_resources(renderer *rndr)
+intern void init_render_resources(renderer *rndr, const renderer_cfg &rcfg)
 {
     init_slot_pool(&rndr->shaders, MAX_SHADER_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->textures, MAX_TEXTURE_COUNT, &rndr->persist_fl);
     init_slot_pool(&rndr->geometry, MAX_GEOM_COUNT, &rndr->persist_fl);
-}
-
-intern void terminate_texture(renderer *rndr, rtexture_info *im)
-{
-    ilog("Terminating texture %s", im->name);
-    vkr_terminate_image(&im->im, &rndr->vk);
-    vkr_terminate_image_view(im->iview, &rndr->vk);
-    *im = {};
+    init_rtexture_registry(&rndr->textures, rcfg.tcfg);
 }
 
 intern void terminate_render_resources(renderer *rndr)
@@ -859,10 +851,7 @@ intern void terminate_render_resources(renderer *rndr)
     terminate_slot_pool(&rndr->geometry);
 
     // Terminate all images and image views
-    for (auto iter = slot_pool_begin(&rndr->textures); is_valid(iter); iter = slot_pool_next(&rndr->textures, iter)) {
-        terminate_texture(rndr, iter.item);
-    }
-    terminate_slot_pool(&rndr->textures);
+    terminate_rtexture_registry(&rndr->textures);
 
     // Materials
     for (auto iter = slot_pool_begin(&rndr->materials); is_valid(iter); iter = slot_pool_next(&rndr->materials, iter)) {
@@ -940,7 +929,7 @@ intern void terminate_blueprints(renderer *rndr)
     hmap_terminate(&rndr->blueprint_id_map);
 }
 
-bool init_renderer(renderer *rndr, const renderer_init_params &p)
+bool init_renderer(renderer *rndr, const renderer_cfg &p)
 {
     asrt(p.upsream->alloc_type != mem_alloc_type::POOL); // Cannot use pool arena here
     init_fl_arena(&rndr->persist_fl, p.persist_fl_size, p.upsream, "rndr-persist-fl");
@@ -982,7 +971,7 @@ bool init_renderer(renderer *rndr, const renderer_init_params &p)
     init_geometry_stream_groups(rndr);
 
     // Render resources
-    init_render_resources(rndr);
+    init_render_resources(rndr, p);
 
     // Resource targets
     init_resource_target_registry(rndr);
@@ -1257,69 +1246,66 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     return geom_ref.hndl;
 }
 
-rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo)
+rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
 {
     asrt(rndr);
-    asrt(ctinfo.data);
-    asrt(ctinfo.dims > uvec3{});
-    asrt(ctinfo.data_size > 0);
-    asrt(ctinfo.name);
+    return create_rtexture(&rndr->textures, tdesc);
 
-    VkCommandBuffer tmp_cmd_buf;
-    int result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
-    if (result != err_code::VKR_NO_ERROR) {
-        return {};
-    }
-    auto tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
+    // VkCommandBuffer tmp_cmd_buf;
+    // int result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
+    // if (result != err_code::VKR_NO_ERROR) {
+    //     return {};
+    // }
+    // auto tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
 
-    rtexture_info ti{};
+    // rtexture_info ti{};
 
-    // Just in case we ensure null terminated
-    strncpy(ti.name, ctinfo.name, SMALL_STR_LEN - 1);
-    ti.name[SMALL_STR_LEN - 1] = 0;
+    // // Just in case we ensure null terminated
+    // strncpy(ti.name, ctinfo.name, SMALL_STR_LEN - 1);
+    // ti.name[SMALL_STR_LEN - 1] = 0;
 
-    vkr_image_cfg cfg{};
-    cfg.format = get_vk_format(ctinfo.format);
-    asrt(cfg.format != VK_FORMAT_UNDEFINED && "Forgot to add vk support to rformat type");
-    cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    cfg.dims = ctinfo.dims;
-    cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+    // vkr_image_cfg cfg{};
+    // cfg.format = get_vk_format(ctinfo.format);
+    // asrt(cfg.format != VK_FORMAT_UNDEFINED && "Forgot to add vk support to rformat type");
+    // cfg.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // cfg.dims = ctinfo.dims;
+    // cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    // cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
 
-    // Create image
-    int vk_ret = vkr_init_image(&ti.im, cfg);
-    if (vk_ret != err_code::VKR_NO_ERROR) {
-        vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
-        return {};
-    }
+    // // Create image
+    // int vk_ret = vkr_init_image(&ti.im, cfg);
+    // if (vk_ret != err_code::VKR_NO_ERROR) {
+    //     vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
+    //     return {};
+    // }
 
-    // Upload texture data to created image using staging buffer
-    // NOTE: This call currently blocks with waiting on a
-    vk_ret = vkr_stage_and_upload_image_data(&ti.im, ctinfo.data, ctinfo.data_size, tmp_cmd_buf, tmp_q, &rndr->vk);
-    vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
-    if (vk_ret != err_code::VKR_NO_ERROR) {
-        vkr_terminate_image(&ti.im, &rndr->vk);
-        return {};
-    }
+    // // Upload texture data to created image using staging buffer
+    // // NOTE: This call currently blocks with waiting on a
+    // vk_ret = vkr_stage_and_upload_image_data(&ti.im, ctinfo.data, ctinfo.data_size, tmp_cmd_buf, tmp_q, &rndr->vk);
+    // vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
+    // if (vk_ret != err_code::VKR_NO_ERROR) {
+    //     vkr_terminate_image(&ti.im, &rndr->vk);
+    //     return {};
+    // }
 
-    // Create image view
-    vkr_image_view_cfg iview_cfg{};
-    iview_cfg.image = &ti.im;
-    vk_ret = vkr_init_image_view(&ti.iview, iview_cfg, &rndr->vk);
-    if (vk_ret != err_code::VKR_NO_ERROR) {
-        vkr_terminate_image(&ti.im, &rndr->vk);
-        return {};
-    }
+    // // Create image view
+    // vkr_image_view_cfg iview_cfg{};
+    // iview_cfg.image = &ti.im;
+    // vk_ret = vkr_init_image_view(&ti.iview, iview_cfg, &rndr->vk);
+    // if (vk_ret != err_code::VKR_NO_ERROR) {
+    //     vkr_terminate_image(&ti.im, &rndr->vk);
+    //     return {};
+    // }
 
-    rtexture_ref tref = acquire_slot(&rndr->textures);
-    if (!is_valid(tref)) {
-        vkr_terminate_image(&ti.im, &rndr->vk);
-        vkr_terminate_image_view(ti.iview, &rndr->vk);
-        return {};
-    }
-    asrt(tref.item);
-    *tref.item = ti;
-    return tref.hndl;
+    // rtexture_ref tref = acquire_slot(&rndr->textures);
+    // if (!is_valid(tref)) {
+    //     vkr_terminate_image(&ti.im, &rndr->vk);
+    //     vkr_terminate_image_view(ti.iview, &rndr->vk);
+    //     return {};
+    // }
+    // asrt(tref.item);
+    // *tref.item = ti;
+    // return tref.hndl;
 }
 
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)

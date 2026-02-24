@@ -307,6 +307,11 @@ constexpr rformat get_rformat(VkFormat format)
     }
 }
 
+constexpr const char *get_vk_format_str(VkFormat fmt)
+{
+    return get_rformat_str(get_rformat(fmt));
+}
+
 constexpr VkFormat get_vk_format(rformat format)
 {
     switch (format) {
@@ -616,12 +621,24 @@ constexpr bool is_sint_type(VkFormat format)
     }
 }
 
-constexpr bool is_depth_stencil(VkFormat format)
+constexpr bool has_depth_component(VkFormat format)
 {
     switch (format) {
     case VK_FORMAT_D16_UNORM:
     case VK_FORMAT_D32_SFLOAT:
     case VK_FORMAT_X8_D24_UNORM_PACK32:
+    case VK_FORMAT_D16_UNORM_S8_UINT:
+    case VK_FORMAT_D24_UNORM_S8_UINT:
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        return true;
+    default:
+        return false;
+    }
+}
+
+constexpr bool has_stencil_component(VkFormat format)
+{
+    switch (format) {
     case VK_FORMAT_S8_UINT:
     case VK_FORMAT_D16_UNORM_S8_UINT:
     case VK_FORMAT_D24_UNORM_S8_UINT:
@@ -630,6 +647,30 @@ constexpr bool is_depth_stencil(VkFormat format)
     default:
         return false;
     }
+}
+
+constexpr bool is_depth_only(VkFormat format)
+{
+    return has_depth_component(format) && !has_stencil_component(format);
+}
+
+constexpr bool is_stencil_only(VkFormat format)
+{
+    return has_stencil_component(format) && !has_depth_component(format);
+}
+
+constexpr bool is_depth_stencil(VkFormat format)
+{
+    return has_depth_component(format) || has_stencil_component(format);
+}
+
+constexpr VkImageAspectFlags get_vk_aspect_flags(VkFormat format)
+{
+    if (is_depth_stencil(format)) {
+        return (has_depth_component(format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
+               (has_stencil_component(format) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+    }
+    return VK_IMAGE_ASPECT_COLOR_BIT;
 }
 
 constexpr u8 get_bytes_per_component(VkFormat format)

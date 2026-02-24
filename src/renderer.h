@@ -6,6 +6,7 @@
 #include "vkr_context.h"
 #include "render_blueprint.h"
 #include "rformat.h"
+#include "rtexture_registry.h"
 #include "vkr_chunked_buffer.h"
 
 struct ImGuiContext;
@@ -22,21 +23,6 @@ struct rsubgeom_range
     sizet offset;
     // Indice count
     sizet count;
-};
-
-struct rtexture_desc
-{
-    const char *name;
-    // Pixel data
-    const void *data;
-    // For validation basically
-    sizet data_size;
-    // Texture dimensions - z is layer count
-    uvec3 dims;
-    // Format
-    rformat format;
-    // See rtexture_create_flags
-    u32 flags;
 };
 
 struct rshader_stage_desc
@@ -215,13 +201,6 @@ struct geometry_stream_group_desc
 };
 
 struct imgui_ctxt;
-
-struct rtexture_info
-{
-    small_str name;
-    vkr_image im;
-    VkImageView iview{VK_NULL_HANDLE};
-};
 
 struct rmaterial_info
 {};
@@ -491,6 +470,7 @@ using pipeline_entry = gpu_resource_entry<gpu_handle>;
 using pipeline_handle = slot_handle<pipeline_entry>;
 using pipeline_cache = gpu_resource_cache<gpu_handle>;
 
+
 // // This data is used in uniform buffer - needs to be aligned to 16 bytes
 // struct rinstance_draw_ubo_data {
 //     u32 material_idx;
@@ -565,11 +545,13 @@ struct renderer
     pipeline_cache pline_cache;
     framebuffer_cache fb_cache;
 
-    slot_pool<rshader_info> shaders{};
-    slot_pool<rtechnique_info> techniques{};
-    slot_pool<rmaterial_info> materials{};
-    slot_pool<rtexture_info> textures{};
-    slot_pool<rgeom_info> geometry{};
+    slot_pool<rshader_info> shaders;
+    slot_pool<rtechnique_info> techniques;
+    slot_pool<rmaterial_info> materials;
+    slot_pool<rgeom_info> geometry;
+
+    // Specialized registry for textures
+    rtexture_registry textures;
 
     // Frames in flight
     static_array<frame_context, MAX_FRAMES_IN_FLIGHT> fifs{};
@@ -604,22 +586,22 @@ struct renderer
     profile_timepoints pt{};
 };
 
-struct sbuffer_init_params
+struct sbuffer_cfg
 {
     sizet block_count;
     sizet block_size;
 };
 
-struct rdescriptor_init_params
+struct rdescriptor_cfg
 {
     sizet max_image_count{256};
-    sbuffer_init_params instance_ssbo{1000,64};
-    sbuffer_init_params material_ssbo{256, 64};
-    sbuffer_init_params frame_ubo{1,64};
-    sbuffer_init_params instance_draw_ubo{1, 32};
+    sbuffer_cfg instance_ssbo{1000,64};
+    sbuffer_cfg material_ssbo{256, 64};
+    sbuffer_cfg frame_ubo{1,64};
+    sbuffer_cfg instance_draw_ubo{1, 32};
 };
 
-struct renderer_init_params
+struct renderer_cfg
 {
     void *win_hndl;
     mem_arena *upsream;
@@ -627,7 +609,8 @@ struct renderer_init_params
     sizet persist_fl_size;
     sizet persist_stack_size;
     sizet frame_linear_size;
-    rdescriptor_init_params desc;
+    rdescriptor_cfg desc;
+    rtexture_regisitry_cfg tcfg;
 };
 
 // DRAW FUNCTIONS
@@ -636,7 +619,7 @@ void draw_imgui(const render_job_cb_params &, void *);
 #endif
 void draw_geometry(const render_job_cb_params &, void *);
 
-bool init_renderer(renderer *rndr, const renderer_init_params &p);
+bool init_renderer(renderer *rndr, const renderer_cfg &p);
 void terminate_renderer(renderer *rndr);
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);

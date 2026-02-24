@@ -897,6 +897,12 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk)
     arr_resize(&sw_info->renders_finished, image_count, VK_NULL_HANDLE);
     for (int i = 0; i < image_count; ++i) {
         vkr_image_view_cfg iview_create{};
+        iview_create.srange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        iview_create.srange.baseArrayLayer = 0;
+        iview_create.srange.layerCount = 1;
+        iview_create.srange.baseMipLevel = 0;
+        iview_create.srange.levelCount = 1;
+        iview_create.view_type = VK_IMAGE_VIEW_TYPE_2D;
         iview_create.image = &sw_info->images[i];
         int err = vkr_init_image_view(&sw_info->image_views[i], iview_create, vk);
         if (err != err_code::VKR_NO_ERROR) {

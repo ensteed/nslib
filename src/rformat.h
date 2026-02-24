@@ -122,6 +122,107 @@ enum struct rformat
     INVALID,
 };
 
+inline constexpr const char *RFORMAT_STR_NAMES[]{
+    "RGBA8_SRGB",
+    "RGBA8_SRGB_COMPRESSED",
+    "RGBA8_UNORM",
+    "RGBA8_UNORM_COMPRESSED",
+    "RGBA8_SNORM",
+    "RGBA8_UINT",
+    "RGBA8_SINT",
+    "BGRA8_SRGB",
+    "BGRA8_UNORM",
+    "BGRA8_SNORM",
+    "BGRA8_UINT",
+    "BGRA8_SINT",
+    "ABGR8_SRGB",
+    "ABGR8_UNORM",
+    "ABGR8_SNORM",
+    "ABGR8_UINT",
+    "ABGR8_SINT",
+    "RGB8_SRGB",
+    "RGB8_SRGB_COMPRESSED",
+    "RGB8_UNORM",
+    "RGB8_UNORM_COMPRESSED",
+    "RGB8_SNORM",
+    "RGB8_UINT",
+    "RGB8_SINT",
+    "BGR8_SRGB",
+    "BGR8_UNORM",
+    "BGR8_SNORM",
+    "BGR8_UINT",
+    "BGR8_SINT",
+    "RG8_SRGB",
+    "RG8_UNORM",
+    "RG8_UNORM_COMPRESSED",
+    "RG8_SNORM",
+    "RG8_SNORM_COMPRESSED",
+    "RG8_UINT",
+    "RG8_SINT",
+    "R8_SRGB",
+    "R8_UNORM",
+    "R8_UNORM_COMPRESSED",
+    "R8_SNORM",
+    "R8_SNORM_COMPRESSED",
+    "R8_UINT",
+    "R8_SINT",
+    "RGBA16_SFLOAT",
+    "RGBA16_UNORM",
+    "RGBA16_SNORM",
+    "RGBA16_UINT",
+    "RGBA16_SINT",
+    "RGB16_SFLOAT",
+    "RGB16_UNORM",
+    "RGB16_SNORM",
+    "RGB16_UINT",
+    "RGB16_SINT",
+    "RG16_SFLOAT",
+    "RG16_UNORM",
+    "RG16_SNORM",
+    "RG16_UINT",
+    "RG16_SINT",
+    "R16_SFLOAT",
+    "R16_UNORM",
+    "R16_SNORM",
+    "R16_UINT",
+    "R16_SINT",
+    "RGBA32_SFLOAT",
+    "RGBA32_UINT",
+    "RGBA32_SINT",
+    "RGB32_SFLOAT",
+    "RGB32_UINT",
+    "RGB32_SINT",
+    "RG32_SFLOAT",
+    "RG32_UINT",
+    "RG32_SINT",
+    "R32_SFLOAT",
+    "R32_UINT",
+    "R32_SINT",
+    "RGBA64_SFLOAT",
+    "RGBA64_UINT",
+    "RGBA64_SINT",
+    "RGB64_SFLOAT",
+    "RGB64_UINT",
+    "RGB64_SINT",
+    "RG64_SFLOAT",
+    "RG64_UINT",
+    "RG64_SINT",
+    "R64_SFLOAT",
+    "R64_UINT",
+    "R64_SINT",
+    "D16_UNORM",
+    "D16_UNORM_S8_UINT",
+    "D32_SFLOAT",
+    "D24_UNORM_S8_UINT",
+    "D32_SFLOAT_S8_UINT",
+    "INVALID",
+};
+
+constexpr const char *get_rformat_str(rformat f)
+{
+    return RFORMAT_STR_NAMES[(u32)f];
+}
+
 struct rformat_info
 {
     u8 block_width;
@@ -138,7 +239,13 @@ sizet calculate_image_buffer_size(const rformat_info finfo, u32 width, u32 heigh
 
 rformat_info get_rformat_info(rformat format);
 b32 is_floating_point_type(rformat format);
+
+b32 has_stencil_component(rformat format);
+b32 has_depth_component(rformat format);
+b32 is_depth_only(rformat format);
+b32 is_stencil_only(rformat format);
 b32 is_depth_stencil(rformat format);
+
 b32 is_uint_type(rformat format);
 b32 is_sint_type(rformat format);
 
