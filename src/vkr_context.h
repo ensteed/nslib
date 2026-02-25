@@ -147,8 +147,8 @@ struct vkr_image_cfg
     VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
     VkImageLayout initial_layout{VK_IMAGE_LAYOUT_UNDEFINED};
     VkSharingMode sharing_mode{VK_SHARING_MODE_EXCLUSIVE};
-    int mip_levels{1};
-    int array_layers{1};
+    s32 mip_levels{1};
+    s32 array_layers{1};
     // Only set these for specific edge cases - otherwise vma takes care of it
     VkMemoryPropertyFlags required_flags;
     VkMemoryPropertyFlags preferred_flags;
@@ -205,7 +205,7 @@ struct vkr_add_result
 {
     sizet begin;
     sizet end;
-    int err_code;
+    s32 err_code;
 };
 
 struct vkr_debug_extension_funcs
@@ -222,7 +222,7 @@ struct vkr_queue_family_info
     // If the request count is set to a non zero number then that number will be requested for each queue family type in
     // the queue_fam_type enum
     u32 requested_count{1};
-    float priorities[MAX_QUEUE_REQUEST_COUNT] = {1.0f};
+    f32 priorities[MAX_QUEUE_REQUEST_COUNT] = {1.0f};
     u32 create_ind{0};
 };
 
@@ -320,27 +320,27 @@ struct vkr_push_constant_range
 
 struct vkr_pipeline_cfg_raster
 {
-    bool depth_clamp_enable;
-    bool rasterizer_discard_enable;
+    b32 depth_clamp_enable;
+    b32 rasterizer_discard_enable;
     VkPolygonMode polygon_mode;
     // We don't really need this - rarely supported well - use other methods to change line width (triangle strip ribbons)
-    float line_width{1.0f};
+    f32 line_width{1.0f};
     VkCullModeFlags cull_mode;
     VkFrontFace front_face;
-    bool depth_bias_enable;
-    float depth_bias_constant_factor{0.0f};
-    float depth_bias_clamp{0.0f};
-    float depth_bias_slope_factor{0.0f};
+    b32 depth_bias_enable;
+    f32 depth_bias_constant_factor{0.0f};
+    f32 depth_bias_clamp{0.0f};
+    f32 depth_bias_slope_factor{0.0f};
 };
 
 struct vkr_pipeline_cfg_multisample
 {
-    bool sample_shading_enable{false};
+    b32 sample_shading_enable{false};
     VkSampleCountFlagBits rasterization_samples{VK_SAMPLE_COUNT_1_BIT};
-    float min_sample_shading{1.0f};
+    f32 min_sample_shading{1.0f};
     const VkSampleMask *sample_masks{nullptr};
-    bool alpha_to_coverage_enable{false};
-    bool alpha_to_one_enable{false};
+    b32 alpha_to_coverage_enable{false};
+    b32 alpha_to_one_enable{false};
 };
 
 struct vkr_pipeline_cfg_shader_stage
@@ -353,7 +353,7 @@ struct vkr_pipeline_cfg_shader_stage
 
 struct vkr_pipeline_cfg_input_assembly
 {
-    bool primitive_restart_enable{};
+    b32 primitive_restart_enable{};
     VkPrimitiveTopology primitive_topology{};
 };
 
@@ -364,7 +364,7 @@ struct vkr_pipeline_cfg_tessellation_state
 
 struct vkr_pipeline_cfg_color_blending
 {
-    bool logic_op_enabled{false};
+    b32 logic_op_enabled{false};
     VkLogicOp logic_op{};
     static_array<VkPipelineColorBlendAttachmentState, 16> attachments{};
     vec4 blend_constants{};
@@ -414,12 +414,12 @@ struct vkr_pipeline_cfg
     sizet stage_cnt;
 
     // Dynamic states
-    const VkDynamicState* dynamic_states;
+    const VkDynamicState *dynamic_states;
     sizet dynamic_state_count;
-    
+
     // Default Scissor/Viewport
-    const VkViewport* viewports;
-    const VkRect2D* scissors;
+    const VkViewport *viewports;
+    const VkRect2D *scissors;
     sizet vp_count;
     sizet scissor_count;
 
@@ -502,7 +502,7 @@ struct vkr_cfg
     const char *app_name;
     version_info vi;
     vk_arenas arenas;
-    int log_verbosity;
+    s32 log_verbosity;
     void *window;
     VkInstanceCreateFlags inst_create_flags;
     vkr_log_info_flags li_flags{VKR_LOG_INFO_ALL};
@@ -528,7 +528,7 @@ struct vkr_context
 };
 
 // Get the best depth format for the current device
-VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, bool need_stencil = true);
+VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, b32 need_stencil = true);
 
 VkIndexType get_vk_index_type(sizet ind_size);
 
@@ -538,7 +538,7 @@ const char *vkr_physical_device_type_str(VkPhysicalDeviceType type);
 vkr_queue_families vkr_get_queue_families(const vkr_context *vk, VkPhysicalDevice dev);
 
 // Log out the physical devices and set device to the best one based on very simple scoring (dedicated takes the cake)
-int vkr_select_best_graphics_physical_device(const vkr_context *vk, vkr_phys_device *dev);
+s32 vkr_select_best_graphics_physical_device(const vkr_context *vk, vkr_phys_device *dev);
 
 // NOTE: These enumerate functions are meant to be a convenience for not needing to use a tool to decide on which
 // extensions and validation layers you need to use. They also print the layers as part of the init routine for vk
@@ -548,75 +548,77 @@ int vkr_select_best_graphics_physical_device(const vkr_context *vk, vkr_phys_dev
 void vkr_enumerate_instance_extensions(const char *const *enabled_extensions,
                                        u32 enabled_extension_count,
                                        const vk_arenas *arenas,
-                                       bool log_available);
+                                       b32 log_available);
 
 // Enumerate (log) the available device extensions
 void vkr_enumerate_device_extensions(const vkr_phys_device *pdevice,
                                      const char *const *enabled_extensions,
                                      u32 enabled_extension_count,
                                      const vk_arenas *arenas,
-                                     bool log_available);
+                                     b32 log_available);
 
 // Enumerate (log) the available layers - if an extension is included in the passed in array then it will be
 // indicated as such
-void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas, bool log_available);
+void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas, b32 log_available);
 
 // Descriptor Pools
-int vkr_init_desc_pool(VkDescriptorPool *hndl, const vkr_desc_cfg &cfg, const vkr_context *vk);
+s32 vkr_init_desc_pool(VkDescriptorPool *hndl, const vkr_desc_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_desc_pool(VkDescriptorPool hndl, const vkr_context *vk);
 
 // Descriptor sets
 
-// int vkr_alloc_descriptor
-int vkr_allot_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, const vkr_context *vk);
+// s32 vkr_alloc_descriptor
+s32 vkr_allot_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, const vkr_context *vk);
 void vkr_free_desc_sets(const VkDescriptorSet *sets, sizet set_count, VkDescriptorPool pool, const vkr_context *vk);
 
 // Command Pools
-int vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, const vkr_context *vk);
+s32 vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, const vkr_context *vk);
 void vkr_terminate_cmd_pool(VkCommandPool hndl, const vkr_context *vk);
 
 // Command Buffers
-int vkr_alloc_cmd_bufs(VkCommandBuffer *bufs, const vkr_alloc_cmd_bufs_cfg &cfg, const vkr_context *vk);
+s32 vkr_alloc_cmd_bufs(VkCommandBuffer *bufs, const vkr_alloc_cmd_bufs_cfg &cfg, const vkr_context *vk);
 // You should probably just free the pool and not the buffers individually
 void vkr_free_cmd_bufs(VkCommandBuffer *bufs, sizet count, VkCommandPool pool, const vkr_context *vk);
 
 // Render passes
-int vkr_init_render_pass(VkRenderPass *hndl, const vkr_rpass_cfg &cfg, const vkr_context *vk);
+s32 vkr_init_render_pass(VkRenderPass *hndl, const vkr_rpass_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_render_pass(VkRenderPass hndl, const vkr_context *vk);
 
 // Descriptor set layouts
-int vkr_init_desc_set_layouts(VkDescriptorSetLayout *hndls, const vkr_descriptor_set_layout_cfg &cfg, const vkr_context *vk);
+s32 vkr_init_desc_set_layouts(VkDescriptorSetLayout *hndls, const vkr_descriptor_set_layout_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_desc_set_layouts(VkDescriptorSetLayout *layouts, sizet size, const vkr_context *vk);
 
 // Pipeline layouts
-int vkr_init_pipeline_layout(VkPipelineLayout *hndl, const vkr_pipeline_layout_cfg &cfg, const vkr_context *vk);
+s32 vkr_init_pipeline_layout(VkPipelineLayout *hndl, const vkr_pipeline_layout_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_pipeline_layout(VkPipelineLayout hndl, const vkr_context *vk);
 
 // Pipelines
-int vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, const vkr_context *vk);
+s32 vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_pipeline(VkPipeline hndl, const vkr_context *vk_ctxt);
 
 // Shader module
-int vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, const vkr_context *vk);
+s32 vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, const vkr_context *vk);
 void vkr_terminate_shader_module(VkShaderModule module, const vkr_context *vk);
 
 // Framebuffers
-int vkr_init_framebuffer(vkr_framebuffer *framebuffer, const vkr_framebuffer_cfg &cfg, const vkr_context *vk);
+s32 vkr_init_framebuffer(vkr_framebuffer *framebuffer, const vkr_framebuffer_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_framebuffer(vkr_framebuffer *fb, const vkr_context *vk);
 
+s32 vkr_blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const vkr_context *vk);
+
 // Buffers
-int vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg);
+s32 vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg);
 void vkr_terminate_buffer(vkr_buffer *buffer, const vkr_context *vk);
 void *vkr_map_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
 void vkr_unmap_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
-int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
+s32 vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
                                      const void *src_data,
                                      const VkBufferCopy *regions,
                                      u32 region_count,
                                      VkCommandBuffer cmd_buf,
                                      VkQueue queue,
                                      const vkr_context *vk);
-int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
+s32 vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
                                      const void *src_data,
                                      sizet src_data_size,
                                      VkCommandBuffer cmd_buf,
@@ -624,15 +626,15 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
                                      const vkr_context *vk);
 
 // Images
-int vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg);
+s32 vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg);
 void vkr_terminate_image(vkr_image *image, const vkr_context *vk);
-int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
+s32 vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
                                     const void *src_data,
                                     sizet src_data_size,
                                     VkCommandBuffer cmd_buf,
                                     VkQueue queue,
                                     const vkr_context *vk);
-int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
+s32 vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
                                     const void *src_data,
                                     sizet src_data_size,
                                     const VkBufferImageCopy *region,
@@ -641,28 +643,28 @@ int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
                                     const vkr_context *vk);
 
 // Image views
-int vkr_init_image_view(VkImageView *hndl, const vkr_image_view_cfg &cfg, const vkr_context *vk);
+s32 vkr_init_image_view(VkImageView *hndl, const vkr_image_view_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_image_view(VkImageView hndl, const vkr_context *vk);
 
 // Samplers
-int vkr_init_sampler(VkSampler *hndl, const vkr_sampler_cfg &cfg, const vkr_context *vk);
+s32 vkr_init_sampler(VkSampler *hndl, const vkr_sampler_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_sampler(VkSampler sampler, const vkr_context *vk);
 
-int vkr_init_fence(VkFence *hndl, VkFenceCreateFlags flags, const vkr_context *vk);
+s32 vkr_init_fence(VkFence *hndl, VkFenceCreateFlags flags, const vkr_context *vk);
 void vkr_terminate_fence(VkFence hndl, const vkr_context *vk);
 
-int vkr_init_semaphore(VkSemaphore *hndl, VkSemaphoreCreateFlags flags, const vkr_context *vk);
+s32 vkr_init_semaphore(VkSemaphore *hndl, VkSemaphoreCreateFlags flags, const vkr_context *vk);
 void vkr_terminate_semaphore(VkSemaphore hndl, const vkr_context *vk);
 
 // The device should be created before calling this
-int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk);
+s32 vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk);
 void vkr_terminate_swapchain(vkr_swapchain *sw_info, const vkr_context *vk);
 
 void vkr_init_pdevice_swapchain_support(vkr_pdevice_swapchain_support *ssup, mem_arena *arena);
 void vkr_fill_pdevice_swapchain_support(VkPhysicalDevice pdevice, VkSurfaceKHR surface, vkr_pdevice_swapchain_support *ssup);
 void vkr_terminate_pdevice_swapchain_support(vkr_pdevice_swapchain_support *ssup);
 
-int vkr_init_device(vkr_device *dev,
+s32 vkr_init_device(vkr_device *dev,
                     const vkr_context *vk,
                     const char *const *layers,
                     u32 layer_count,
@@ -671,17 +673,17 @@ int vkr_init_device(vkr_device *dev,
 void vkr_terminate_device(vkr_device *dev, const vkr_context *vk);
 
 // Initialize surface in the vk_context from the window - the instance must have been created already
-int vkr_init_surface(const vkr_context *vk, VkSurfaceKHR *surface);
+s32 vkr_init_surface(const vkr_context *vk, VkSurfaceKHR *surface);
 void vkr_terminate_surface(const vkr_context *vk, VkSurfaceKHR surface);
 
-int vkr_init_instance(const vkr_context *vk, vkr_instance *inst);
+s32 vkr_init_instance(const vkr_context *vk, vkr_instance *inst);
 void vkr_terminate_instance(const vkr_context *vk, vkr_instance *inst);
 
-int vkr_init(const vkr_cfg *cfg, vkr_context *vk);
+s32 vkr_init(const vkr_cfg *cfg, vkr_context *vk);
 void vkr_terminate(vkr_context *vk);
 
-int vkr_begin_cmd_buf(VkCommandBuffer hndl, VkCommandBufferUsageFlags flags);
-int vkr_end_cmd_buf(VkCommandBuffer hndl);
+s32 vkr_begin_cmd_buf(VkCommandBuffer hndl, VkCommandBufferUsageFlags flags);
+s32 vkr_end_cmd_buf(VkCommandBuffer hndl);
 
 void vkr_cmd_begin_rpass(VkCommandBuffer cmd_buf,
                          VkRenderPass rpass,
@@ -696,7 +698,7 @@ sizet vkr_uniform_buffer_offset_alignment(vkr_context *vk, sizet uniform_block_s
 
 void vkr_device_wait_idle(vkr_device *dev);
 
-int vkr_copy_buffer(vkr_buffer *dest,
+s32 vkr_copy_buffer(vkr_buffer *dest,
                     const vkr_buffer *src,
                     const VkBufferCopy *region,
                     u32 region_count,
@@ -704,14 +706,14 @@ int vkr_copy_buffer(vkr_buffer *dest,
                     VkQueue queue,
                     const vkr_context *vk);
 
-int vkr_copy_buffer_to_image(vkr_image *dest,
+s32 vkr_copy_buffer_to_image(vkr_image *dest,
                              const vkr_buffer *src,
                              const VkBufferImageCopy *region,
                              VkCommandBuffer cmd_buf,
                              VkQueue queue,
                              const vkr_context *vk);
 
-int vkr_transition_image_layout(const vkr_image *image,
+s32 vkr_transition_image_layout(const vkr_image *image,
                                 const vkr_image_transition_cfg &cfg,
                                 VkCommandBuffer cmd_buf,
                                 VkQueue queue,

@@ -170,6 +170,7 @@ bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch)
     ctinfo.meta.dims = tex->dims;
     ctinfo.meta.flags = get_rtexture_flags(tex->flags);
     ctinfo.meta.fmt = get_rformat_for_usage(tex->usage);
+    ctinfo.meta.mip_levels = tex->mip_levels;
     ctinfo.data = tex->pixels;
     ctinfo.data_size = get_texture_memsize(tex);
     tex->rhndl = create_rtexture(rndr, ctinfo);

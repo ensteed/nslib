@@ -28,8 +28,8 @@ struct vkr_texture_pool_cfg
     vkr_texture_pool_type type{VKR_TEXTURE_POOL_TYPE_2D_ARRAY};
     VkImageUsageFlags image_usage{VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
     const char *pool_name{nullptr};
-    mem_arena *arena{nullptr};
-    mem_arena *scratch{nullptr};
+    mem_arena *persist_fl{nullptr};
+    mem_arena *scratch_stack{nullptr};
     const vkr_context *vk;
 };
 
@@ -58,7 +58,7 @@ struct vkr_texture_pool
     // These buffers back pending transfer commands and must stay alive until the caller
     // has finished submitting and waiting on the command buffer using this pool.
     array<vkr_buffer> pending_staging_buffers;
-    mem_arena *frame_scratch;
+    mem_arena *scratch_stack;
     const vkr_context *vk;
 };
 

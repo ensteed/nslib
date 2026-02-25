@@ -537,7 +537,7 @@ struct renderer
     mem_arena vk_frame_linear;
 
     mem_arena persist_fl;
-    mem_arena persist_stack;
+    mem_arena scratch_stack;
     mem_arena frame_linear;
 
     // Renderer resources
@@ -607,10 +607,11 @@ struct renderer_cfg
     mem_arena *upsream;
     sizet thread_count{4};
     sizet persist_fl_size;
-    sizet persist_stack_size;
+    sizet scratch_stack_size;
     sizet frame_linear_size;
     rdescriptor_cfg desc;
-    rtexture_regisitry_cfg tcfg;
+    u32 texture_pool_count;
+    const rtexture_pool_cfg *texture_pool_cfgs;
 };
 
 // DRAW FUNCTIONS

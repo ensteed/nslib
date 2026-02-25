@@ -243,13 +243,36 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     create_shaders(shdr_pool);
 
     // Initialize our renderer - fail early if init fails
-    renderer_cfg p{
-        .win_hndl = ctxt->win_hndl,
-        .upsream = &ctxt->arenas.free_list,
-        .persist_fl_size = 200 * MB_SIZE,
-        .persist_stack_size = 10 * MB_SIZE,
-        .frame_linear_size = 10 * MB_SIZE,
+    rtexture_pool_cfg tcfgs[] = {
+        {
+            .tmeta{
+                .fmt = rformat::RGBA8_SRGB,
+                .dims{511, 511},
+                .mip_levels = 1,
+                .flags = RTEXTURE_FLAG_NONE,
+            },
+            .pool_name = "dport_pool",
+            .slot_count = 10,
+        },
+        {
+            .tmeta{
+                .fmt = rformat::RGBA8_SRGB,
+                .dims{600, 600},
+                .mip_levels = 1,
+                .flags = RTEXTURE_FLAG_NONE,
+            },
+            .pool_name = "mport_pool",
+            .slot_count = 4,
+        },
     };
+
+    renderer_cfg p{.win_hndl = ctxt->win_hndl,
+                   .upsream = &ctxt->arenas.free_list,
+                   .persist_fl_size = 200 * MB_SIZE,
+                   .scratch_stack_size = 10 * MB_SIZE,
+                   .frame_linear_size = 10 * MB_SIZE,
+                   .texture_pool_count = ARR_SIZE(tcfgs),
+                   .texture_pool_cfgs = tcfgs};
     if (!init_renderer(&app->rndr, p)) return false;
 
     auto geom_stream_gp = setup_geometry_stream_group(&app->rndr);

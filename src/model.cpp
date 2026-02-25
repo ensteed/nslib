@@ -177,6 +177,7 @@ const char *load_texture(texture *tex, const char *path)
     auto sz = get_texture_memsize(tex);
     ilog("Allocating %lu bytes for texture (%lu bytes left in arena)", sz, tex->fl->total_size - tex->fl->used);
     tex->pixels = mem_alloc(sz, tex->fl);
+    tex->mip_levels = 1;
     memcpy(tex->pixels, stb_pixels, sz);
     stbi_image_free(stb_pixels);
     return nullptr;

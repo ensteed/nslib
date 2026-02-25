@@ -1897,7 +1897,7 @@ void vkr_cmd_end_rpass(VkCommandBuffer cmd_buf)
     vkCmdEndRenderPass(cmd_buf);
 }
 
-intern int blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const vkr_context *vk)
+s32 vkr_blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const vkr_context *vk)
 {
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1938,7 +1938,7 @@ int vkr_copy_buffer(vkr_buffer *dest,
     if (ret != err_code::VKR_NO_ERROR) {
         return ret;
     }
-    return blocking_submit_cmd_buf(cmd_buffer, queue, vk);
+    return vkr_blocking_submit_cmd_buf(cmd_buffer, queue, vk);
 }
 
 int vkr_copy_buffer_to_image(vkr_image *dest,
@@ -1957,7 +1957,7 @@ int vkr_copy_buffer_to_image(vkr_image *dest,
     if (ret != err_code::VKR_NO_ERROR) {
         return ret;
     }
-    return blocking_submit_cmd_buf(cmd_buf, queue, vk);
+    return vkr_blocking_submit_cmd_buf(cmd_buf, queue, vk);
 }
 
 int vkr_transition_image_layout(const vkr_image *image,
@@ -2007,7 +2007,7 @@ int vkr_transition_image_layout(const vkr_image *image,
     if (ret != err_code::VKR_NO_ERROR) {
         return ret;
     }
-    return blocking_submit_cmd_buf(cmd_buf, queue, vk);
+    return vkr_blocking_submit_cmd_buf(cmd_buf, queue, vk);
 }
 
 } // namespace nslib

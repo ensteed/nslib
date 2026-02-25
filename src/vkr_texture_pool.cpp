@@ -118,7 +118,7 @@ intern void transition_ranges_to_intent(vkr_texture_pool *pool,
     auto new_layout = get_layout_from_intent(intent, pool->format);
 
     array<VkImageMemoryBarrier> barriers{};
-    arr_init(&barriers, pool->frame_scratch, range_count);
+    arr_init(&barriers, pool->scratch_stack, range_count);
 
     VkPipelineStageFlags src_stage_mask = 0;
     VkPipelineStageFlags dst_stage_mask = 0;
@@ -198,14 +198,14 @@ b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cf
 {
     asrt(pool);
     asrt(cfg.vk);
-    asrt(cfg.arena);
+    asrt(cfg.persist_fl);
     asrt(cfg.slot_count != 0);
     asrt(cfg.dims != uvec2{0u});
     asrt(cfg.format != VK_FORMAT_UNDEFINED);
-    asrt(cfg.scratch);
+    asrt(cfg.scratch_stack);
 
     pool->vk = cfg.vk;
-    pool->frame_scratch = cfg.scratch;
+    pool->scratch_stack = cfg.scratch_stack;
     pool->dims = cfg.dims;
     pool->mip_levels = cfg.mip_levels;
     pool->format = cfg.format;
@@ -220,8 +220,8 @@ b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cf
          cfg.slot_count,
          cfg.mip_levels);
 
-    init_slot_pool(&pool->tpool, cfg.slot_count, cfg.arena);
-    arr_init(&pool->pending_staging_buffers, cfg.arena);
+    init_slot_pool(&pool->tpool, cfg.slot_count, cfg.persist_fl);
+    arr_init(&pool->pending_staging_buffers, cfg.persist_fl);
 
     vkr_image_cfg img_cfg{};
     img_cfg.dims = {cfg.dims.x, cfg.dims.y, 1};
@@ -296,7 +296,7 @@ void vkr_transition_texture_layouts(vkr_texture_pool *pool,
 {
     asrt(tslots && tslot_count > 0);
     array<pool_slot_range> ranges{};
-    arr_init(&ranges, pool->frame_scratch);
+    arr_init(&ranges, pool->scratch_stack);
     build_contiguous_slot_ranges(tslots, tslot_count, &ranges);
     transition_ranges_to_intent(pool, cmd_buf, ranges.data, ranges.size, intent);
     arr_terminate(&ranges);
@@ -354,7 +354,7 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     arr_push_back(&pool->pending_staging_buffers, staging);
 
     array<pool_slot_range> ranges;
-    arr_init(&ranges, pool->frame_scratch);
+    arr_init(&ranges, pool->scratch_stack);
     build_contiguous_slot_ranges(tslots, count, &ranges);
 
     transition_ranges_to_intent(pool, cmd_buf, ranges.data, ranges.size, VKR_TEXTURE_POOL_LAYOUT_TRANSFER_DST);
@@ -362,7 +362,7 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     // Because we moved the data to the staging buffer as all images per mip level we can now do image buffer copy per
     // mip level instead of per layer per mip level
     array<VkBufferImageCopy> regions{};
-    arr_init(&regions, pool->frame_scratch);
+    arr_init(&regions, pool->scratch_stack);
     sizet buff_offset{0};
     for (u32 mipi = 0; mipi < pool->mip_levels; ++mipi) {
         for (u32 rangei = 0; rangei < ranges.size; ++rangei) {
@@ -381,9 +381,11 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
         }
     }
     vkCmdCopyBufferToImage(cmd_buf, staging.hndl, pool->image.hndl, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions.size, regions.data);
-    transition_ranges_to_intent(pool, cmd_buf, ranges.data, ranges.size, VKR_TEXTURE_POOL_LAYOUT_SHADER_READ);
-    arr_terminate(&ranges);
     arr_terminate(&regions);
+    
+    transition_ranges_to_intent(pool, cmd_buf, ranges.data, ranges.size, VKR_TEXTURE_POOL_LAYOUT_SHADER_READ);
+
+    arr_terminate(&ranges);
     return true;
 }
 

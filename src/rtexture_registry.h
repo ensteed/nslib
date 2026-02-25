@@ -11,10 +11,12 @@ namespace nslib
 
 struct vkr_texture_pool;
 struct vkr_context;
+
 struct rtexture_registry
 {
     hmap<u64, rtexture_pool_idx> pmap;
     array<vkr_texture_pool> pools;
+    const vkr_context *vk;
 };
 
 enum rtexture_flag {
@@ -39,8 +41,8 @@ struct rtexture_pool_cfg
 
 struct rtexture_regisitry_cfg
 {
-    mem_arena *arena;
-    mem_arena *scratch;
+    mem_arena *persist_fl;
+    mem_arena *scratch_stack;
     u32 pool_count;
     const rtexture_pool_cfg *cfgs;
     const vkr_context *vk;
@@ -62,7 +64,7 @@ u32 get_slot_used_count(const rtexture_registry &reg);
 
 b32 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg);
 void terminate_rtexture_registry(rtexture_registry *reg);
-rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tdesc);
+rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tdesc, gpu_handle transient_pool);
 
 
 
