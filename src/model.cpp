@@ -239,10 +239,14 @@ const char *get_shader_stage_str(shader_stage_type stype)
 }
 
 void init_asset(technique *tech)
-{}
+{
+    hmap_init(&tech->passes, hash_type, tech->fl);
+}
 
 void terminate_asset(technique *tech)
-{}
+{
+    hmap_terminate(&tech->passes);
+}
 
 void init_asset(material *mat)
 {}

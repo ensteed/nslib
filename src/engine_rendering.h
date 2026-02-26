@@ -62,8 +62,8 @@ u32 upload_geometries(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geoms
 bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch);
 u32 upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch);
 
-bool upload_technique(renderer *rndr, technique *tech, mem_arena *scratch);
-u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, mem_arena *scratch);
+bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_arena *scratch);
+u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp, mem_arena *scratch);
 
 bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch);
 u32 upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch);

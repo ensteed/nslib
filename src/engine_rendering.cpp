@@ -163,6 +163,12 @@ intern rtexture_flags get_rtexture_flags(asset_flags flags) {
     return test_flags(flags, TEXTURE_FLAG_CUBEMAP) ? RTEXTURE_FLAG_CUBEMAP : RTEXTURE_FLAG_NONE;
 }
 
+intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp) {
+    shader_item_ref shdr = find_asset(sp, src.shader);
+    dst->shader = is_valid(shdr) ? shdr.item->rhndl : rshader_handle{};
+    
+}
+
 bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch)
 {
     rtexture_desc ctinfo{};
@@ -183,16 +189,26 @@ u32 upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch)
     return upload_assets_helper(tex_pool, upload_func);
 }
 
-bool upload_technique(renderer *rndr, technique *tech, mem_arena *scratch)
+bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_arena *scratch)
 {
-    rtechnique_desc tinfo{};
-    tinfo.name = ls(tech->name);
+    rtechnique_desc tdesc{};
+    tdesc.name = ls(tech->name);
+    tdesc.pass_count = tech->passes.count;
+
+    u32 i{};
+    rtechnique_pass_desc *tmp_passes = mem_alloc<rtechnique_pass_desc>(scratch, tdesc.pass_count);
+    for (auto pass_iter = hmap_begin(&tech->passes); pass_iter; pass_iter = hmap_next(&tech->passes, pass_iter)) {
+        set_technique_pass_desc(&tmp_passes[i], pass_iter->val, sp);
+        ++i;
+    }
+    create_rtechnique(rndr, tdesc);
+    mem_free(tmp_passes, scratch);
     return get_and_log_upload_result(tech);
 }
 
-u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, mem_arena *scratch)
+u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp, mem_arena *scratch)
 {
-    auto upload_func = [rndr, scratch](technique *tech) -> bool { return upload_technique(rndr, tech, scratch); };
+    auto upload_func = [rndr, sp, scratch](technique *tech) -> bool { return upload_technique(rndr, tech, sp, scratch); };
     return upload_assets_helper(tech_pool, upload_func);
 }
 

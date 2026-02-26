@@ -63,7 +63,7 @@ template<typename T>
 using asset_handle = slot_handle<T>;
 
 template<typename T>
-using asset_item = slot_item_ref<T>;
+using asset_item_ref = slot_item_ref<T>;
 
 template<typename T>
 struct asset_ref
@@ -86,22 +86,22 @@ struct shader;
 
 using geometry_pool = asset_pool<geometry>;
 using geometry_handle = asset_handle<geometry>;
-using geometry_item = asset_item<geometry>;
+using geometry_item_ref = asset_item_ref<geometry>;
 
 using texture_pool = asset_pool<texture>;
 using texture_handle = asset_handle<texture>;
-using texture_item = asset_item<texture>;
+using texture_item_ref = asset_item_ref<texture>;
 
 using material_pool = asset_pool<material>;
 using material_handle = asset_handle<material>;
-using material_item = asset_item<material>;
+using material_item_ref = asset_item_ref<material>;
 
 using technique_pool = asset_pool<technique>;
 using technique_handle = asset_handle<technique>;
-using technique_item = asset_item<technique>;
+using technique_item_ref = asset_item_ref<technique>;
 
 using shader_pool = asset_pool<shader>;
 using shader_handle = asset_handle<shader>;
-using shader_item = asset_item<shader>;
+using shader_item_ref = asset_item_ref<shader>;
 
 } // namespace nslib

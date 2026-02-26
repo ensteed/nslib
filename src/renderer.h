@@ -651,7 +651,7 @@ rformat get_swapchain_format(renderer *rnd);
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
-rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo);
+rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
 void post_instance_update(renderer* rndr, u32 instance_idx, const void* instance_data);

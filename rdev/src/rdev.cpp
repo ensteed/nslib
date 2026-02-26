@@ -226,6 +226,15 @@ intern void create_shaders(shader_pool *pool)
     }
 }
 
+intern void create_techniques(technique_pool *pool)
+{
+    auto tech = create_asset(pool, "fwd-diffuse");
+    // All default states are good here
+    technique_pass p{};
+    p.shader = make_asset_id("fwd-diffuse");
+    hmap_insert(&tech.item->passes, MAIN_PASS_ID, p);
+}
+
 intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     init_asset_cache_default_types(
@@ -236,11 +245,13 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     auto geom_pool = get_asset_pool<geometry>(&app->cg);
     auto tex_pool = get_asset_pool<texture>(&app->cg);
     auto shdr_pool = get_asset_pool<shader>(&app->cg);
+    auto tech_pool = get_asset_pool<technique>(&app->cg);
 
     geometry *rect, *cube;
     create_geometry(geom_pool, &rect, &cube);
     create_textures(tex_pool);
     create_shaders(shdr_pool);
+    create_techniques(tech_pool);
 
     // Initialize our renderer - fail early if init fails
     rtexture_pool_cfg tcfgs[] = {
@@ -286,6 +297,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     upload_geometries(&app->rndr, geom_stream_gp, geom_pool, &ctxt->arenas.stack);
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
     upload_shaders(&app->rndr, shdr_pool, &ctxt->arenas.stack);
+    upload_techniques(&app->rndr, tech_pool, shdr_pool, &ctxt->arenas.stack);
 
     // Create render targets
     // create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));

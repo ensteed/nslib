@@ -1305,16 +1305,16 @@ void terminate_rtechnique(renderer *rndr, rtechnique_info *info)
     }
 }
 
-rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo)
+rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc)
 {
-    if (ctinfo.pass_count == 0) {
+    if (tdesc.pass_count == 0) {
         return {};
     }
     rtechnique_ref rtech = acquire_slot(&rndr->techniques);
-    strncpy(rtech.item->name, ctinfo.name, SMALL_STR_LEN - 1);
+    strncpy(rtech.item->name, tdesc.name, SMALL_STR_LEN - 1);
 
-    for (u32 i = 0; i < ctinfo.pass_count; ++i) {
-        auto cur_desc = &ctinfo.passes[i];
+    for (u32 i = 0; i < tdesc.pass_count; ++i) {
+        auto cur_desc = &tdesc.passes[i];
         auto rbp_bp = get_render_blueprint(rndr, cur_desc->bp_info.bp);
         asrt(rbp_bp);
 
@@ -1461,9 +1461,16 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinf
         cfg.depth_stencil.front = {};
         // Dynamic - don't care
         cfg.depth_stencil.back = {};
-    }
 
-    return {};
+        rtech.item->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
+        s32 result = vkr_init_pipeline(&rtech.item->rpass_plines[i].pline, cfg, &rndr->vk);
+        if (result != err_code::VKR_NO_ERROR) {
+            terminate_rtechnique(rndr, rtech.item);
+            release_slot(&rndr->techniques, rtech.hndl);
+            return {};
+        }
+    }
+    return rtech.hndl;
 }
 
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo)

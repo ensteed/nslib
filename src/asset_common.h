@@ -11,8 +11,8 @@ template<typename T>
 struct asset_pool
 {
     using asset_t = T;
-    using iterator = asset_item<T>;
-    using const_iterator = asset_item<const T>;
+    using iterator = asset_item_ref<T>;
+    using const_iterator = asset_item_ref<const T>;
 
     // This is the total cache arena memory
     mem_arena fl{};
@@ -141,7 +141,7 @@ bool destroy_asset_pool(asset_cache *cache)
 }
 
 template<typename T>
-asset_item<T> create_asset(asset_pool<T> *pool, const char *name)
+asset_item_ref<T> create_asset(asset_pool<T> *pool, const char *name)
 {
     asrt(pool);
     auto aref = acquire_slot(&pool->assets);
@@ -168,7 +168,7 @@ asset_item<T> create_asset(asset_pool<T> *pool, const char *name)
 }
 
 template<typename T>
-asset_item<T> create_asset(asset_pool<T> *pool, const T &copy, const char *new_asset_name)
+asset_item_ref<T> create_asset(asset_pool<T> *pool, const T &copy, const char *new_asset_name)
 {
     asrt(pool);
     auto cpy = create_asset(pool, nullptr);
@@ -187,19 +187,19 @@ asset_item<T> create_asset(asset_pool<T> *pool, const T &copy, const char *new_a
 }
 
 template<typename T>
-asset_item<T> create_asset(asset_cache *cache, const char *new_asset_name)
+asset_item_ref<T> create_asset(asset_cache *cache, const char *new_asset_name)
 {
     asrt(cache);
     auto pool = get_asset_pool<T>(cache);
-    return pool ? create_asset(pool, new_asset_name) : asset_item<T>{};
+    return pool ? create_asset(pool, new_asset_name) : asset_item_ref<T>{};
 }
 
 template<typename T>
-asset_item<T> create_asset(asset_cache *cache, const T &copy, const char *new_asset_name)
+asset_item_ref<T> create_asset(asset_cache *cache, const T &copy, const char *new_asset_name)
 {
     asrt(cache);
     auto pool = get_asset_pool<T>(cache);
-    return pool ? create_asset(pool, copy, new_asset_name) : asset_item<T>{};
+    return pool ? create_asset(pool, copy, new_asset_name) : asset_item_ref<T>{};
 }
 
 template<typename T>
@@ -233,10 +233,10 @@ const T *get_asset(const asset_cache *cache, asset_handle<T> hndl)
 }
 
 template<typename T>
-asset_item<T> find_asset(asset_pool<T> *pool, asset_id id)
+asset_item_ref<T> find_asset(asset_pool<T> *pool, asset_id id)
 {
     asrt(pool);
-    asset_item<T> ret{};
+    asset_item_ref<T> ret{};
     auto item = hmap_find(&pool->amap, id);
     if (item) {
         ret.hndl = item->val;
@@ -246,10 +246,10 @@ asset_item<T> find_asset(asset_pool<T> *pool, asset_id id)
 }
 
 template<typename T>
-asset_item<const T> find_asset(const asset_pool<T> *pool, asset_id id)
+asset_item_ref<const T> find_asset(const asset_pool<T> *pool, asset_id id)
 {
     asrt(pool);
-    asset_item<const T> ret{};
+    asset_item_ref<const T> ret{};
     auto item = hmap_find(&pool->amap, id);
     if (item) {
         ret.hndl = item->val;
@@ -259,19 +259,19 @@ asset_item<const T> find_asset(const asset_pool<T> *pool, asset_id id)
 }
 
 template<typename T>
-asset_item<T> find_asset(asset_cache *cache, asset_id id)
+asset_item_ref<T> find_asset(asset_cache *cache, asset_id id)
 {
     asrt(cache);
     auto pool = get_asset_pool<T>(cache);
-    return pool ? find_asset(pool, id) : asset_item<T>{};
+    return pool ? find_asset(pool, id) : asset_item_ref<T>{};
 }
 
 template<typename T>
-asset_item<const T> find_asset(const asset_cache *cache, asset_id id)
+asset_item_ref<const T> find_asset(const asset_cache *cache, asset_id id)
 {
     asrt(cache);
     auto pool = get_asset_pool<T>(cache);
-    return pool ? find_asset(pool, id) : asset_item<const T>{};
+    return pool ? find_asset(pool, id) : asset_item_ref<const T>{};
 }
 
 template<typename T>
