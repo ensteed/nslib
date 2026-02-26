@@ -159,14 +159,78 @@ u32 upload_geometries(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geom_
     return upload_assets_helper(geom_pool, upload_func);
 }
 
-intern rtexture_flags get_rtexture_flags(asset_flags flags) {
+intern rtexture_flags get_rtexture_flags(asset_flags flags)
+{
     return test_flags(flags, TEXTURE_FLAG_CUBEMAP) ? RTEXTURE_FLAG_CUBEMAP : RTEXTURE_FLAG_NONE;
 }
 
-intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp) {
+intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp)
+{
     shader_item_ref shdr = find_asset(sp, src.shader);
     dst->shader = is_valid(shdr) ? shdr.item->rhndl : rshader_handle{};
-    
+
+    // Sensible defaults for fields not driven by technique_pass
+    dst->topology = rgeom_topology::RGEOM_TOPOLOGY_TRIANGLE_LIST;
+    dst->poly_mode = RPOLYGON_MODE_FILL;
+    dst->tess_patch_control_points = 0;
+    dst->logic_op = RLOGIC_OP_COPY;
+    dst->depth_bounds = {0.0f, 1.0f};
+    dst->tmask = 0;
+
+    // DEPTH_MODE_OFF disables both test and write entirely
+    bool depth_active = (src.dm != DEPTH_MODE_OFF);
+    set_flag_from_bool(dst->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_TEST, depth_active && test_flags(src.dflt_st.rmask, RASTER_FLAG_DEPTH_TEST));
+    set_flag_from_bool(dst->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_WRITE, depth_active && test_flags(src.dflt_st.rmask, RASTER_FLAG_DEPTH_WRITE));
+
+    // depth_mode → compare op
+    switch (src.dm) {
+    case DEPTH_MODE_NORMAL:
+        dst->depth_compare_op = RCOMPARE_OP_LESS;
+        break;
+    case DEPTH_MODE_ALWAYS:
+        dst->depth_compare_op = RCOMPARE_OP_ALWAYS;
+        break;
+    case DEPTH_MODE_BEHIND:
+        dst->depth_compare_op = RCOMPARE_OP_GREATER;
+        break;
+    case DEPTH_MODE_MATCH:
+        dst->depth_compare_op = RCOMPARE_OP_EQUAL;
+        break;
+    case DEPTH_MODE_OFF:
+        dst->depth_compare_op = RCOMPARE_OP_ALWAYS;
+        break; // irrelevant, test disabled
+    }
+
+    // blend_mode → per-attachment blend state (set all slots uniformly;
+    // create_rtechnique only reads as many as the blueprint pass has)
+    rcolor_component_flags write_all = RCOLOR_COMPONENT_R | RCOLOR_COMPONENT_G | RCOLOR_COMPONENT_B | RCOLOR_COMPONENT_A;
+    for (u32 i = 0; i < MAX_FRAMEBUFFER_ATTACHMENT_COUNT; ++i) {
+        auto *att = &dst->atts_blending[i];
+        att->write_mask = write_all;
+        switch (src.bm) {
+        case BLEND_MODE_OPAQUE:
+        case BLEND_MODE_MASKED: // alpha cutoff handled in shader, no HW blending
+            att->blend_enable = false;
+            att->color = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ZERO, RBLEND_OP_ADD};
+            att->alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ZERO, RBLEND_OP_ADD};
+            break;
+        case BLEND_MODE_TRANSPARENT:
+            att->blend_enable = true;
+            att->color = {RBLEND_FACTOR_SRC_ALPHA, RBLEND_FACTOR_ONE_MINUS_SRC_ALPHA, RBLEND_OP_ADD};
+            att->alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ONE_MINUS_SRC_ALPHA, RBLEND_OP_ADD};
+            break;
+        case BLEND_MODE_ADDITIVE:
+            att->blend_enable = true;
+            att->color = {RBLEND_FACTOR_SRC_ALPHA, RBLEND_FACTOR_ONE, RBLEND_OP_ADD};
+            att->alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ONE, RBLEND_OP_ADD};
+            break;
+        case BLEND_MODE_CONSTANT:
+            att->blend_enable = true;
+            att->color = {RBLEND_FACTOR_CONSTANT_ALPHA, RBLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, RBLEND_OP_ADD};
+            att->alpha = {RBLEND_FACTOR_CONSTANT_ALPHA, RBLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, RBLEND_OP_ADD};
+            break;
+        }
+    }
 }
 
 bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch)
