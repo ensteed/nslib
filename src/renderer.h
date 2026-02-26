@@ -654,6 +654,9 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &ctinfo);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
+void post_instance_update(renderer* rndr, u32 instance_idx, const void* instance_data);
+void post_material_update(renderer* rndr, u32 material_idx, const void* material_data);
+
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);
 rtexture_target_handle find_rtexture_target(renderer *rndr, rres_id id);

@@ -728,8 +728,10 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_cfg &di
         return false;
     }
 
+    // We allocate a buffer big enough to have a slot for each frame in flight so we can avoid needing to sync stuff..
+    // or create a slot in the buffer for every update and retire the old
     vkr_chunked_buffer_cfg cb_cfg{};
-    cb_cfg.buffer_cfg.buffer_size = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count;
+    cb_cfg.buffer_cfg.buffer_size = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count * MAX_FRAMES_IN_FLIGHT;
     cb_cfg.buffer_cfg.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     cb_cfg.buffer_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     cb_cfg.buffer_cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
@@ -742,7 +744,9 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_cfg &di
         return false;
     }
 
-    cb_cfg.buffer_cfg.buffer_size = dip.material_ssbo.block_size * dip.material_ssbo.block_count;
+    // For materials we also do a buffer for each frame in flight - at least for now unless it proves too much. But
+    // really, mat data is probably pretty small compared to instance data
+    cb_cfg.buffer_cfg.buffer_size = dip.material_ssbo.block_size * dip.material_ssbo.block_count * MAX_FRAMES_IN_FLIGHT;
     cb_cfg.chunk_size = dip.material_ssbo.block_size;
     cb_cfg.buffer_cfg.vma_alloc_name = "material_ssbo";
     if (!vkr_init_chunked_buffer(&rndr->desc_info.material_ssbo, cb_cfg)) {
@@ -765,6 +769,16 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_cfg &di
     }
 
     return true;
+}
+
+void post_instance_update(renderer* rndr, u32 instance_idx, const void* instance_data)
+{
+    
+}
+
+void post_material_update(renderer* rndr, u32 material_idx, const void* material_data)
+{
+    
 }
 
 intern b32 init_global_samplers(renderer *rndr)
