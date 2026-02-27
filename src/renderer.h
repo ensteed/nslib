@@ -1,4 +1,4 @@
-#pragma once
+
 
 #include "math/matrix4.h"
 #include "profile_timer.h"
@@ -91,6 +91,7 @@ struct rtechnique_pass_desc
     rlogic_op logic_op;
     // Must match exactly the number of attachments in the blueprint or else will fail to create
     rattachment_blend_info atts_blending[MAX_FRAMEBUFFER_ATTACHMENT_COUNT];
+    sizet att_count;
     rtechnique_desc_flags tmask;
     rshader_handle shader;
     rbp_info bp_info{};
@@ -411,7 +412,7 @@ struct rtexture_target_desc
 #define TEXTURE_TARGET_COLOR_HDR(pname)                                                                                                    \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
-        .format = rformat::RGBA16_SFLOAT,                                                                                                  \
+        .format = RFMT_RGBA16_SFLOAT,                                                                                                  \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
@@ -420,7 +421,7 @@ struct rtexture_target_desc
 #define TEXTURE_TARGET_COLOR(pname)                                                                                                        \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
-        .format = rformat::RGBA8_SRGB,                                                                                                     \
+        .format = RFMT_RGBA8_SRGB,                                                                                                     \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
@@ -429,7 +430,7 @@ struct rtexture_target_desc
 #define TEXTURE_TARGET_DEPTH(pname)                                                                                                        \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
-        .format = rformat::D32_SFLOAT,                                                                                                     \
+        .format = RFMT_D32_SFLOAT,                                                                                                     \
         .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
@@ -438,7 +439,7 @@ struct rtexture_target_desc
 #define TEXTURE_TARGET_SHADOW_MAP(pname)                                                                                                   \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
-        .format = rformat::D32_SFLOAT,                                                                                                     \
+        .format = RFMT_D32_SFLOAT,                                                                                                     \
         .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
         .dims = DEFAULT_SHADOW_MAP_SIZE,                                                                                                   \
     }
@@ -470,63 +471,24 @@ using pipeline_entry = gpu_resource_entry<gpu_handle>;
 using pipeline_handle = slot_handle<pipeline_entry>;
 using pipeline_cache = gpu_resource_cache<gpu_handle>;
 
-
-// // This data is used in uniform buffer - needs to be aligned to 16 bytes
-// struct rinstance_draw_ubo_data {
-//     u32 material_idx;
-//     u32 instance_idx;
-//     // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
-//     svec2 suser;
-//     vec4 fuser;
-// };
-
-// struct rframe_ubo_data {
-//     mat4 view;
-//     mat4 proj;
-//     mat4 view_proj;
-//     mat4 inv_view_proj;
-
-//     float elapsed;
-//     float dt;
-//     u32 frame_count;
-//     u32 padding;
-
-//     vec2 resolution;
-//     vec2 inv_resolution;
-// };
-
-enum rdset_layout_type
-{
-    RDSET_LAYOUT_NON_FIF,
-    RDSET_LAYOUT_FIF,
-    RDSET_LAYOUT_IMAGES,
-    RDSET_LAYOUT_COUNT,
-};
-
-struct global_descriptor_fif
-{
-    VkDescriptorSet dset;
-    vkr_buffer frame_ubo;
-    // Filled every frame with rinstance_draw_data
-    vkr_buffer instance_draw_ubo;
-};
-
 struct global_descriptor_info
 {
     VkDescriptorSetLayout dset_layouts[RDSET_LAYOUT_COUNT];
+    VkDescriptorSet sets[RDSET_LAYOUT_COUNT];
     VkPipelineLayout pline_layout;
-    // Global pool
-    VkDescriptorPool desc_pool;
-    // Globally bound and infrequently updated
-    // Descriptor array of all images - updated whenever a new image is uploaded or removed
-    VkDescriptorSet image_dset;
-    VkDescriptorSet non_fif_dset;
+    VkDescriptorPool pool;
+    
+    //////////////////////////////////////////////////////
+    // For all buffers, each fif has its own subsection //
+    //////////////////////////////////////////////////////
     // All instance data
     vkr_chunked_buffer instance_ssbo;
     // All material data
     vkr_chunked_buffer material_ssbo;
-    // Also globablly bound, but the buffers are updated every frame so we need one per FIF
-    global_descriptor_fif pfdata[MAX_FRAMES_IN_FLIGHT];
+    // Per frame data
+    vkr_buffer frame_ubo;
+    // Filled every frame with per instance draw call data like material and instance indices, as well as user data for each draw call
+    vkr_buffer draw_ubo;
 };
 
 struct renderer
@@ -592,13 +554,21 @@ struct sbuffer_cfg
     sizet block_size;
 };
 
-struct rdescriptor_cfg
+struct push_constant_range {
+    u32 offset;
+    u32 size;
+    rshader_stage_flags stages;
+};
+
+struct rpipeline_layout_cfg
 {
-    sizet max_image_count{256};
-    sbuffer_cfg instance_ssbo{1000,64};
-    sbuffer_cfg material_ssbo{256, 64};
-    sbuffer_cfg frame_ubo{1,64};
-    sbuffer_cfg instance_draw_ubo{1, 32};
+    sizet max_image_count;
+    sbuffer_cfg instance_ssbo;
+    sbuffer_cfg material_ssbo;
+    sbuffer_cfg frame_ubo;
+    sbuffer_cfg draw_ubo;
+    u32 push_const_range_count;
+    const push_constant_range *push_const_ranges;
 };
 
 struct renderer_cfg
@@ -609,7 +579,7 @@ struct renderer_cfg
     sizet persist_fl_size;
     sizet scratch_stack_size;
     sizet frame_linear_size;
-    rdescriptor_cfg desc;
+    rpipeline_layout_cfg desc;
     u32 texture_pool_count;
     const rtexture_pool_cfg *texture_pool_cfgs;
 };

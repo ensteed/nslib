@@ -568,7 +568,7 @@ void vkr_terminate_desc_pool(VkDescriptorPool hndl, const vkr_context *vk);
 // Descriptor sets
 
 // s32 vkr_alloc_descriptor
-s32 vkr_allot_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, const vkr_context *vk);
+s32 vkr_alloc_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, const vkr_context *vk);
 void vkr_free_desc_sets(const VkDescriptorSet *sets, sizet set_count, VkDescriptorPool pool, const vkr_context *vk);
 
 // Command Pools

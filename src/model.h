@@ -14,14 +14,14 @@ enum mat_sampler_slot
     MAT_SAMPLER_SLOT_COUNT
 };
 
-enum struct geometry_topology : u8
+enum  geometry_topology : u8
 {
-    POINT_LIST,
-    LINE_LIST,
-    LINE_STRIP,
-    TRIANGLE_LIST,
-    TRIANGLE_STRIP,
-    TRIANGLE_FAN
+    GEOMETRY_TOPOLOGY_POINT_LIST,
+    GEOMETRY_TOPOLOGY_LINE_LIST,
+    GEOMETRY_TOPOLOGY_LINE_STRIP,
+    GEOMETRY_TOPOLOGY_TRIANGLE_LIST,
+    GEOMETRY_TOPOLOGY_TRIANGLE_STRIP,
+    GEOMETRY_TOPOLOGY_TRIANGLE_FAN
 };
 
 enum struct texture_usage : u8
@@ -129,9 +129,22 @@ struct raster_state
     vec4 blend_constants;
 };
 
+enum polygon_mode
+{
+    POLYGON_MODE_FILL,
+    POLYGON_MODE_LINE,
+    POLYGON_MODE_POINT,
+};
+
 struct technique_pass
 {
+    // Shader id
     asset_id shader;
+    // Blueprint pass id and subpass index 
+    rres_id bp_pass;
+    rbp_subpass_idx bp_subpass;
+    // Which layout the technique uses within the stream group. The stream group is specified in the blueprint pass.
+    geom_buffer_layout_idx gsg_layout;
     // Default state is provided for each material referencing this technique - we use these values unless the material
     // specifically overrides it
     raster_state dflt_st{.rmask = RASTER_FLAG_CULL_BACK | RASTER_FLAG_DEPTH_TEST | RASTER_FLAG_DEPTH_WRITE,
@@ -141,14 +154,17 @@ struct technique_pass
     raster_override_state_flags can_override{RASTER_OVERRIDE_STATE_ALL};
     depth_mode dm{DEPTH_MODE_NORMAL};
     blend_mode bm{BLEND_MODE_OPAQUE};
+    polygon_mode poly_mode{POLYGON_MODE_FILL};
+    geometry_topology topology{GEOMETRY_TOPOLOGY_TRIANGLE_LIST};
 };
 
 struct technique
 {
     ASSET(TECHNIQUE, tech);
-
+    // Blueprint id
+    rres_id bpid;
     // Pass per render blueprint pass
-    hmap<rres_id, technique_pass> passes;
+    array<technique_pass> passes;
     rtechnique_handle rhndl;
 };
 
@@ -159,7 +175,7 @@ struct material
     vec4 col;
 
     // Render blueprint to technique mapping
-    hmap<rres_id, asset_id> bp_techniques;
+    array<asset_id> bp_techniques;
 
     // Techniuqe overrides (if override_mask contains bit for thing to override)
     // NOTE: The bits set in rmask here that don't pertain to bits in override_mask do nothing if set. For example,

@@ -18,14 +18,59 @@ using namespace nslib;
 // intern constexpr const char * MAIN_PASS_COLOR_NAME = "main-pass-color";
 // intern const rres_id MAIN_PASS_COLOR_ID = hash_type("main-pass-color");
 
+intern constexpr const char *FWD_PBR_RBP = "fwd-pbr";
+intern const rres_id FWD_PBR_RBP_ID = hash_type(FWD_PBR_RBP);
+
 intern constexpr const char *MAIN_PASS_DEPTH_NAME = "main-pass-depth";
-intern const rres_id MAIN_PASS_DEPTH_ID = hash_type("main-pass-depth");
+intern const rres_id MAIN_PASS_DEPTH_ID = hash_type(MAIN_PASS_DEPTH_NAME);
 
 intern constexpr const char *MAIN_PASS_NAME = "main-pass";
-intern const rres_id MAIN_PASS_ID = hash_type("main-pass");
+intern const rres_id MAIN_PASS_ID = hash_type(MAIN_PASS_NAME);
 
 intern constexpr const char *IMGUI_PASS_NAME = "imgui-pass";
-intern const rres_id IMGUI_PASS_ID = hash_type("imgui-pass");
+intern const rres_id IMGUI_PASS_ID = hash_type(IMGUI_PASS_NAME);
+
+// Default texture pool configs
+const rtexture_pool_cfg TPOOL_CFGS[] = {
+    {
+        .tmeta{
+            .fmt = RFMT_RGBA8_SRGB,
+            .dims{511, 511},
+            .mip_levels = 1,
+            .flags = RTEXTURE_FLAG_NONE,
+        },
+        .pool_name = "dport_pool",
+        .slot_count = 10,
+    },
+    {
+        .tmeta{
+            .fmt = RFMT_RGBA8_SRGB,
+            .dims{600, 600},
+            .mip_levels = 1,
+            .flags = RTEXTURE_FLAG_NONE,
+        },
+        .pool_name = "mport_pool",
+        .slot_count = 4,
+    },
+};
+
+rpipeline_layout_cfg PL_LAYOUT_CFG{
+    .instance_ssbo{1000, 64},
+    .material_ssbo{256, 64},
+    .frame_ubo{1, 64},
+    .draw_ubo{1, 32},
+    .push_const_range_count = 0,
+    .push_const_ranges = nullptr,
+};
+
+const renderer_cfg RNDR_CFG{
+    .persist_fl_size = 200 * MB_SIZE,
+    .scratch_stack_size = 10 * MB_SIZE,
+    .frame_linear_size = 10 * MB_SIZE,
+    .desc = PL_LAYOUT_CFG,
+    .texture_pool_count = ARR_SIZE(TPOOL_CFGS),
+    .texture_pool_cfgs = TPOOL_CFGS,
+};
 
 struct rdev_app_ctxt
 {
@@ -176,63 +221,83 @@ intern void create_textures(texture_pool *tex_pool)
 intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
 {
     // First, create the needed target resources
-    auto rbp = create_render_blueprint(rndr, "fwd-pbr");
+    auto rbp = create_render_blueprint(rndr, FWD_PBR_RBP);
 
-    auto pass_id = add_rbp_pass(rbp.item, {.name = MAIN_PASS_NAME, .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
-    auto imgui_pass_id = add_rbp_pass(rbp.item, {.name = IMGUI_PASS_NAME, .type = PASS_TYPE_GRAPHICS, .use_subpass_bookends = true});
+    auto pass_id = add_rbp_pass(rbp.item,
+                                {
+                                    .name = MAIN_PASS_NAME,
+                                    .type = PASS_TYPE_GRAPHICS,
+                                    .use_subpass_bookends = true,
+                                    .geom_streams_group = MAIN_GEOM_STREAM_GP_ID,
+                                });
+
+    auto imgui_pass_id = add_rbp_pass(rbp.item,
+                                      {
+                                          .name = IMGUI_PASS_NAME,
+                                          .type = PASS_TYPE_GRAPHICS,
+                                          .use_subpass_bookends = true,
+                                      });
 
     // Main geometry pass
     rbp_slot_idx col_slot_ind = add_rbp_resource_slot(
-        rbp.item, pass_id, {.name = "color", .format = get_swapchain_format(rndr), .usage = rbp_resource_usage::COLOR_ATTACHMENT});
-    rbp_slot_idx depth_slot_ind = add_rbp_resource_slot(
-        rbp.item, pass_id, {.name = "depth", .format = rformat::D32_SFLOAT, .usage = rbp_resource_usage::DEPTH_ATTACHMENT});
+        rbp.item, pass_id, {.name = "color", .format = get_swapchain_format(rndr), .usage = RBP_RES_USAGE_COLOR_ATTACHMENT});
+    rbp_slot_idx depth_slot_ind =
+        add_rbp_resource_slot(rbp.item, pass_id, {.name = "depth", .format = RFMT_D32_SFLOAT, .usage = RBP_RES_USAGE_DEPTH_ATTACHMENT});
 
     add_rbp_resource_requirement(rbp.item,
                                  pass_id,
-                                 {.slot_ind = col_slot_ind,
-                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
-                                  .visibility = RSHADER_STAGE_FRAGMENT_BIT});
+                                 {
+                                     .slot_ind = col_slot_ind,
+                                     .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
+                                     .visibility = RSHADER_STAGE_FRAGMENT_BIT,
+                                 });
 
     add_rbp_resource_requirement(rbp.item,
                                  pass_id,
-                                 {.slot_ind = depth_slot_ind,
-                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
-                                  .visibility = RSHADER_STAGE_FRAGMENT_BIT});
+                                 {
+                                     .slot_ind = depth_slot_ind,
+                                     .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_CLEAR,
+                                     .visibility = RSHADER_STAGE_FRAGMENT_BIT,
+                                 });
 
     // I'm gui will double as the place we render UI and the place where our layout conversion happens - no depth buffer
     // needed for imgui
     rbp_slot_idx imgui_col_slot_ind = add_rbp_resource_slot(
-        rbp.item, imgui_pass_id, {.name = "color", .format = get_swapchain_format(rndr), .usage = rbp_resource_usage::COLOR_ATTACHMENT});
+        rbp.item, imgui_pass_id, {.name = "color", .format = get_swapchain_format(rndr), .usage = RBP_RES_USAGE_COLOR_ATTACHMENT});
 
     add_rbp_resource_requirement(rbp.item,
                                  imgui_pass_id,
-                                 {.slot_ind = imgui_col_slot_ind,
-                                  .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_READ,
-                                  .visibility = RSHADER_STAGE_FRAGMENT_BIT,
-                                  .option_mask = RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR});
+                                 {
+                                     .slot_ind = imgui_col_slot_ind,
+                                     .access_mask = RESOURCE_REQUIREMENT_ACCESS_WRITE | RESOURCE_REQUIREMENT_ACCESS_READ,
+                                     .visibility = RSHADER_STAGE_FRAGMENT_BIT,
+                                     .option_mask = RESOURCE_REQUIREMENT_OPTION_PRESENT_KHR,
+                                 });
 
     dlog("Blueprint: %s", ls(to_json(*rbp.item)));
     compile_render_blueprint(rndr, rbp.item);
     return rbp;
 }
 
-intern void create_shaders(shader_pool *pool)
+intern void create_diffuse_technique(shader_pool *spool, technique_pool *tpool)
 {
-    auto shdr = create_asset(pool, "fwd-diffuse");
+    auto shdr = create_asset(spool, "fwd-diffuse");
     const char *path = "data/shaders/fwd-diffuse";
     const char *err = load_shader(shdr.item, path);
     if (err) {
         wlog("Failed to load shader at %s: %s", path, err);
     }
-}
 
-intern void create_techniques(technique_pool *pool)
-{
-    auto tech = create_asset(pool, "fwd-diffuse");
+    auto tech = create_asset(tpool, "fwd-diffuse");
+    tech.item->bpid = FWD_PBR_RBP_ID;
+
     // All default states are good here
     technique_pass p{};
-    p.shader = make_asset_id("fwd-diffuse");
-    hmap_insert(&tech.item->passes, MAIN_PASS_ID, p);
+    p.shader = shdr.item->id;
+    p.bp_pass = MAIN_PASS_ID;
+    p.bp_subpass = 0;
+    p.gsg_layout = 0;
+    arr_push_back(&tech.item->passes, p);
 }
 
 intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
@@ -250,40 +315,11 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     geometry *rect, *cube;
     create_geometry(geom_pool, &rect, &cube);
     create_textures(tex_pool);
-    create_shaders(shdr_pool);
-    create_techniques(tech_pool);
+    create_diffuse_technique(shdr_pool, tech_pool);
 
-    // Initialize our renderer - fail early if init fails
-    rtexture_pool_cfg tcfgs[] = {
-        {
-            .tmeta{
-                .fmt = rformat::RGBA8_SRGB,
-                .dims{511, 511},
-                .mip_levels = 1,
-                .flags = RTEXTURE_FLAG_NONE,
-            },
-            .pool_name = "dport_pool",
-            .slot_count = 10,
-        },
-        {
-            .tmeta{
-                .fmt = rformat::RGBA8_SRGB,
-                .dims{600, 600},
-                .mip_levels = 1,
-                .flags = RTEXTURE_FLAG_NONE,
-            },
-            .pool_name = "mport_pool",
-            .slot_count = 4,
-        },
-    };
-
-    renderer_cfg p{.win_hndl = ctxt->win_hndl,
-                   .upsream = &ctxt->arenas.free_list,
-                   .persist_fl_size = 200 * MB_SIZE,
-                   .scratch_stack_size = 10 * MB_SIZE,
-                   .frame_linear_size = 10 * MB_SIZE,
-                   .texture_pool_count = ARR_SIZE(tcfgs),
-                   .texture_pool_cfgs = tcfgs};
+    renderer_cfg p{RNDR_CFG};
+    p.win_hndl = ctxt->win_hndl;
+    p.upsream = &ctxt->arenas.free_list;
     if (!init_renderer(&app->rndr, p)) return false;
 
     auto geom_stream_gp = setup_geometry_stream_group(&app->rndr);
@@ -397,7 +433,8 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     f64 alpha = app->accumulater / 0.010;
     PROFILE_END();
 
-    rmanifest *m = begin_render_frame(&app->rndr, find_render_blueprint(&app->rndr, hash_type("fwd-pbr")));
+    auto bp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
+    rmanifest *m = begin_render_frame(&app->rndr, bp.hndl);
     if (!m) return true;
 
     build_manifest(m, app);

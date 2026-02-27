@@ -1,5 +1,5 @@
 #pragma once
-
+#include "math/matrix4.h"
 #include "model.h"
 
 namespace nslib
@@ -13,6 +13,10 @@ const u32 MAX_TOTAL_GEOM_IND_COUNT = (MAX_STATIC_TRIANGLE_COUNT + MAX_SKINNED_TR
 // Gemeni showed me that on average we will have 2 : 1 triangle to vert ratio
 const u32 MAX_STATIC_GEOM_VERT_COUNT = MAX_STATIC_TRIANGLE_COUNT / 2;
 const u32 MAX_SKINNED_GEOM_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
+
+
+intern constexpr const char *MAIN_GEOM_STREAM_GP = "main";
+intern const rres_id MAIN_GEOM_STREAM_GP_ID = hash_type(MAIN_GEOM_STREAM_GP);
 
 struct mem_arena;
 struct renderer;
@@ -32,6 +36,36 @@ enum rvert_layout : u32
     RVERT_LAYOUT_SKINNED_GEOM,
     RVERT_LAYOUT_COUNT
 };
+
+struct instance_ssbo_data {
+    mat4 model;
+    mat4 prev_model;
+};
+
+// This data is used in uniform buffer - needs to be aligned to 16 bytes
+struct alignas(16) draw_ubo_data {
+    u32 material_idx;
+    u32 instance_idx;
+    // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
+    svec2 suser;
+    vec4 fuser;
+};
+
+struct alignas() frame_ubo_data {
+    mat4 view;
+    mat4 proj;
+    mat4 view_proj;
+    mat4 inv_view_proj;
+
+    float elapsed;
+    float dt;
+    u32 frame_count;
+    u32 padding;
+
+    vec2 resolution;
+    vec2 inv_resolution;
+};
+
 
 struct rgeom_vert_pos_col
 {

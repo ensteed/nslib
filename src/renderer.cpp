@@ -1,5 +1,6 @@
 #include "platform.h"
 #include "vkr_context.h"
+#include "vkr_texture_pool.h"
 #include "renderer.h"
 #include "vkr_utils.h"
 #include "render_manifest.h"
@@ -267,115 +268,115 @@ intern u32 get_format_byte_size(rformat format)
 {
     switch (format) {
     // 128-bit formats (16 bytes per pixel)
-    case rformat::RGBA32_SFLOAT:
-    case rformat::RGBA32_UINT:
-    case rformat::RGBA32_SINT:
+    case RFMT_RGBA32_SFLOAT:
+    case RFMT_RGBA32_UINT:
+    case RFMT_RGBA32_SINT:
         return 16;
 
     // 96-bit formats (12 bytes per pixel)
-    case rformat::RGB32_SFLOAT:
-    case rformat::RGB32_UINT:
-    case rformat::RGB32_SINT:
+    case RFMT_RGB32_SFLOAT:
+    case RFMT_RGB32_UINT:
+    case RFMT_RGB32_SINT:
         return 12;
 
     // 64-bit formats (8 bytes per pixel)
-    case rformat::RGBA16_SFLOAT:
-    case rformat::RGBA16_UNORM:
-    case rformat::RGBA16_SNORM:
-    case rformat::RGBA16_UINT:
-    case rformat::RGBA16_SINT:
-    case rformat::RG32_SFLOAT:
-    case rformat::RG32_UINT:
-    case rformat::RG32_SINT:
+    case RFMT_RGBA16_SFLOAT:
+    case RFMT_RGBA16_UNORM:
+    case RFMT_RGBA16_SNORM:
+    case RFMT_RGBA16_UINT:
+    case RFMT_RGBA16_SINT:
+    case RFMT_RG32_SFLOAT:
+    case RFMT_RG32_UINT:
+    case RFMT_RG32_SINT:
         return 8;
 
     // 48-bit formats (6 bytes per pixel)
-    case rformat::RGB16_SFLOAT:
-    case rformat::RGB16_UNORM:
-    case rformat::RGB16_SNORM:
-    case rformat::RGB16_UINT:
-    case rformat::RGB16_SINT:
+    case RFMT_RGB16_SFLOAT:
+    case RFMT_RGB16_UNORM:
+    case RFMT_RGB16_SNORM:
+    case RFMT_RGB16_UINT:
+    case RFMT_RGB16_SINT:
         return 6;
 
     // 32-bit formats (4 bytes per pixel)
-    case rformat::RGBA8_SRGB:
-    case rformat::RGBA8_UNORM:
-    case rformat::RGBA8_SNORM:
-    case rformat::RGBA8_UINT:
-    case rformat::RGBA8_SINT:
-    case rformat::BGRA8_SRGB:
-    case rformat::BGRA8_UNORM:
-    case rformat::BGRA8_SNORM:
-    case rformat::BGRA8_UINT:
-    case rformat::BGRA8_SINT:
-    case rformat::ABGR8_SRGB:
-    case rformat::ABGR8_UNORM:
-    case rformat::ABGR8_SNORM:
-    case rformat::ABGR8_UINT:
-    case rformat::ABGR8_SINT:
-    case rformat::RG16_SFLOAT:
-    case rformat::RG16_UNORM:
-    case rformat::RG16_SNORM:
-    case rformat::RG16_UINT:
-    case rformat::RG16_SINT:
-    case rformat::R32_SFLOAT:
-    case rformat::R32_UINT:
-    case rformat::R32_SINT:
+    case RFMT_RGBA8_SRGB:
+    case RFMT_RGBA8_UNORM:
+    case RFMT_RGBA8_SNORM:
+    case RFMT_RGBA8_UINT:
+    case RFMT_RGBA8_SINT:
+    case RFMT_BGRA8_SRGB:
+    case RFMT_BGRA8_UNORM:
+    case RFMT_BGRA8_SNORM:
+    case RFMT_BGRA8_UINT:
+    case RFMT_BGRA8_SINT:
+    case RFMT_ABGR8_SRGB:
+    case RFMT_ABGR8_UNORM:
+    case RFMT_ABGR8_SNORM:
+    case RFMT_ABGR8_UINT:
+    case RFMT_ABGR8_SINT:
+    case RFMT_RG16_SFLOAT:
+    case RFMT_RG16_UNORM:
+    case RFMT_RG16_SNORM:
+    case RFMT_RG16_UINT:
+    case RFMT_RG16_SINT:
+    case RFMT_R32_SFLOAT:
+    case RFMT_R32_UINT:
+    case RFMT_R32_SINT:
         return 4;
 
     // 24-bit formats (3 bytes per pixel)
-    case rformat::RGB8_SRGB:
-    case rformat::RGB8_UNORM:
-    case rformat::RGB8_SNORM:
-    case rformat::RGB8_UINT:
-    case rformat::RGB8_SINT:
-    case rformat::BGR8_SRGB:
-    case rformat::BGR8_UNORM:
-    case rformat::BGR8_SNORM:
-    case rformat::BGR8_UINT:
-    case rformat::BGR8_SINT:
+    case RFMT_RGB8_SRGB:
+    case RFMT_RGB8_UNORM:
+    case RFMT_RGB8_SNORM:
+    case RFMT_RGB8_UINT:
+    case RFMT_RGB8_SINT:
+    case RFMT_BGR8_SRGB:
+    case RFMT_BGR8_UNORM:
+    case RFMT_BGR8_SNORM:
+    case RFMT_BGR8_UINT:
+    case RFMT_BGR8_SINT:
         return 3;
 
     // 16-bit formats (2 bytes per pixel)
-    case rformat::RG8_SRGB:
-    case rformat::RG8_UNORM:
-    case rformat::RG8_SNORM:
-    case rformat::RG8_UINT:
-    case rformat::RG8_SINT:
-    case rformat::R16_SFLOAT:
-    case rformat::R16_UNORM:
-    case rformat::R16_SNORM:
-    case rformat::R16_UINT:
-    case rformat::R16_SINT:
+    case RFMT_RG8_SRGB:
+    case RFMT_RG8_UNORM:
+    case RFMT_RG8_SNORM:
+    case RFMT_RG8_UINT:
+    case RFMT_RG8_SINT:
+    case RFMT_R16_SFLOAT:
+    case RFMT_R16_UNORM:
+    case RFMT_R16_SNORM:
+    case RFMT_R16_UINT:
+    case RFMT_R16_SINT:
         return 2;
 
     // 8-bit formats (1 byte per pixel)
-    case rformat::R8_SRGB:
-    case rformat::R8_UNORM:
-    case rformat::R8_SNORM:
-    case rformat::R8_UINT:
-    case rformat::R8_SINT:
+    case RFMT_R8_SRGB:
+    case RFMT_R8_UNORM:
+    case RFMT_R8_SNORM:
+    case RFMT_R8_UINT:
+    case RFMT_R8_SINT:
         return 1;
 
     // Compressed formats (Handled as special cases)
     // Note: For BC/ASTC, you generally want a get_block_size() function.
     // Returning 0 or an assertion here forces the caller to handle
     // the block-based nature of compressed data.
-    case rformat::RGBA8_SRGB_COMPRESSED:
-    case rformat::RGBA8_UNORM_COMPRESSED:
-    case rformat::RGB8_SRGB_COMPRESSED:
-    case rformat::RGB8_UNORM_COMPRESSED:
-    case rformat::RG8_UNORM_COMPRESSED:
-    case rformat::RG8_SNORM_COMPRESSED:
-    case rformat::R8_UNORM_COMPRESSED:
-    case rformat::R8_SNORM_COMPRESSED: {
+    case RFMT_RGBA8_SRGB_COMPRESSED:
+    case RFMT_RGBA8_UNORM_COMPRESSED:
+    case RFMT_RGB8_SRGB_COMPRESSED:
+    case RFMT_RGB8_UNORM_COMPRESSED:
+    case RFMT_RG8_UNORM_COMPRESSED:
+    case RFMT_RG8_SNORM_COMPRESSED:
+    case RFMT_R8_UNORM_COMPRESSED:
+    case RFMT_R8_SNORM_COMPRESSED: {
         // If these are BC1-BC3, they are technically 0.5 to 1 byte per pixel
         // on average, but memory must be allocated in blocks.
         asrt_break("Cannot get simple pixel size for compressed format. Use block size.");
         return 0;
     }
 
-    case rformat::INVALID:
+    case RFMT_INVALID:
     default:
         asrt_break("Invalid format");
         return 0;
@@ -645,105 +646,150 @@ intern void terminate_global_descriptor_info(renderer *rndr)
 {
     // Terminate our default descriptor layout sets
     ilog("Terminating global desc info");
-    vkr_terminate_desc_pool(rndr->desc_info.desc_pool, &rndr->vk);
+    vkr_terminate_desc_pool(rndr->desc_info.pool, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.draw_ubo, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.frame_ubo, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.material_ssbo, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.instance_ssbo, &rndr->vk);
     vkr_terminate_desc_set_layouts(rndr->desc_info.dset_layouts, RDSET_LAYOUT_COUNT, &rndr->vk);
     vkr_terminate_pipeline_layout(rndr->desc_info.pline_layout, &rndr->vk);
 }
 
-intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_cfg &dip)
+intern b32 create_descriptor_set_layouts(renderer *rndr, u32 max_image_count) {
+    vkr_descriptor_set_layout_desc dsets[RDSET_LAYOUT_COUNT]{};
+    
+    // TODO: Eventually we should make these device local buffers with staging buffers for updates
+    VkDescriptorSetLayoutBinding g_set_main_data_bindings[RDSET_MAIN_DATA_BINDING_COUNT]{};
+    u32 si = RDSET_LAYOUT_MAIN_DATA;
+    
+    // We could use the constant bindings here if we wanted, but this makes it more clear that each binding entry in the
+    // array can come in any order.. as long as the binding member is set to the right thing
+    u32 bi = 0;
+    
+    // Instance ssbo
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
+    g_set_main_data_bindings[bi].descriptorCount = 1;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ++bi;
+
+    // Material ssbo
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_MATERIAL_SSBO;
+    g_set_main_data_bindings[bi].descriptorCount = 1;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ++bi;
+
+    // Frame data
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_FRAME_UBO;
+    g_set_main_data_bindings[bi].descriptorCount = 1;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ++bi;
+    
+    // Per instance data
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_DRAW_UBO;
+    g_set_main_data_bindings[bi].descriptorCount = 1;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ++bi;
+
+    // Immutable samplers
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
+    g_set_main_data_bindings[bi].descriptorCount = RSAMPLER_TYPE_COUNT;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    g_set_main_data_bindings[bi].pImmutableSamplers = rndr->samplers;
+    ++bi;
+
+    dsets[si].bindings = g_set_main_data_bindings;
+    dsets[si].binding_count = RDSET_MAIN_DATA_BINDING_COUNT;
+
+    VkDescriptorSetLayoutBinding g_set_images_bindings[RDSET_IMAGE_BINDING_COUNT]{};
+    // All images
+    si = RDSET_LAYOUT_IMAGES;
+    bi = 0;
+    g_set_images_bindings[bi].binding = RDSET_IMAGE_BINDING_IMAGE_ARRAYS;
+    g_set_images_bindings[bi].descriptorCount = max_image_count;
+    g_set_images_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    g_set_images_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
+    ++bi;
+    
+    dsets[si].bindings = g_set_images_bindings;
+    dsets[si].binding_count = RDSET_IMAGE_BINDING_COUNT;
+
+
+    // Create the global set layouts
+    vkr_descriptor_set_layout_cfg cfg{};
+    cfg.dset_layouts = dsets;
+    cfg.dset_layout_count = ARR_SIZE(dsets);
+    s32 result = vkr_init_desc_set_layouts(rndr->desc_info.dset_layouts, cfg, &rndr->vk);
+    if (result != err_code::VKR_NO_ERROR) {
+        return false;
+    }
+    return true;
+}
+
+intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg &dip)
 {
     ilog("Initializing global descriptor info");
-    vkr_descriptor_set_layout_desc dsets[3]{};
 
     // Not exactly needed for SSBO but its best to align to 16 bytes anyways
     asrt(dip.instance_ssbo.block_size % 16 == 0);
     asrt(dip.material_ssbo.block_size % 16 == 0);
     // Absolute requirement for uniform buffers
-    asrt(dip.instance_draw_ubo.block_size % 16 == 0);
+    asrt(dip.draw_ubo.block_size % 16 == 0);
     asrt(dip.frame_ubo.block_size % 16 == 0);
+    // Limit our ranges - we can always increase this number if we needed but right now it's unnecessary
+    asrt(dip.push_const_range_count <= MAX_PUSH_CONSTANT_RANGES);    
 
-    VkDescriptorSetLayoutBinding non_fif_bindings[3]{};
-    // Instance ssbo
-    non_fif_bindings[0].binding = 0;
-    non_fif_bindings[0].descriptorCount = 1;
-    non_fif_bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    non_fif_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    // Create desc layouts
+    create_descriptor_set_layouts(rndr, dip.max_image_count);
 
-    // Material ssbo
-    non_fif_bindings[1].binding = 1;
-    non_fif_bindings[1].descriptorCount = 1;
-    non_fif_bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    non_fif_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-
-    // Immutable samplers
-    non_fif_bindings[2].binding = 2;
-    non_fif_bindings[2].descriptorCount = RSAMPLER_TYPE_COUNT;
-    non_fif_bindings[2].stageFlags = VK_SHADER_STAGE_ALL;
-    non_fif_bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-    non_fif_bindings[2].pImmutableSamplers = rndr->samplers;
-
-    dsets[0].bindings = non_fif_bindings;
-    dsets[0].binding_count = ARR_SIZE(non_fif_bindings);
-
-    VkDescriptorSetLayoutBinding fif_bindings[2]{};
-    // Frame data
-    fif_bindings[0].binding = 0;
-    fif_bindings[0].descriptorCount = 1;
-    fif_bindings[0].stageFlags = VK_SHADER_STAGE_ALL;
-    fif_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    // Per instance data
-    fif_bindings[1].binding = 1;
-    fif_bindings[1].descriptorCount = 1;
-    fif_bindings[1].stageFlags = VK_SHADER_STAGE_ALL;
-    fif_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-
-    dsets[1].bindings = fif_bindings;
-    dsets[1].binding_count = ARR_SIZE(fif_bindings);
-
-    VkDescriptorSetLayoutBinding all_images{};
-    // All images
-    all_images.binding = 0;
-    all_images.descriptorCount = dip.max_image_count;
-    all_images.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    all_images.stageFlags = VK_SHADER_STAGE_ALL;
-    dsets[2].bindings = &all_images;
-    dsets[2].binding_count = 1;
-
-    vkr_descriptor_set_layout_cfg cfg{};
-    cfg.dset_layouts = dsets;
-    cfg.dset_layout_count = ARR_SIZE(dsets);
-    int result = vkr_init_desc_set_layouts(rndr->desc_info.dset_layouts, cfg, &rndr->vk);
-    if (result != err_code::VKR_NO_ERROR) {
-        return false;
-    }
-
+    ////////////////////////////
+    // Global pipeline layout //
+    ////////////////////////////
     vkr_pipeline_layout_cfg pl_cfg{};
+    VkPushConstantRange push_const_ranges[MAX_PUSH_CONSTANT_RANGES]{};
     pl_cfg.set_layouts = rndr->desc_info.dset_layouts;
     pl_cfg.set_layout_count = RDSET_LAYOUT_COUNT;
-    result = vkr_init_pipeline_layout(&rndr->desc_info.pline_layout, pl_cfg, &rndr->vk);
+    pl_cfg.push_const_range_count = dip.push_const_range_count;
+    for (u32 i = 0; i < dip.push_const_range_count; ++i) {
+        push_const_ranges[i].stageFlags = get_vk_shader_stage_flags(dip.push_const_ranges[i].stages);
+        push_const_ranges[i].offset = dip.push_const_ranges[i].offset;
+        push_const_ranges[i].size = dip.push_const_ranges[i].size;
+    }
+    pl_cfg.push_const_ranges = push_const_ranges;    
+    s32 result = vkr_init_pipeline_layout(&rndr->desc_info.pline_layout, pl_cfg, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
         terminate_global_descriptor_info(rndr);
         return false;
     }
 
-    // We allocate a buffer big enough to have a slot for each frame in flight so we can avoid needing to sync stuff..
-    // or create a slot in the buffer for every update and retire the old
+    // Set up shared chunked buffer config
     vkr_chunked_buffer_cfg cb_cfg{};
-    cb_cfg.buffer_cfg.buffer_size = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count * MAX_FRAMES_IN_FLIGHT;
     cb_cfg.buffer_cfg.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     cb_cfg.buffer_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     cb_cfg.buffer_cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     cb_cfg.buffer_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
     cb_cfg.chunk_tracking_arena = &rndr->persist_fl;
+
+    //////////////////////////
+    // Create Instance SSBO //
+    //////////////////////////
+    // We allocate a buffer big enough to have a slot for each frame in flight so we can avoid needing to sync stuff..
+    // or create a slot in the buffer for every update and retire the old
+    cb_cfg.buffer_cfg.buffer_size = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count * MAX_FRAMES_IN_FLIGHT;    
     cb_cfg.chunk_size = dip.instance_ssbo.block_size;
     cb_cfg.buffer_cfg.vma_alloc_name = "instance_ssbo";
-    if (!vkr_init_chunked_buffer(&rndr->desc_info.instance_ssbo, cb_cfg)){
+    if (!vkr_init_chunked_buffer(&rndr->desc_info.instance_ssbo, cb_cfg)) {
         terminate_global_descriptor_info(rndr);
         return false;
     }
 
+    //////////////////////////
+    // Create material SSBO //
+    //////////////////////////
     // For materials we also do a buffer for each frame in flight - at least for now unless it proves too much. But
     // really, mat data is probably pretty small compared to instance data
     cb_cfg.buffer_cfg.buffer_size = dip.material_ssbo.block_size * dip.material_ssbo.block_count * MAX_FRAMES_IN_FLIGHT;
@@ -754,6 +800,39 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_cfg &di
         return false;
     }
 
+    // Setup up shared buffer config
+    vkr_buffer_cfg ubo_cfg{};
+    ubo_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    ubo_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
+    ubo_cfg.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    ubo_cfg.alloc_flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    ubo_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+
+    //////////////////////
+    // Create Frame UBO //
+    //////////////////////
+    ubo_cfg.buffer_size = dip.frame_ubo.block_size * MAX_FRAMES_IN_FLIGHT;
+    ubo_cfg.vma_alloc_name = "frame_ubo";
+    result = vkr_init_buffer(&rndr->desc_info.frame_ubo, ubo_cfg);
+    if (result != err_code::VKR_NO_ERROR) {
+        terminate_global_descriptor_info(rndr);
+        return result;
+    }
+
+    /////////////////////
+    // Create Draw UBO //
+    /////////////////////
+    ubo_cfg.buffer_size = dip.draw_ubo.block_size * MAX_FRAMES_IN_FLIGHT;
+    ubo_cfg.vma_alloc_name = "draw_ubo";
+    result = vkr_init_buffer(&rndr->desc_info.draw_ubo, ubo_cfg);
+    if (result != err_code::VKR_NO_ERROR) {
+        terminate_global_descriptor_info(rndr);
+        return result;
+    }
+
+    ////////////////////////////
+    // Create descriptor pool //
+    ////////////////////////////
     // Get a count of the number of descriptors we are making avaialable for each desc type
     vkr_desc_cfg desc_cfg{};
     desc_cfg.max_sets = RDSET_LAYOUT_COUNT + MAX_FRAMES_IN_FLIGHT - 1;
@@ -761,25 +840,92 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rdescriptor_cfg &di
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = dip.max_image_count;
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLER] = RSAMPLER_TYPE_COUNT;
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = 2 * MAX_FRAMES_IN_FLIGHT;
-
-    result = vkr_init_desc_pool(&rndr->desc_info.desc_pool, desc_cfg, &rndr->vk);
+    result = vkr_init_desc_pool(&rndr->desc_info.pool, desc_cfg, &rndr->vk);
     if (result != VK_SUCCESS) {
         terminate_global_descriptor_info(rndr);
         return false;
     }
 
+    //////////////////////////////
+    // Allocate descriptor sets //
+    //////////////////////////////
+    vkr_alloc_desc_sets_cfg alloc_dset_cfg{};
+    alloc_dset_cfg.pool = rndr->desc_info.pool;
+    alloc_dset_cfg.set_count = RDSET_LAYOUT_COUNT;
+    alloc_dset_cfg.set_layouts = rndr->desc_info.dset_layouts;
+    vkr_alloc_desc_sets(rndr->desc_info.sets, alloc_dset_cfg, &rndr->vk);
+
+    // We skip the immutable sampler bidning - why it's -1 here
+    constexpr u32 DESC_WRITE_COUNT = RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS + (u32)RDSET_IMAGE_BINDING_COUNT;
+    VkWriteDescriptorSet desc_writes[DESC_WRITE_COUNT]{};
+    VkDescriptorType types[] = {
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // Instance SSBO
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // Material SSBO
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, // Frame UBO
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, // Draw UBO
+        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE   // Image array
+    };
+    static_assert(ARR_SIZE(types) == DESC_WRITE_COUNT, "Descriptor write array size doesn't match expected count");
+    
+    VkDescriptorBufferInfo buffer_infos[RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS]{};
+    
+    // Instance SSBO
+    u32 bi = RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
+    buffer_infos[bi].buffer = rndr->desc_info.instance_ssbo.buffer.hndl;
+    buffer_infos[bi].offset = 0;
+    buffer_infos[bi].range = rndr->desc_info.instance_ssbo.buffer.mem_info.size;
+    
+    // Material SSBO
+    bi = RDSET_MAIN_DATA_BINDING_MATERIAL_SSBO;
+    buffer_infos[bi].buffer = rndr->desc_info.material_ssbo.buffer.hndl;
+    buffer_infos[bi].offset = 0;
+    buffer_infos[bi].range = rndr->desc_info.material_ssbo.buffer.mem_info.size;
+
+    // Frame UBO
+    bi = RDSET_MAIN_DATA_BINDING_FRAME_UBO;
+    buffer_infos[bi].buffer = rndr->desc_info.frame_ubo.hndl;
+    buffer_infos[bi].offset = 0;
+    buffer_infos[bi].range = rndr->desc_info.frame_ubo.mem_info.size;
+
+    // Draw UBO
+    bi = RDSET_MAIN_DATA_BINDING_DRAW_UBO;
+    buffer_infos[bi].buffer = rndr->desc_info.draw_ubo.hndl;
+    buffer_infos[bi].offset = 0;
+    buffer_infos[bi].range = rndr->desc_info.draw_ubo.mem_info.size;
+
+    // Create all of the image infos for each pool in the texture registry
+    array<VkDescriptorImageInfo> image_infos;
+    arr_init(&image_infos, &rndr->scratch_stack);
+    arr_resize(&image_infos, rndr->textures.pools.size);
+    for (u32 i = 0; i < image_infos.size; ++i) {
+        image_infos[i].imageView = rndr->textures.pools[i].view;
+        image_infos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        // We will be using immutable samplers for this binding, so we can just set this to null
+        image_infos[i].sampler = VK_NULL_HANDLE;
+    }
+
+    // Create the descriptor set writes
+    for (u32 i = 0; i < DESC_WRITE_COUNT; ++i) {
+        auto cur_dw = &desc_writes[i];
+        bool is_main_data = i < RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
+        cur_dw->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        cur_dw->dstSet = is_main_data ? rndr->desc_info.sets[RDSET_LAYOUT_MAIN_DATA] : rndr->desc_info.sets[RDSET_LAYOUT_IMAGES];
+        cur_dw->dstBinding = is_main_data ? i : i - RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
+        cur_dw->dstArrayElement = 0;
+        cur_dw->descriptorType = types[i];
+        cur_dw->descriptorCount = is_main_data ? 1 : rndr->textures.pools.size;
+        cur_dw->pBufferInfo = is_main_data ? &buffer_infos[i] : nullptr;
+        cur_dw->pImageInfo = !is_main_data ? image_infos.data : nullptr;
+    }
+    vkUpdateDescriptorSets(rndr->vk.inst.device.hndl, DESC_WRITE_COUNT, desc_writes, 0, nullptr);
     return true;
 }
 
-void post_instance_update(renderer* rndr, u32 instance_idx, const void* instance_data)
-{
-    
-}
+void post_instance_update(renderer *rndr, u32 instance_idx, const void *instance_data)
+{}
 
-void post_material_update(renderer* rndr, u32 material_idx, const void* material_data)
-{
-    
-}
+void post_material_update(renderer *rndr, u32 material_idx, const void *material_data)
+{}
 
 intern b32 init_global_samplers(renderer *rndr)
 {
@@ -1427,7 +1573,10 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         cfg.col_blend.blend_constants = {1.0f};
         cfg.col_blend.logic_op = get_vk_logic_op(cur_desc->logic_op);
         cfg.col_blend.logic_op_enabled = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_BLEND_LOGIC_OP);
-        cfg.col_blend.attachments.size = get_rbp_attachment_count(rbp_pass);
+
+        // We are setting all color attachments to have same blending - not all GPUs support different blending per att, so this is easier
+        // to manage and more compatible.
+        cfg.col_blend.attachments.size = get_rbp_slot_count(*rbp_pass, RBP_RES_USAGE_FLAG_COLOR_ATTACHMENT);
         for (u32 i = 0; i < cfg.col_blend.attachments.size; ++i) {
             auto cfg_att = &cfg.col_blend.attachments[i];
             auto desc_att = &cur_desc->atts_blending[i];

@@ -26,14 +26,11 @@ b32 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg 
     arr_resize(&reg->pools, cfg.pool_count, vkr_texture_pool{});
     for (u32 i = 0; i < reg->pools.size; ++i) {
         vkr_texture_pool_cfg dst{};
+        dst.tmeta = cfg.cfgs[i].tmeta;
         dst.persist_fl = cfg.persist_fl;
         dst.scratch_stack = cfg.scratch_stack;
-        dst.dims = cfg.cfgs[i].tmeta.dims;
-        dst.format = get_vk_format(cfg.cfgs[i].tmeta.fmt);
         dst.image_usage = {VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT};
         dst.pool_name = cfg.cfgs[i].pool_name;
-        dst.type = test_flags(cfg.cfgs[i].tmeta.flags, RTEXTURE_FLAG_CUBEMAP) ? VKR_TEXTURE_POOL_TYPE_CUBE_ARRAY : VKR_TEXTURE_POOL_TYPE_2D_ARRAY;
-        dst.mip_levels = cfg.cfgs[i].tmeta.mip_levels;
         dst.slot_count = cfg.cfgs[i].slot_count;
         dst.vk = cfg.vk;
         if (!vkr_init_texture_pool(&reg->pools[i], dst)) {

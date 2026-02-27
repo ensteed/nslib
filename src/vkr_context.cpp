@@ -946,7 +946,7 @@ void vkr_free_cmd_bufs(VkCommandBuffer *bufs, sizet count, VkCommandPool pool, c
     vkFreeCommandBuffers(vk->inst.device.hndl, pool, (u32)count, bufs);
 }
 
-int vkr_allot_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, const vkr_context *vk)
+int vkr_alloc_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, const vkr_context *vk)
 {
     VkDescriptorSetAllocateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;

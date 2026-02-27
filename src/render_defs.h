@@ -4,6 +4,7 @@
 
 namespace nslib
 {
+
 // Rendering resource id
 using rres_id = u64;
 // Maximum number of techniques the renderer supports
@@ -52,8 +53,32 @@ inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
 inline const u64 SWAPCHAIN_ID = hash_type("swapchain");
 
 inline constexpr f32 DEFAULT_DEPTH_CLEAR = 1.0f;
-
 inline constexpr u32 DEFAULT_STENCIL_CLEAR = 0;
+
+// Global descriptor set info
+enum rdset_layout_type
+{
+    RDSET_LAYOUT_MAIN_DATA,
+    RDSET_LAYOUT_IMAGES,
+    RDSET_LAYOUT_COUNT,
+};
+
+enum rdset_main_data_binding:u32
+{
+    RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO,
+    RDSET_MAIN_DATA_BINDING_MATERIAL_SSBO,
+    RDSET_MAIN_DATA_BINDING_FRAME_UBO,
+    RDSET_MAIN_DATA_BINDING_DRAW_UBO,
+    RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS,
+    RDSET_MAIN_DATA_BINDING_COUNT,
+};
+
+enum rdset_image_binding:u32
+{
+    RDSET_IMAGE_BINDING_IMAGE_ARRAYS,
+    RDSET_IMAGE_BINDING_COUNT,
+};
+
 
 // Indice type
 using ind_t = u16;
@@ -302,7 +327,7 @@ enum rsampler_type : u32
     RSAMPLER_TYPE_COUNT
 };
 
-enum struct rgeom_topology : u8
+enum rgeom_topology : u8
 {
     RGEOM_TOPOLOGY_POINT_LIST,
     RGEOM_TOPOLOGY_LINE_LIST,
@@ -312,7 +337,8 @@ enum struct rgeom_topology : u8
     RGEOM_TOPOLOGY_TRIANGLE_FAN,
 };
 
-enum rdescriptor_type {
+enum rdescriptor_type
+{
     RDESCRIPTOR_TYPE_SAMPLER,
     RDESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
     RDESCRIPTOR_TYPE_SAMPLED_IMAGE,

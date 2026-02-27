@@ -208,6 +208,7 @@ const char *load_shader(shader *shdr, const char *path)
     shdr->stages[1].stype = SHADER_STAGE_TYPE_FRAGMENT;
     for (u32 i = 0; i < shdr->stages.size; ++i) {
         auto cur_stage = &shdr->stages[i];
+        strncpy(cur_stage->entry_point, "main", SMALL_STR_LEN - 1);
         string str(path, shdr->frame_lin);
         str_append(&str, cur_stage->stype == SHADER_STAGE_TYPE_VERTEX ? ".vert.spv" : ".frag.spv");
         arr_init(&cur_stage->src, shdr->fl);
@@ -240,12 +241,12 @@ const char *get_shader_stage_str(shader_stage_type stype)
 
 void init_asset(technique *tech)
 {
-    hmap_init(&tech->passes, hash_type, tech->fl);
+    arr_init(&tech->passes, tech->fl);
 }
 
 void terminate_asset(technique *tech)
 {
-    hmap_terminate(&tech->passes);
+    arr_terminate(&tech->passes);
 }
 
 void init_asset(material *mat)

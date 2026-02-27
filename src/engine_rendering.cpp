@@ -9,16 +9,16 @@ intern rformat get_rformat_for_usage(texture_usage usage)
 {
     switch (usage) {
     case (texture_usage::ALBEDO):
-        return rformat::RGBA8_SRGB;
+        return RFMT_RGBA8_SRGB;
     case (texture_usage::NORMAL):
-        return rformat::RG8_UNORM;
+        return RFMT_RG8_UNORM;
     case (texture_usage::GRAYSCALE):
-        return rformat::R8_UNORM;
+        return RFMT_R8_UNORM;
     case (texture_usage::HDR):
-        return rformat::RGBA16_SFLOAT;
+        return RFMT_RGBA16_SFLOAT;
     default:
         asrt_break("Failed to handle texture usage case");
-        return rformat::INVALID;
+        return RFMT_INVALID;
     }
 }
 
@@ -54,7 +54,7 @@ intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
 u32 setup_geometry_stream_group(renderer *rndr)
 {
     geometry_stream_group_desc desc{};
-    desc.name = "nslib";
+    desc.name = MAIN_GEOM_STREAM_GP;
     desc.max_ind_count = MAX_TOTAL_GEOM_IND_COUNT;
 
     geometry_vert_layout_desc *static_geom_layout = push_geometry_layout(&desc, MAX_STATIC_GEOM_VERT_COUNT);
@@ -164,14 +164,21 @@ intern rtexture_flags get_rtexture_flags(asset_flags flags)
     return test_flags(flags, TEXTURE_FLAG_CUBEMAP) ? RTEXTURE_FLAG_CUBEMAP : RTEXTURE_FLAG_NONE;
 }
 
-intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp)
+intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp, render_blueprint_ref bp)
 {
+    rbp_pass_idx pass_idx = find_rbp_pass(bp.item, src.bp_pass);
+    asrt(is_valid(pass_idx));
+    
     shader_item_ref shdr = find_asset(sp, src.shader);
     dst->shader = is_valid(shdr) ? shdr.item->rhndl : rshader_handle{};
-
+    dst->bp_info.bp = bp.hndl;
+    dst->bp_info.pid = pass_idx;
+    dst->bp_info.subpass_ind = src.bp_subpass;
+    dst->geom_buffer_layout = src.gsg_layout;
+    
     // Sensible defaults for fields not driven by technique_pass
-    dst->topology = rgeom_topology::RGEOM_TOPOLOGY_TRIANGLE_LIST;
-    dst->poly_mode = RPOLYGON_MODE_FILL;
+    dst->topology = (rgeom_topology)src.topology;
+    dst->poly_mode = (rpolygon_mode)src.poly_mode;
     dst->tess_patch_control_points = 0;
     dst->logic_op = RLOGIC_OP_COPY;
     dst->depth_bounds = {0.0f, 1.0f};
@@ -204,7 +211,8 @@ intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_p
     // blend_mode → per-attachment blend state (set all slots uniformly;
     // create_rtechnique only reads as many as the blueprint pass has)
     rcolor_component_flags write_all = RCOLOR_COMPONENT_R | RCOLOR_COMPONENT_G | RCOLOR_COMPONENT_B | RCOLOR_COMPONENT_A;
-    for (u32 i = 0; i < MAX_FRAMEBUFFER_ATTACHMENT_COUNT; ++i) {
+    u32 att_cnt = get_rbp_slot_count(bp.item->passes[pass_idx]);
+    for (u32 i = 0; i < att_cnt; ++i) {
         auto *att = &dst->atts_blending[i];
         att->write_mask = write_all;
         switch (src.bm) {
@@ -257,14 +265,15 @@ bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_aren
 {
     rtechnique_desc tdesc{};
     tdesc.name = ls(tech->name);
-    tdesc.pass_count = tech->passes.count;
+    tdesc.pass_count = tech->passes.size;
+    auto bp = find_render_blueprint(rndr, tech->bpid);
 
-    u32 i{};
     rtechnique_pass_desc *tmp_passes = mem_alloc<rtechnique_pass_desc>(scratch, tdesc.pass_count);
-    for (auto pass_iter = hmap_begin(&tech->passes); pass_iter; pass_iter = hmap_next(&tech->passes, pass_iter)) {
-        set_technique_pass_desc(&tmp_passes[i], pass_iter->val, sp);
+    for (u32 i = 0; i < tech->passes.size; ++i) {
+        set_technique_pass_desc(&tmp_passes[i], tech->passes[i], sp, bp);
         ++i;
     }
+    tdesc.passes = tmp_passes;
     create_rtechnique(rndr, tdesc);
     mem_free(tmp_passes, scratch);
     return get_and_log_upload_result(tech);

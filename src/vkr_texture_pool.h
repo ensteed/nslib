@@ -1,17 +1,11 @@
 #pragma once
 
 #include "containers/slot_pool.h"
-
+#include "rtexture_registry.h"
 #include "vkr_context.h"
 
 namespace nslib
 {
-
-enum vkr_texture_pool_type
-{
-    VKR_TEXTURE_POOL_TYPE_2D_ARRAY,
-    VKR_TEXTURE_POOL_TYPE_CUBE_ARRAY,
-};
 
 enum vkr_texture_pool_layout
 {
@@ -21,11 +15,8 @@ enum vkr_texture_pool_layout
 
 struct vkr_texture_pool_cfg
 {
-    uvec2 dims{};
-    VkFormat format{VK_FORMAT_UNDEFINED};
+    rtexture_meta tmeta;
     u32 slot_count{};
-    u32 mip_levels{1};
-    vkr_texture_pool_type type{VKR_TEXTURE_POOL_TYPE_2D_ARRAY};
     VkImageUsageFlags image_usage{VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
     const char *pool_name{nullptr};
     mem_arena *persist_fl{nullptr};
@@ -49,10 +40,7 @@ struct vkr_texture_pool
     vkr_image image;
     VkImageView view;
 
-    uvec2 dims;
-    u32 mip_levels;
-    VkFormat format;
-    vkr_texture_pool_type type;
+    rtexture_meta tmeta;
     slot_pool<rtexture_info> tpool;
 
     // These buffers back pending transfer commands and must stay alive until the caller

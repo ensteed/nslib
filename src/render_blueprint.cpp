@@ -138,14 +138,14 @@ intern u32 get_next_att_ind(const rbp_pass &pass, sizet slot_size)
 
 bool is_usage_attachment(rbp_resource_usage usage)
 {
-    return (usage < rbp_resource_usage::SAMPLED_IMAGE);
+    return test_flags(make_flag(usage), RBP_RES_USAGE_FLAGS_ANY_ATTACHMENT);
 }
 
-u32 get_rbp_attachment_count(rbp_pass *rbp)
+u32 get_rbp_slot_count(const rbp_pass &rbp, rbp_resource_usage_flags flags)
 {
     u32 cnt{};
-    for (u32 i = 0; i < rbp->slots.size; ++i) {
-        if (is_valid(rbp->slots[i].att_ind)) {
+    for (u32 i = 0; i < rbp.slots.size; ++i) {
+        if (is_valid(rbp.slots[i].att_ind) && test_flags(make_flag(rbp.slots[i].usage), flags)) {
             ++cnt;
         }
     }
@@ -166,7 +166,10 @@ rbp_slot_idx add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_idx pid, cons
     return ind;
 }
 
-rbp_resource_req_idx add_rbp_resource_requirement(render_blueprint *rbp, rbp_pass_idx pid, const rbp_resource_requirement &req, rbp_subpass_idx spid)
+rbp_resource_req_idx add_rbp_resource_requirement(render_blueprint *rbp,
+                                                  rbp_pass_idx pid,
+                                                  const rbp_resource_requirement &req,
+                                                  rbp_subpass_idx spid)
 {
     auto ind = rbp->passes[pid].subpasses[spid].resources.size++;
     asrt(ind < rbp->passes[pid].subpasses[spid].resources.capacity);
@@ -236,10 +239,15 @@ render_blueprint *get_render_blueprint(renderer *rndr, render_blueprint_handle h
     return get_slot_item(&rndr->blueprints, hndl);
 }
 
-render_blueprint_handle find_render_blueprint(renderer *rndr, rres_id bpid)
+render_blueprint_ref find_render_blueprint(renderer *rndr, rres_id bpid)
 {
+    render_blueprint_ref ret{};
     auto fiter = hmap_find(&rndr->blueprint_id_map, bpid);
-    return fiter ? fiter->val : render_blueprint_handle{};
+    if (fiter) {
+        ret.hndl = fiter->val;
+        ret.item = get_render_blueprint(rndr, ret.hndl);
+    }
+    return ret;
 }
 
 void clean_render_blueprint(renderer *rndr, render_blueprint *rbp)
@@ -275,7 +283,7 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
 
         // This should zero initialize everything
         vkr_rpass_cfg rp_cfg{};
-        u32 attachment_count = get_rbp_attachment_count(pass);
+        u32 attachment_count = get_rbp_slot_count(*pass);
         asrt(attachment_count <= rp_cfg.attachments.capacity);
         rp_cfg.attachments.size = attachment_count;
 
@@ -293,8 +301,7 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
                 asrt(is_usage_attachment(slot.usage));
                 asrt(slot.att_ind < rp_cfg.attachments.size);
 
-                bool use_stencil =
-                    (slot.usage == rbp_resource_usage::STENCIL_ATTACHMENT || slot.usage == rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT);
+                bool use_stencil = (slot.usage == RBP_RES_USAGE_STENCIL_ATTACHMENT || slot.usage == RBP_RES_USAGE_DEPTH_STENCIL_ATTACHMENT);
                 VkAttachmentDescription *att = &rp_cfg.attachments.data[slot.att_ind];
                 // Use format to tell if attachment hasn't been set yet - if it hasn't we set it as this is the first
                 // resource using that attachment
@@ -321,15 +328,15 @@ bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
                 att_ref.attachment = slot.att_ind;
                 att_ref.layout = get_vk_layout_from_requirement(*pass, req, false);
                 switch (slot.usage) {
-                case rbp_resource_usage::COLOR_ATTACHMENT:
+                case RBP_RES_USAGE_COLOR_ATTACHMENT:
                     arr_push_back(&subpass.color_attachments, att_ref);
                     break;
-                case rbp_resource_usage::INPUT_ATTACHMENT:
+                case RBP_RES_USAGE_INPUT_ATTACHMENT:
                     arr_push_back(&subpass.input_attachments, att_ref);
                     break;
-                case rbp_resource_usage::DEPTH_ATTACHMENT:
-                case rbp_resource_usage::STENCIL_ATTACHMENT:
-                case rbp_resource_usage::DEPTH_STENCIL_ATTACHMENT:
+                case RBP_RES_USAGE_DEPTH_ATTACHMENT:
+                case RBP_RES_USAGE_STENCIL_ATTACHMENT:
+                case RBP_RES_USAGE_DEPTH_STENCIL_ATTACHMENT:
                     subpass.depth_stencil_attachment = att_ref;
                     break;
                 default:

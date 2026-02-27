@@ -13,7 +13,7 @@ struct pool_slot_range
 
 intern const u32 get_layers_per_slot(const vkr_texture_pool &pool)
 {
-    return pool.type == VKR_TEXTURE_POOL_TYPE_CUBE_ARRAY ? 6u : 1u;
+    return test_flags(pool.tmeta.flags, RTEXTURE_FLAG_CUBEMAP) ? 6u : 1u;
 }
 
 intern const u32 get_layer_count(const vkr_texture_pool &pool)
@@ -115,7 +115,8 @@ intern void transition_ranges_to_intent(vkr_texture_pool *pool,
     asrt(pool);
     asrt(pool->vk);
     asrt(range_count > 0);
-    auto new_layout = get_layout_from_intent(intent, pool->format);
+    auto vkfmt = get_vk_format(pool->tmeta.fmt);
+    auto new_layout = get_layout_from_intent(intent, vkfmt);
 
     array<VkImageMemoryBarrier> barriers{};
     arr_init(&barriers, pool->scratch_stack, range_count);
@@ -149,7 +150,7 @@ intern void transition_ranges_to_intent(vkr_texture_pool *pool,
                 cur_barrier->image = pool->image.hndl;
                 cur_barrier->subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
                 cur_barrier->subresourceRange.baseMipLevel = 0;
-                cur_barrier->subresourceRange.levelCount = pool->mip_levels;
+                cur_barrier->subresourceRange.levelCount = pool->tmeta.mip_levels;
                 cur_barrier->subresourceRange.baseArrayLayer = get_layer_from_slot(*pool, base_slot_i + slot_offset);
                 cur_barrier->subresourceRange.layerCount = get_layers_per_slot(*pool);
                 src_stage_mask |= src_stage;
@@ -200,42 +201,40 @@ b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cf
     asrt(cfg.vk);
     asrt(cfg.persist_fl);
     asrt(cfg.slot_count != 0);
-    asrt(cfg.dims != uvec2{0u});
-    asrt(cfg.format != VK_FORMAT_UNDEFINED);
+    asrt(cfg.tmeta.dims != uvec2{0u});
+    asrt(cfg.tmeta.fmt != RFMT_INVALID);
     asrt(cfg.scratch_stack);
 
     pool->vk = cfg.vk;
     pool->scratch_stack = cfg.scratch_stack;
-    pool->dims = cfg.dims;
-    pool->mip_levels = cfg.mip_levels;
-    pool->format = cfg.format;
-    pool->type = cfg.type;
+    pool->tmeta = cfg.tmeta;
 
     ilog("Initializing %s %s %ux%u texture pool (%s) with %u slots each having %u mips",
-         cfg.type == VKR_TEXTURE_POOL_TYPE_2D_ARRAY ? "2d" : "cube",
-         get_vk_format_str(cfg.format),
-         cfg.dims.w,
-         cfg.dims.h,
+         test_flags(cfg.tmeta.flags, RTEXTURE_FLAG_CUBEMAP) ? "cube" : "2d",
+         get_rformat_str(cfg.tmeta.fmt),
+         cfg.tmeta.dims.w,
+         cfg.tmeta.dims.h,
          cfg.pool_name,
          cfg.slot_count,
-         cfg.mip_levels);
+         cfg.tmeta.mip_levels);
 
     init_slot_pool(&pool->tpool, cfg.slot_count, cfg.persist_fl);
     arr_init(&pool->pending_staging_buffers, cfg.persist_fl);
 
+    bool is_cubemap = test_flags(cfg.tmeta.flags, RTEXTURE_FLAG_CUBEMAP);
     vkr_image_cfg img_cfg{};
-    img_cfg.dims = {cfg.dims.x, cfg.dims.y, 1};
+    img_cfg.dims = {cfg.tmeta.dims.x, cfg.tmeta.dims.y, 1};
     img_cfg.type = VK_IMAGE_TYPE_2D;
-    img_cfg.format = cfg.format;
+    img_cfg.format = get_vk_format(cfg.tmeta.fmt);
     img_cfg.tiling = VK_IMAGE_TILING_OPTIMAL;
     img_cfg.usage = cfg.image_usage;
-    img_cfg.im_create_flags = (cfg.type == VKR_TEXTURE_POOL_TYPE_CUBE_ARRAY) ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+    img_cfg.im_create_flags = is_cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     img_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     img_cfg.alloc_flags = 0;
     img_cfg.samples = VK_SAMPLE_COUNT_1_BIT;
     img_cfg.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     img_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
-    img_cfg.mip_levels = cfg.mip_levels;
+    img_cfg.mip_levels = cfg.tmeta.mip_levels;
     img_cfg.array_layers = (int)get_layers_per_slot(*pool) * cfg.slot_count;
     img_cfg.vma_alloc = &pool->vk->inst.device.vma_alloc;
     
@@ -251,10 +250,10 @@ b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cf
 
     vkr_image_view_cfg view_cfg{};
     view_cfg.image = &pool->image;
-    view_cfg.view_type = (cfg.type == VKR_TEXTURE_POOL_TYPE_CUBE_ARRAY) ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-    view_cfg.srange.aspectMask = get_vk_aspect_flags(cfg.format);
+    view_cfg.view_type = is_cubemap ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    view_cfg.srange.aspectMask = get_vk_aspect_flags(img_cfg.format);
     view_cfg.srange.baseMipLevel = 0;
-    view_cfg.srange.levelCount = cfg.mip_levels;
+    view_cfg.srange.levelCount = img_cfg.mip_levels;
     view_cfg.srange.baseArrayLayer = 0;
     view_cfg.srange.layerCount = img_cfg.array_layers;
     err = vkr_init_image_view(&pool->view, view_cfg, pool->vk);
@@ -319,7 +318,7 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     asrt(src_images);
     asrt(tslots);
 
-    vk_format_info fmt_info = get_vk_format_info(pool->format);
+    vk_format_info fmt_info = get_vk_format_info(pool->tmeta.fmt);
     vkr_buffer_cfg staging_cfg{};
     staging_cfg.alloc_flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     staging_cfg.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -328,7 +327,7 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     staging_cfg.vma_alloc = &pool->vk->inst.device.vma_alloc;
     staging_cfg.vma_alloc_name = "staging-buffer";
     staging_cfg.buffer_size =
-        calculate_vk_image_buffer_size(fmt_info, pool->dims.w, pool->dims.h, pool->mip_levels, get_layers_per_slot(*pool) * count);
+        calculate_vk_image_buffer_size(fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, pool->tmeta.mip_levels, get_layers_per_slot(*pool) * count);
     vkr_buffer staging{};
     s32 result = vkr_init_buffer(&staging, staging_cfg);
     if (result != err_code::VKR_NO_ERROR) {
@@ -341,8 +340,8 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     for (u32 im_i = 0; im_i < count; ++im_i) {
         sizet src_offset = 0;
         sizet dest_offset = 0;
-        for (u32 mipi = 0; mipi < pool->mip_levels; ++mipi) {
-            sizet mip_sz = calculate_vk_image_size(fmt_info, pool->dims.w, pool->dims.h, mipi, 1);
+        for (u32 mipi = 0; mipi < pool->tmeta.mip_levels; ++mipi) {
+            sizet mip_sz = calculate_vk_image_size(fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, mipi, 1);
             auto src = (const void*)((sizet)src_images[im_i].data + src_offset);
             auto dest = (void*)((sizet)staging.mem_info.pMappedData + im_i * mip_sz + dest_offset);
             memcpy(dest, src, mip_sz);
@@ -364,7 +363,7 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     array<VkBufferImageCopy> regions{};
     arr_init(&regions, pool->scratch_stack);
     sizet buff_offset{0};
-    for (u32 mipi = 0; mipi < pool->mip_levels; ++mipi) {
+    for (u32 mipi = 0; mipi < pool->tmeta.mip_levels; ++mipi) {
         for (u32 rangei = 0; rangei < ranges.size; ++rangei) {
             VkBufferImageCopy region{};
             region.bufferOffset = buff_offset;
@@ -375,9 +374,9 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
             region.imageSubresource.baseArrayLayer = get_layer_from_slot(*pool, ranges[rangei].base_ind);
             region.imageSubresource.layerCount = get_layers_per_slot(*pool) * ranges[rangei].count;
             region.imageOffset = {0, 0, 0};
-            region.imageExtent = {pool->dims.x, pool->dims.y, 1};
+            region.imageExtent = {pool->tmeta.dims.x, pool->tmeta.dims.y, 1};
             arr_push_back(&regions, region);
-            buff_offset += calculate_vk_image_size(fmt_info, pool->dims.w, pool->dims.h, mipi, region.imageSubresource.layerCount);
+            buff_offset += calculate_vk_image_size(fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, mipi, region.imageSubresource.layerCount);
         }
     }
     vkCmdCopyBufferToImage(cmd_buf, staging.hndl, pool->image.hndl, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions.size, regions.data);
