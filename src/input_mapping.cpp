@@ -55,7 +55,7 @@ void terminate_keymap(input_keymap *km)
 {
     asrt(km);
     hmap_terminate(&km->hm);
-    memset(km, 0, sizeof(input_keymap));
+    *km = {};
 }
 
 void init_keymap_stack(input_keymap_stack *stack, mem_arena *arena)
