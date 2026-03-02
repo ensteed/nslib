@@ -132,22 +132,6 @@ enum render
 };
 }
 
-struct push_constants
-{
-    mat4 transform;
-};
-
-struct frame_ubo_data
-{
-    mat4 proj_view;
-};
-
-struct material_ubo_data
-{
-    vec4 color;
-    vec4 misc;
-};
-
 // We use a single vertex and indice buffer for all geometries
 struct rgeom_info
 {
@@ -474,7 +458,9 @@ using pipeline_cache = gpu_resource_cache<gpu_handle>;
 struct global_descriptor_info
 {
     VkDescriptorSetLayout dset_layouts[RDSET_LAYOUT_COUNT];
-    VkDescriptorSet sets[RDSET_LAYOUT_COUNT];
+    // instance/material/frame/draw set have per fif, image has just one desc set - a total of max fif + 1
+    VkDescriptorSet main_data[MAX_FRAMES_IN_FLIGHT];
+    VkDescriptorSet images;
     VkPipelineLayout pline_layout;
     VkDescriptorPool pool;
     

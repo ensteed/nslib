@@ -1,12 +1,34 @@
 #version 450
-layout(set = 0, binding = 0) uniform frame_ubo_data {
-    mat4 proj_view;  
+
+layout(set = 0, binding = 0) buffer instance_ssbo_data {
+  mat4 model;
+  mat4 prev_model;
+} inst_ssbo;
+
+layout(set = 0, binding = 1) buffer material_ssbo_data {
+  vec4 col;
+} mat_ssbo;
+
+layout(set = 0, binding = 2) uniform frame_ubo_data {
+    mat4 view;
+    mat4 proj;
+    mat4 view_proj;
+    mat4 inv_view_proj;
+    float elapsed;
+    float dt;
+    u32 frame_count;
+    u32 padding;
+    vec2 resolution;
+    vec2 inv_resolution;
 } frame_ubo;
 
-layout(set = 1, binding = 0) uniform material_ubo_data {
-    vec4 color;
-    vec4 misc; // use x component for now as a vertex material multiplier
-} mat_ubo;
+layout(set = 0, binding = 3) uniform draw_ubo_data {
+    u32 material_idx;
+    u32 instance_idx;
+    // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
+    svec2 suser;
+    vec4 fuser;
+} draw_ubo;
 
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec4 in_color;
@@ -20,6 +42,6 @@ layout(location = 1) out vec2 frag_uv;
 void main() {
     // Because GLSL stores matrices in column major, we reverse our multiplication order
     gl_Position = vec4(in_pos, 1.0) * frame_ubo.proj_view;
-    frag_color = mat_ubo.color + mat_ubo.misc.x * in_color;
+    frag_color = mat_ubo.color + in_color;
     frag_uv = in_uv;
 }

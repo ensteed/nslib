@@ -42,8 +42,12 @@ struct instance_ssbo_data {
     mat4 prev_model;
 };
 
+struct material_ssbo_data {
+    vec4 col;
+};
+
 // This data is used in uniform buffer - needs to be aligned to 16 bytes
-struct alignas(16) draw_ubo_data {
+struct draw_ubo_data {
     u32 material_idx;
     u32 instance_idx;
     // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
@@ -51,7 +55,7 @@ struct alignas(16) draw_ubo_data {
     vec4 fuser;
 };
 
-struct alignas() frame_ubo_data {
+struct frame_ubo_data {
     mat4 view;
     mat4 proj;
     mat4 view_proj;
@@ -65,7 +69,6 @@ struct alignas() frame_ubo_data {
     vec2 resolution;
     vec2 inv_resolution;
 };
-
 
 struct rgeom_vert_pos_col
 {

@@ -655,17 +655,18 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     vkr_terminate_pipeline_layout(rndr->desc_info.pline_layout, &rndr->vk);
 }
 
-intern b32 create_descriptor_set_layouts(renderer *rndr, u32 max_image_count) {
+intern b32 create_descriptor_set_layouts(renderer *rndr, u32 max_image_count)
+{
     vkr_descriptor_set_layout_desc dsets[RDSET_LAYOUT_COUNT]{};
-    
+
     // TODO: Eventually we should make these device local buffers with staging buffers for updates
     VkDescriptorSetLayoutBinding g_set_main_data_bindings[RDSET_MAIN_DATA_BINDING_COUNT]{};
     u32 si = RDSET_LAYOUT_MAIN_DATA;
-    
+
     // We could use the constant bindings here if we wanted, but this makes it more clear that each binding entry in the
     // array can come in any order.. as long as the binding member is set to the right thing
     u32 bi = 0;
-    
+
     // Instance ssbo
     g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
     g_set_main_data_bindings[bi].descriptorCount = 1;
@@ -686,7 +687,7 @@ intern b32 create_descriptor_set_layouts(renderer *rndr, u32 max_image_count) {
     g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
     g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     ++bi;
-    
+
     // Per instance data
     g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_DRAW_UBO;
     g_set_main_data_bindings[bi].descriptorCount = 1;
@@ -714,10 +715,9 @@ intern b32 create_descriptor_set_layouts(renderer *rndr, u32 max_image_count) {
     g_set_images_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     g_set_images_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
     ++bi;
-    
+
     dsets[si].bindings = g_set_images_bindings;
     dsets[si].binding_count = RDSET_IMAGE_BINDING_COUNT;
-
 
     // Create the global set layouts
     vkr_descriptor_set_layout_cfg cfg{};
@@ -741,7 +741,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     asrt(dip.draw_ubo.block_size % 16 == 0);
     asrt(dip.frame_ubo.block_size % 16 == 0);
     // Limit our ranges - we can always increase this number if we needed but right now it's unnecessary
-    asrt(dip.push_const_range_count <= MAX_PUSH_CONSTANT_RANGES);    
+    asrt(dip.push_const_range_count <= MAX_PUSH_CONSTANT_RANGES);
 
     // Create desc layouts
     create_descriptor_set_layouts(rndr, dip.max_image_count);
@@ -759,7 +759,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         push_const_ranges[i].offset = dip.push_const_ranges[i].offset;
         push_const_ranges[i].size = dip.push_const_ranges[i].size;
     }
-    pl_cfg.push_const_ranges = push_const_ranges;    
+    pl_cfg.push_const_ranges = push_const_ranges;
     s32 result = vkr_init_pipeline_layout(&rndr->desc_info.pline_layout, pl_cfg, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
         terminate_global_descriptor_info(rndr);
@@ -779,7 +779,8 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////////
     // We allocate a buffer big enough to have a slot for each frame in flight so we can avoid needing to sync stuff..
     // or create a slot in the buffer for every update and retire the old
-    cb_cfg.buffer_cfg.buffer_size = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count * MAX_FRAMES_IN_FLIGHT;    
+    sizet instance_buf_fif_sz = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count;
+    cb_cfg.buffer_cfg.buffer_size = instance_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     cb_cfg.chunk_size = dip.instance_ssbo.block_size;
     cb_cfg.buffer_cfg.vma_alloc_name = "instance_ssbo";
     if (!vkr_init_chunked_buffer(&rndr->desc_info.instance_ssbo, cb_cfg)) {
@@ -792,7 +793,8 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////////
     // For materials we also do a buffer for each frame in flight - at least for now unless it proves too much. But
     // really, mat data is probably pretty small compared to instance data
-    cb_cfg.buffer_cfg.buffer_size = dip.material_ssbo.block_size * dip.material_ssbo.block_count * MAX_FRAMES_IN_FLIGHT;
+    sizet mat_buf_fif_sz = dip.material_ssbo.block_size * dip.material_ssbo.block_count;
+    cb_cfg.buffer_cfg.buffer_size = mat_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     cb_cfg.chunk_size = dip.material_ssbo.block_size;
     cb_cfg.buffer_cfg.vma_alloc_name = "material_ssbo";
     if (!vkr_init_chunked_buffer(&rndr->desc_info.material_ssbo, cb_cfg)) {
@@ -811,7 +813,8 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////
     // Create Frame UBO //
     //////////////////////
-    ubo_cfg.buffer_size = dip.frame_ubo.block_size * MAX_FRAMES_IN_FLIGHT;
+    sizet frame_buf_fif_sz = dip.frame_ubo.block_size * dip.frame_ubo.block_count;
+    ubo_cfg.buffer_size = frame_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     ubo_cfg.vma_alloc_name = "frame_ubo";
     result = vkr_init_buffer(&rndr->desc_info.frame_ubo, ubo_cfg);
     if (result != err_code::VKR_NO_ERROR) {
@@ -822,7 +825,8 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     /////////////////////
     // Create Draw UBO //
     /////////////////////
-    ubo_cfg.buffer_size = dip.draw_ubo.block_size * MAX_FRAMES_IN_FLIGHT;
+    sizet draw_buf_fif_sz = dip.draw_ubo.block_size * dip.draw_ubo.block_count;
+    ubo_cfg.buffer_size = draw_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     ubo_cfg.vma_alloc_name = "draw_ubo";
     result = vkr_init_buffer(&rndr->desc_info.draw_ubo, ubo_cfg);
     if (result != err_code::VKR_NO_ERROR) {
@@ -835,11 +839,12 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     ////////////////////////////
     // Get a count of the number of descriptors we are making avaialable for each desc type
     vkr_desc_cfg desc_cfg{};
-    desc_cfg.max_sets = RDSET_LAYOUT_COUNT + MAX_FRAMES_IN_FLIGHT - 1;
-    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = 2;
-    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = dip.max_image_count;
-    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLER] = RSAMPLER_TYPE_COUNT;
+    desc_cfg.max_sets = MAX_FRAMES_IN_FLIGHT + 1;
+    // Instance and material ssbos
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = 2 * MAX_FRAMES_IN_FLIGHT;
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = 2 * MAX_FRAMES_IN_FLIGHT;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = dip.max_image_count;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLER] = RSAMPLER_TYPE_COUNT * MAX_FRAMES_IN_FLIGHT;
     result = vkr_init_desc_pool(&rndr->desc_info.pool, desc_cfg, &rndr->vk);
     if (result != VK_SUCCESS) {
         terminate_global_descriptor_info(rndr);
@@ -849,49 +854,55 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////////////
     // Allocate descriptor sets //
     //////////////////////////////
+    VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT+1]{};
+    for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
+        layouts[fif] = rndr->desc_info.dset_layouts[0];
+    }
+    layouts[MAX_FRAMES_IN_FLIGHT] = rndr->desc_info.dset_layouts[1];
     vkr_alloc_desc_sets_cfg alloc_dset_cfg{};
     alloc_dset_cfg.pool = rndr->desc_info.pool;
-    alloc_dset_cfg.set_count = RDSET_LAYOUT_COUNT;
-    alloc_dset_cfg.set_layouts = rndr->desc_info.dset_layouts;
-    vkr_alloc_desc_sets(rndr->desc_info.sets, alloc_dset_cfg, &rndr->vk);
+    alloc_dset_cfg.set_count = desc_cfg.max_sets;
+    alloc_dset_cfg.set_layouts = layouts;
+    vkr_alloc_desc_sets(rndr->desc_info.main_data, alloc_dset_cfg, &rndr->vk);
 
     // We skip the immutable sampler bidning - why it's -1 here
-    constexpr u32 DESC_WRITE_COUNT = RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS + (u32)RDSET_IMAGE_BINDING_COUNT;
+    constexpr u32 DESC_WRITE_COUNT = RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS * MAX_FRAMES_IN_FLIGHT + (u32)RDSET_IMAGE_BINDING_COUNT;
     VkWriteDescriptorSet desc_writes[DESC_WRITE_COUNT]{};
     VkDescriptorType types[] = {
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // Instance SSBO
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // Material SSBO
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, // Frame UBO
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, // Draw UBO
-        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE   // Image array
     };
-    static_assert(ARR_SIZE(types) == DESC_WRITE_COUNT, "Descriptor write array size doesn't match expected count");
-    
-    VkDescriptorBufferInfo buffer_infos[RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS]{};
-    
-    // Instance SSBO
-    u32 bi = RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
-    buffer_infos[bi].buffer = rndr->desc_info.instance_ssbo.buffer.hndl;
-    buffer_infos[bi].offset = 0;
-    buffer_infos[bi].range = rndr->desc_info.instance_ssbo.buffer.mem_info.size;
-    
-    // Material SSBO
-    bi = RDSET_MAIN_DATA_BINDING_MATERIAL_SSBO;
-    buffer_infos[bi].buffer = rndr->desc_info.material_ssbo.buffer.hndl;
-    buffer_infos[bi].offset = 0;
-    buffer_infos[bi].range = rndr->desc_info.material_ssbo.buffer.mem_info.size;
 
-    // Frame UBO
-    bi = RDSET_MAIN_DATA_BINDING_FRAME_UBO;
-    buffer_infos[bi].buffer = rndr->desc_info.frame_ubo.hndl;
-    buffer_infos[bi].offset = 0;
-    buffer_infos[bi].range = rndr->desc_info.frame_ubo.mem_info.size;
+    // First we pile together all of the buffer infos
+    VkDescriptorBufferInfo buffer_infos[RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS * MAX_FRAMES_IN_FLIGHT]{};
+    for (u32 fif_i = 0; fif_i < MAX_FRAMES_IN_FLIGHT; ++fif_i) {
+        // Instance SSBO
+        u32 bi_offset = fif_i * RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
+        u32 bi = bi_offset + RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
+        buffer_infos[bi].buffer = rndr->desc_info.instance_ssbo.buffer.hndl;
+        buffer_infos[bi].offset = fif_i * instance_buf_fif_sz;
+        buffer_infos[bi].range = instance_buf_fif_sz;
 
-    // Draw UBO
-    bi = RDSET_MAIN_DATA_BINDING_DRAW_UBO;
-    buffer_infos[bi].buffer = rndr->desc_info.draw_ubo.hndl;
-    buffer_infos[bi].offset = 0;
-    buffer_infos[bi].range = rndr->desc_info.draw_ubo.mem_info.size;
+        // Material SSBO
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_MATERIAL_SSBO;
+        buffer_infos[bi].buffer = rndr->desc_info.material_ssbo.buffer.hndl;
+        buffer_infos[bi].offset = fif_i * mat_buf_fif_sz;
+        buffer_infos[bi].range = mat_buf_fif_sz;
+
+        // Frame UBO
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_FRAME_UBO;
+        buffer_infos[bi].buffer = rndr->desc_info.frame_ubo.hndl;
+        buffer_infos[bi].offset = fif_i * frame_buf_fif_sz;
+        buffer_infos[bi].range = frame_buf_fif_sz;
+
+        // Draw UBO
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_DRAW_UBO;
+        buffer_infos[bi].buffer = rndr->desc_info.draw_ubo.hndl;
+        buffer_infos[bi].offset = fif_i * draw_buf_fif_sz;
+        buffer_infos[bi].range = draw_buf_fif_sz;
+    }
 
     // Create all of the image infos for each pool in the texture registry
     array<VkDescriptorImageInfo> image_infos;
@@ -904,15 +915,16 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         image_infos[i].sampler = VK_NULL_HANDLE;
     }
 
-    // Create the descriptor set writes
+    // Now we create all the descriptor writes referencing the above buffer/image infos.. 
     for (u32 i = 0; i < DESC_WRITE_COUNT; ++i) {
         auto cur_dw = &desc_writes[i];
-        bool is_main_data = i < RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
+        u32 fif = i / RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
+        bool is_main_data = i < (RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS * MAX_FRAMES_IN_FLIGHT);
         cur_dw->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        cur_dw->dstSet = is_main_data ? rndr->desc_info.sets[RDSET_LAYOUT_MAIN_DATA] : rndr->desc_info.sets[RDSET_LAYOUT_IMAGES];
-        cur_dw->dstBinding = is_main_data ? i : i - RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
+        cur_dw->dstSet = is_main_data ? rndr->desc_info.main_data[fif] : rndr->desc_info.images;
+        cur_dw->dstBinding = is_main_data ? i % RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS: 0;
         cur_dw->dstArrayElement = 0;
-        cur_dw->descriptorType = types[i];
+        cur_dw->descriptorType = is_main_data ? types[i % MAX_FRAMES_IN_FLIGHT] : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         cur_dw->descriptorCount = is_main_data ? 1 : rndr->textures.pools.size;
         cur_dw->pBufferInfo = is_main_data ? &buffer_infos[i] : nullptr;
         cur_dw->pImageInfo = !is_main_data ? image_infos.data : nullptr;
