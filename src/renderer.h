@@ -548,7 +548,6 @@ struct push_constant_range {
 
 struct rpipeline_layout_cfg
 {
-    sizet max_image_count;
     sbuffer_cfg instance_ssbo;
     sbuffer_cfg material_ssbo;
     sbuffer_cfg frame_ubo;

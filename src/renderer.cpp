@@ -655,7 +655,7 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     vkr_terminate_pipeline_layout(rndr->desc_info.pline_layout, &rndr->vk);
 }
 
-intern b32 create_descriptor_set_layouts(renderer *rndr, u32 max_image_count)
+intern b32 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
 {
     vkr_descriptor_set_layout_desc dsets[RDSET_LAYOUT_COUNT]{};
 
@@ -698,7 +698,7 @@ intern b32 create_descriptor_set_layouts(renderer *rndr, u32 max_image_count)
     // Immutable samplers
     g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
     g_set_main_data_bindings[bi].descriptorCount = RSAMPLER_TYPE_COUNT;
-    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
     g_set_main_data_bindings[bi].pImmutableSamplers = rndr->samplers;
     ++bi;
@@ -711,9 +711,9 @@ intern b32 create_descriptor_set_layouts(renderer *rndr, u32 max_image_count)
     si = RDSET_LAYOUT_IMAGES;
     bi = 0;
     g_set_images_bindings[bi].binding = RDSET_IMAGE_BINDING_IMAGE_ARRAYS;
-    g_set_images_bindings[bi].descriptorCount = max_image_count;
+    g_set_images_bindings[bi].descriptorCount = tex_pool_count;
     g_set_images_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    g_set_images_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
+    g_set_images_bindings[bi].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     ++bi;
 
     dsets[si].bindings = g_set_images_bindings;
@@ -744,7 +744,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     asrt(dip.push_const_range_count <= MAX_PUSH_CONSTANT_RANGES);
 
     // Create desc layouts
-    create_descriptor_set_layouts(rndr, dip.max_image_count);
+    create_descriptor_set_layouts(rndr, rndr->textures.pools.size);
 
     ////////////////////////////
     // Global pipeline layout //
@@ -843,7 +843,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     // Instance and material ssbos
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = 2 * MAX_FRAMES_IN_FLIGHT;
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = 2 * MAX_FRAMES_IN_FLIGHT;
-    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = dip.max_image_count;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = rndr->textures.pools.size;
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLER] = RSAMPLER_TYPE_COUNT * MAX_FRAMES_IN_FLIGHT;
     result = vkr_init_desc_pool(&rndr->desc_info.pool, desc_cfg, &rndr->vk);
     if (result != VK_SUCCESS) {
@@ -854,7 +854,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////////////
     // Allocate descriptor sets //
     //////////////////////////////
-    VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT+1]{};
+    VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT + 1]{};
     for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
         layouts[fif] = rndr->desc_info.dset_layouts[0];
     }
@@ -915,21 +915,22 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         image_infos[i].sampler = VK_NULL_HANDLE;
     }
 
-    // Now we create all the descriptor writes referencing the above buffer/image infos.. 
+    // Now we create all the descriptor writes referencing the above buffer/image infos..
     for (u32 i = 0; i < DESC_WRITE_COUNT; ++i) {
         auto cur_dw = &desc_writes[i];
         u32 fif = i / RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
         bool is_main_data = i < (RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS * MAX_FRAMES_IN_FLIGHT);
         cur_dw->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         cur_dw->dstSet = is_main_data ? rndr->desc_info.main_data[fif] : rndr->desc_info.images;
-        cur_dw->dstBinding = is_main_data ? i % RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS: 0;
+        cur_dw->dstBinding = is_main_data ? i % RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS : 0;
         cur_dw->dstArrayElement = 0;
-        cur_dw->descriptorType = is_main_data ? types[i % MAX_FRAMES_IN_FLIGHT] : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        cur_dw->descriptorType = is_main_data ? types[i % RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS] : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         cur_dw->descriptorCount = is_main_data ? 1 : rndr->textures.pools.size;
         cur_dw->pBufferInfo = is_main_data ? &buffer_infos[i] : nullptr;
         cur_dw->pImageInfo = !is_main_data ? image_infos.data : nullptr;
     }
     vkUpdateDescriptorSets(rndr->vk.inst.device.hndl, DESC_WRITE_COUNT, desc_writes, 0, nullptr);
+    arr_terminate(&image_infos);
     return true;
 }
 
@@ -997,58 +998,6 @@ intern void terminate_shader(renderer *rndr, rshader_info *shdr)
     *shdr = {};
 }
 
-intern void init_render_resources(renderer *rndr, const renderer_cfg &rcfg)
-{
-    init_slot_pool(&rndr->shaders, MAX_SHADER_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->geometry, MAX_GEOM_COUNT, &rndr->persist_fl);
-    rtexture_regisitry_cfg cfg{
-        .persist_fl = &rndr->persist_fl,
-        .scratch_stack = &rndr->scratch_stack,
-        .pool_count = rcfg.texture_pool_count,
-        .cfgs = rcfg.texture_pool_cfgs,
-        .vk = &rndr->vk,
-    };
-    init_rtexture_registry(&rndr->textures, cfg);
-}
-
-intern void terminate_render_resources(renderer *rndr)
-{
-    ilog("Terminating render resources (%lu geoms, %lu textures, %lu mats, %lu techniques, %lu shdrs)",
-         get_slot_used_count(rndr->geometry),
-         get_slot_used_count(rndr->textures),
-         get_slot_used_count(rndr->materials),
-         get_slot_used_count(rndr->techniques),
-         get_slot_used_count(rndr->shaders));
-    // Geometries
-    for (auto iter = slot_pool_begin(&rndr->geometry); is_valid(iter); iter = slot_pool_next(&rndr->geometry, iter)) {
-        terminate_geometry(rndr, iter.item);
-    }
-    terminate_slot_pool(&rndr->geometry);
-
-    // Terminate all images and image views
-    terminate_rtexture_registry(&rndr->textures);
-
-    // Materials
-    for (auto iter = slot_pool_begin(&rndr->materials); is_valid(iter); iter = slot_pool_next(&rndr->materials, iter)) {
-        // Do something
-    }
-    terminate_slot_pool(&rndr->materials);
-
-    // Techniques
-    for (auto iter = slot_pool_begin(&rndr->techniques); is_valid(iter); iter = slot_pool_next(&rndr->techniques, iter)) {
-        // Do something
-    }
-    terminate_slot_pool(&rndr->techniques);
-
-    // Shaders
-    for (auto iter = slot_pool_begin(&rndr->shaders); is_valid(iter); iter = slot_pool_next(&rndr->shaders, iter)) {
-        terminate_shader(rndr, iter.item);
-    }
-    terminate_slot_pool(&rndr->shaders);
-}
-
 template<typename T>
 void init_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, u32 elements)
 {
@@ -1104,6 +1053,66 @@ intern void terminate_blueprints(renderer *rndr)
     }
     terminate_slot_pool(&rndr->blueprints);
     hmap_terminate(&rndr->blueprint_id_map);
+}
+
+intern void terminate_rtechnique(renderer *rndr, rtechnique_info *info)
+{
+    ilog("Terminating technique %s with %lu pass pipelines", info->name, info->rpass_plines.size);
+    for (u32 i = 0; i < info->rpass_plines.size; ++i) {
+        vkr_terminate_pipeline(info->rpass_plines[i].pline, &rndr->vk);
+    }
+}
+
+intern void init_render_resources(renderer *rndr, const renderer_cfg &rcfg)
+{
+    init_slot_pool(&rndr->shaders, MAX_SHADER_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->geometry, MAX_GEOM_COUNT, &rndr->persist_fl);
+    rtexture_regisitry_cfg cfg{
+        .persist_fl = &rndr->persist_fl,
+        .scratch_stack = &rndr->scratch_stack,
+        .pool_count = rcfg.texture_pool_count,
+        .cfgs = rcfg.texture_pool_cfgs,
+        .vk = &rndr->vk,
+    };
+    init_rtexture_registry(&rndr->textures, cfg);
+}
+
+intern void terminate_render_resources(renderer *rndr)
+{
+    ilog("Terminating render resources (%lu geoms, %lu textures, %lu mats, %lu techniques, %lu shdrs)",
+         get_slot_used_count(rndr->geometry),
+         get_slot_used_count(rndr->textures),
+         get_slot_used_count(rndr->materials),
+         get_slot_used_count(rndr->techniques),
+         get_slot_used_count(rndr->shaders));
+    // Geometries
+    for (auto iter = slot_pool_begin(&rndr->geometry); is_valid(iter); iter = slot_pool_next(&rndr->geometry, iter)) {
+        terminate_geometry(rndr, iter.item);
+    }
+    terminate_slot_pool(&rndr->geometry);
+
+    // Terminate all images and image views
+    terminate_rtexture_registry(&rndr->textures);
+
+    // Materials
+    for (auto iter = slot_pool_begin(&rndr->materials); is_valid(iter); iter = slot_pool_next(&rndr->materials, iter)) {
+        // Do something
+    }
+    terminate_slot_pool(&rndr->materials);
+
+    // Techniques
+    for (auto iter = slot_pool_begin(&rndr->techniques); is_valid(iter); iter = slot_pool_next(&rndr->techniques, iter)) {
+        terminate_rtechnique(rndr, iter.item);
+    }
+    terminate_slot_pool(&rndr->techniques);
+
+    // Shaders
+    for (auto iter = slot_pool_begin(&rndr->shaders); is_valid(iter); iter = slot_pool_next(&rndr->shaders, iter)) {
+        terminate_shader(rndr, iter.item);
+    }
+    terminate_slot_pool(&rndr->shaders);
 }
 
 bool init_renderer(renderer *rndr, const renderer_cfg &p)
@@ -1455,14 +1464,6 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
     return sref.hndl;
 }
 
-void terminate_rtechnique(renderer *rndr, rtechnique_info *info)
-{
-    ilog("Terminating technique %s with %lu pass pipelines", info->name, info->rpass_plines.size);
-    for (u32 i = 0; i < info->rpass_plines.size; ++i) {
-        vkr_terminate_pipeline(info->rpass_plines[i].pline, &rndr->vk);
-    }
-}
-
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc)
 {
     if (tdesc.pass_count == 0) {
@@ -1630,6 +1631,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
             release_slot(&rndr->techniques, rtech.hndl);
             return {};
         }
+        ++rtech.item->rpass_plines.size;
     }
     return rtech.hndl;
 }
