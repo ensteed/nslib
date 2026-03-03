@@ -274,7 +274,7 @@ bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_aren
         ++i;
     }
     tdesc.passes = tmp_passes;
-    create_rtechnique(rndr, tdesc);
+    tech->rhndl = create_rtechnique(rndr, tdesc);
     mem_free(tmp_passes, scratch);
     return get_and_log_upload_result(tech);
 }

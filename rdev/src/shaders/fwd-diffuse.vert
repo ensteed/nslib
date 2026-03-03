@@ -23,11 +23,11 @@ layout(set = 0, binding = 2) uniform frame_ubo_data {
 } frame_ubo;
 
 layout(set = 0, binding = 3) uniform draw_ubo_data {
-    uint material_idx;
-    uint instance_idx;
-    // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
-    ivec2 suser;
-    vec4 fuser;
+  uint material_idx;
+  uint instance_idx;
+  // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
+  ivec2 suser;
+  vec4 fuser;
 } draw_ubo;
 
 layout(location = 0) in vec3 in_pos;
