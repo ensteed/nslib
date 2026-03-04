@@ -11,6 +11,32 @@ struct renderer;
 struct rbuffer_target_fif;
 struct rtexture_target_fif;
 
+// This data is used in uniform buffer - needs to be aligned to 16 bytes
+struct draw_ubo_data {
+    u32 material_idx;
+    u32 instance_idx;
+    // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
+    svec2 suser;
+    vec4 fuser;
+};
+
+// This data is used in uniform buffer - needs to be aligned to 16 bytes
+struct frame_ubo_data {
+    mat4 view;
+    mat4 proj;
+    mat4 view_proj;
+    mat4 inv_view_proj;
+
+    float elapsed;
+    float dt;
+    u32 frame_count;
+    u32 padding;
+
+    vec2 resolution;
+    vec2 inv_resolution;
+};
+
+
 struct rstencil_op_state
 {
     rstencil_op on_fail;
@@ -282,6 +308,20 @@ struct rmanifest
     array<mview> views;
     array<mrender_job> jobs;
 };
+
+// Draw funcs
+#if defined USE_IMGUI
+void draw_imgui(const render_job_cb_params &, void *);
+#endif
+void draw_geometry(const render_job_cb_params &, void *);
+
+
+rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp);
+bool end_render_frame(rmanifest *m);
+
+void update_instance_data(rmanifest *rm, void *block, sizet block_size);
+void update_material_data(rmanifest *rm, void *block, sizet block_size);
+
 
 mpass_idx push_pass(rmanifest *m,
                     rbp_pass_idx pid,

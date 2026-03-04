@@ -569,17 +569,11 @@ struct renderer_cfg
     const rtexture_pool_cfg *texture_pool_cfgs;
 };
 
-// DRAW FUNCTIONS
-#if defined USE_IMGUI
-void draw_imgui(const render_job_cb_params &, void *);
-#endif
-void draw_geometry(const render_job_cb_params &, void *);
-
-bool init_renderer(renderer *rndr, const renderer_cfg &p);
-void terminate_renderer(renderer *rndr);
-
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
+
+const vkr_framebuffer *get_or_create_framebuffer(framebuffer_cache *cache, const vkr_framebuffer_key_data &kd, const vkr_context *vk);
+void handle_window_resize(renderer *rndr);
 
 geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 geom_stream_group_idx find_geometry_stream_group(renderer *rndr, rres_id group_id);
@@ -620,7 +614,8 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
 rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
 
-rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp);
-bool end_render_frame(rmanifest *m);
+bool init_renderer(renderer *rndr, const renderer_cfg &p);
+void terminate_renderer(renderer *rndr);
+
 
 } // namespace nslib

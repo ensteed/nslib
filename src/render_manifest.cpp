@@ -1,8 +1,408 @@
+#include "platform.h"
 #include "renderer.h"
+#include "vkr_utils.h"
 #include "render_manifest.h"
+
+#ifdef USE_IMGUI
+    #include "imgui/imgui.h"
+    #include "imgui/imgui_impl_sdl3.h"
+    #include "imgui/imgui_impl_vulkan.h"
+#endif
 
 namespace nslib
 {
+
+intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
+
+#if defined USE_IMGUI
+void draw_imgui(const render_job_cb_params &p, void *)
+{
+    auto img_data = ImGui::GetDrawData();
+    ImGui_ImplVulkan_RenderDrawData(img_data, (VkCommandBuffer)p.cmd_buf);
+}
+#endif
+
+void draw_geometry(const render_job_cb_params &, void *);
+
+intern u32 get_fif_ind(renderer *rndr)
+{
+    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
+}
+
+intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
+{
+    if (window_resized_this_frame(rndr->vk.cfg.window)) {
+        cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
+    }
+
+    if (cur_fif->swapchain_resize > 0.0f) {
+        cur_fif->swapchain_resize -= rndr->pt.dt;
+        if (cur_fif->swapchain_resize > 0.0f) {
+            return false;
+        }
+        handle_window_resize(rndr);
+        cur_fif->swapchain_resize = false;
+    }
+    return true;
+}
+
+// We can let this "leak" as it doesn't leak due to using frame linear allocator
+intern rmanifest *create_manifest(renderer *rndr, u32 fif)
+{
+    rmanifest *m = mem_calloc<rmanifest>(1, &rndr->frame_linear);
+    arr_init(&m->jobs, &rndr->frame_linear, 24);
+    arr_init(&m->passes, &rndr->frame_linear, 12);
+    arr_init(&m->views, &rndr->frame_linear, 12);
+
+    // Initialize our manifest textures and buffers with the global ones (well, globabl to the renderer)
+    arr_init(&m->textures, &rndr->frame_linear);
+    arr_resize(&m->textures, rndr->rtargets.textures.slots.size);
+    for (u32 i = 0; i < m->textures.size; ++i) {
+        m->textures[i] = rndr->rtargets.textures.slots[i].item.frames[fif];
+    }
+
+    // Buffers
+    arr_init(&m->buffers, &rndr->frame_linear);
+    arr_resize(&m->buffers, rndr->rtargets.buffers.slots.size);
+    for (u32 i = 0; i < m->buffers.size; ++i) {
+        m->buffers[i] = rndr->rtargets.buffers.slots[i].item.frames[fif];
+    }
+
+    return m;
+}
+
+intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd,
+                                                 VkClearValue *cv,
+                                                 sizet *cv_size,
+                                                 VkRenderPass vk_rpass,
+                                                 const mpass &mp,
+                                                 const rbp_pass &rbp_pass,
+                                                 const rmanifest &m,
+                                                 u32 fif)
+{
+    u32 att_cnt{};
+    fb_kd->layers = 1;
+    fb_kd->rpass = vk_rpass;
+    for (u32 si = 0; si < mp.slot_assignments.size; ++si) {
+        auto cur_sl = &mp.slot_assignments[si];
+        bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t.hndl);
+        bool b_cond = cur_sl->type == mslot_target_type::BUFFER && is_valid(cur_sl->b);
+        asrt(t_cond || b_cond);
+
+        // If is attachment, we add to framebuffer
+        u32 att_ind = rbp_pass.slots[si].att_ind;
+        if (is_valid(att_ind)) {
+            asrt(att_ind < fb_kd->atts.capacity);
+            const rtexture_target_fif *cur_t = &m.textures[cur_sl->t.hndl.index];
+
+            // Can't use the value from cfg - swapchain images don't have correct data in the cfg field as they were
+            // never actually created..
+            uvec2 tex_dims = cur_t->image.dims.xy;
+
+            // The frame buffer can only be as big as the smallest texture - so that's what we set it to
+            if (fb_kd->dims.x == 0 || tex_dims.x < fb_kd->dims.x) {
+                fb_kd->dims.x = tex_dims.x;
+            }
+            if (fb_kd->dims.y == 0 || tex_dims.y < fb_kd->dims.y) {
+                fb_kd->dims.y = tex_dims.y;
+            }
+
+            // Resize only if cur att ind is less than or equal our size - we have no guarentees
+            // that the slot order will necessarily match the attachment order
+            if (att_ind >= fb_kd->atts.size) {
+                arr_resize(&fb_kd->atts, att_ind + 1);
+            }
+            fb_kd->atts[att_ind] = cur_t->view;
+
+            // Set clear value
+            rformat tex_format = get_rformat(cur_t->image.format);
+            cv[*cv_size] = get_vk_clear_value(cur_sl->t.clear_val, tex_format);
+            ++(*cv_size);
+
+            ++att_cnt;
+        }
+    }
+    asrt(fb_kd->atts.size == att_cnt);
+}
+
+struct rbp_slot_usage_info
+{
+    const rbp_resource_requirement *first{};
+    const rbp_resource_requirement *last{};
+};
+
+intern void gather_pass_slot_usage_info(rbp_slot_usage_info *infos, const rbp_pass &rbpp)
+{
+    // Record first/last requirement per slot so we can place a single pre-pass barrier and finalize state post-pass.
+    for (u32 subi = 0; subi < rbpp.subpasses.size; ++subi) {
+        const rbp_subpass *sub = &rbpp.subpasses[subi];
+        for (u32 resi = 0; resi < sub->resources.size; ++resi) {
+            const rbp_resource_requirement *req = &sub->resources[resi];
+            asrt(req->slot_ind < rbpp.slots.size);
+            rbp_slot_usage_info *info = &infos[req->slot_ind];
+            if (!info->first) info->first = req;
+            info->last = req;
+        }
+    }
+}
+
+intern rtexture_state get_required_texture_state(const rbp_pass &rbpp, const rbp_resource_requirement &req, const rtexture_state &cur_st)
+{
+    rtexture_state req_st{};
+    bool is_att = is_usage_attachment(rbpp.slots[req.slot_ind].usage);
+    req_st.layout = is_att ? get_baked_initial_vk_layout(rbpp, req) : get_vk_layout_from_requirement(rbpp, req, false);
+    bool undef = (req_st.layout == VK_IMAGE_LAYOUT_UNDEFINED);
+    if (undef) req_st.layout = cur_st.layout;
+    req_st.access = (is_att && undef) ? VK_ACCESS_NONE : get_vk_access_from_requirement(rbpp, req);
+    req_st.stage = (is_att && undef) ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : get_vk_stage_from_requirement(rbpp, req);
+    return req_st;
+}
+
+intern rtexture_state get_updated_texture_state(const rbp_pass &rbpp, const rbp_resource_requirement &req)
+{
+    rtexture_state updated{};
+    bool is_attachment = is_usage_attachment(rbpp.slots[req.slot_ind].usage);
+    updated.layout = get_vk_layout_from_requirement(rbpp, req, is_attachment);
+    updated.access = get_vk_access_from_requirement(rbpp, req);
+    updated.stage = get_vk_stage_from_requirement(rbpp, req);
+    return updated;
+}
+
+intern rbuffer_state get_updated_buffer_state(const rbp_pass &rbpp, const rbp_resource_requirement &req)
+{
+    rbuffer_state updated{};
+    updated.access = get_vk_access_from_requirement(rbpp, req);
+    updated.stage = get_vk_stage_from_requirement(rbpp, req);
+    return updated;
+}
+
+intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mrender_job_idx rjid, VkCommandBuffer buf, u32 fif)
+{
+    const mrender_job &rj = m->jobs[rjid];
+    const mpass &mp = m->passes[rj.pid];
+
+    rbp_slot_usage_info slot_usage[MAX_BP_PASS_SLOT_COUNT]{};
+    gather_pass_slot_usage_info(slot_usage, rbpp);
+
+    static_array<VkImageMemoryBarrier, MAX_BP_PASS_SLOT_COUNT> image_barriers{};
+    static_array<VkBufferMemoryBarrier, MAX_BP_PASS_SLOT_COUNT> buffer_barriers{};
+    VkPipelineStageFlags src_stage_mask = 0;
+    VkPipelineStageFlags dst_stage_mask = 0;
+
+    for (u32 slot_ind = 0; slot_ind < rbpp.slots.size; ++slot_ind) {
+        const rbp_resource_requirement *first = slot_usage[slot_ind].first;
+        if (!first) {
+            continue;
+        }
+
+        const mpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
+        if (assignment.type == mslot_target_type::TEXTURE) {
+            asrt(is_valid(assignment.t.hndl));
+            asrt(assignment.t.hndl.index < m->textures.size);
+            auto cur_t = &m->textures[assignment.t.hndl.index];
+            rtexture_state *cur_st = &cur_t->state;
+            rtexture_state req_st = get_required_texture_state(rbpp, *first, *cur_st);
+
+            bool use_bookends = rbpp.use_subpass_bookends && is_usage_attachment(rbpp.slots[slot_ind].usage);
+            bool layout_mismatch = cur_st->layout != req_st.layout && req_st.layout != VK_IMAGE_LAYOUT_UNDEFINED;
+            bool access_stage_mismatch = cur_st->access != req_st.access || cur_st->stage != req_st.stage;
+            // Bookend dependencies cover external memory visibility for attachments. We still need a barrier
+            // for layout transitions when the current layout doesn't match the render pass initial layout.
+            if (layout_mismatch || (!use_bookends && access_stage_mismatch)) {
+#ifdef LOG_IMAGE_MEM_BARRIER
+                ilog("%s: cur{l:%d a:%d s:%d}  req{l:%d a:%d s:%d}",
+                     cur_t->name,
+                     cur_st->layout,
+                     cur_st->access,
+                     cur_st->stage,
+                     req_st.layout,
+                     req_st.access,
+                     req_st.stage);
+#endif
+
+                // Single barrier per resource into the first required state for this pass.
+                VkImageMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                barrier.oldLayout = cur_st->layout;
+                barrier.newLayout = req_st.layout;
+                barrier.srcAccessMask = cur_st->access;
+                barrier.dstAccessMask = req_st.access;
+                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.image = cur_t->image.hndl;
+                barrier.subresourceRange = cur_t->iv_cfg->srange;
+                arr_push_back(&image_barriers, barrier);
+
+                src_stage_mask |= normalize_vk_stage_mask(cur_st->stage);
+                dst_stage_mask |= normalize_vk_stage_mask(req_st.stage);
+            }
+            // Keep the manifest in sync so later passes see the in-pass state even if no barrier was needed.
+            *cur_st = req_st;
+        }
+        else if (assignment.type == mslot_target_type::BUFFER) {
+            asrt(is_valid(assignment.b));
+            asrt(assignment.b.index < m->buffers.size);
+            auto cur_b = &m->buffers[assignment.b.index];
+            rbuffer_state *cur_st = &cur_b->state;
+            rbuffer_state req_st = get_updated_buffer_state(rbpp, *first);
+
+            if (cur_st->access != req_st.access || cur_st->stage != req_st.stage) {
+#ifdef LOG_BUFFER_MEM_BARRIER
+                ilog("%s: cur{a:%d s:%d}  req{a:%d s:%d}", cur_b->name, cur_st->access, cur_st->stage, req_st.access, req_st.stage);
+#endif
+
+                // Single barrier per resource into the first required state for this pass.
+                VkBufferMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                barrier.srcAccessMask = cur_st->access;
+                barrier.dstAccessMask = req_st.access;
+                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.buffer = cur_b->buffer.hndl;
+                barrier.offset = 0;
+                barrier.size = VK_WHOLE_SIZE;
+                arr_push_back(&buffer_barriers, barrier);
+
+                src_stage_mask |= normalize_vk_stage_mask(cur_st->stage);
+                dst_stage_mask |= normalize_vk_stage_mask(req_st.stage);
+            }
+            // Keep the manifest in sync so later passes see the in-pass state even if no barrier was needed.
+            *cur_st = req_st;
+        }
+    }
+
+    if (image_barriers.size > 0 || buffer_barriers.size > 0) {
+        // Collapse all barriers into a single pipeline barrier for this pass.
+        if (src_stage_mask == 0) {
+            src_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        }
+        if (dst_stage_mask == 0) {
+            dst_stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        }
+#if defined(LOG_PIPELINE_BARRIER)
+        ilog("Emit pre pass barrier (pi %u from type %s) for rj %u with %u im and %u buf barriers (src:%d dst:%d)",
+             rj.pid,
+             rbpp.name,
+             rjid,
+             image_barriers.size,
+             buffer_barriers.size,
+             src_stage_mask,
+             dst_stage_mask);
+#endif
+        vkCmdPipelineBarrier(buf,
+                             src_stage_mask,
+                             dst_stage_mask,
+                             0,
+                             0,
+                             nullptr,
+                             (u32)buffer_barriers.size,
+                             buffer_barriers.data,
+                             (u32)image_barriers.size,
+                             image_barriers.data);
+    }
+}
+
+intern void update_manifest_pass_states(rmanifest *m, const rbp_pass &rbp_pass, const mpass &mp, u32 fif)
+{
+    rbp_slot_usage_info slot_usage[MAX_BP_PASS_SLOT_COUNT]{};
+    gather_pass_slot_usage_info(slot_usage, rbp_pass);
+
+    for (u32 slot_ind = 0; slot_ind < rbp_pass.slots.size; ++slot_ind) {
+        const rbp_resource_requirement *last = slot_usage[slot_ind].last;
+        const mpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
+        if (assignment.type == mslot_target_type::TEXTURE) {
+            // Final state after the pass completes (attachments use final layout).
+            asrt(is_valid(assignment.t.hndl));
+            asrt(assignment.t.hndl.index < m->textures.size);
+            m->textures[assignment.t.hndl.index].state = get_updated_texture_state(rbp_pass, *last);
+        }
+        else if (assignment.type == mslot_target_type::BUFFER) {
+            // Final buffer access/stage after the pass completes.
+            asrt(is_valid(assignment.b));
+            asrt(assignment.b.index < m->buffers.size);
+            m->buffers[assignment.b.index].state = get_updated_buffer_state(rbp_pass, *last);
+        }
+    }
+}
+
+intern void update_global_target_state(rmanifest *m, u32 fif)
+{
+    for (u32 i = 0; i < m->textures.size; ++i) {
+        m->rndr->rtargets.textures.slots[i].item.frames[fif].state = m->textures[i].state;
+    }
+    for (u32 i = 0; i < m->buffers.size; ++i) {
+        m->rndr->rtargets.buffers.slots[i].item.frames[fif].state = m->buffers[i].state;
+    }
+}
+
+intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
+{
+    int err = vkr_begin_cmd_buf(buf, {});
+    if (err != err_code::VKR_NO_ERROR) {
+        return false;
+    }
+
+    for (u32 rji = 0; rji < m->jobs.size; ++rji) {
+        auto rbp = get_render_blueprint(m->rndr, m->rbp);
+        auto cur_rj = &m->jobs[rji];
+        auto mp = &m->passes[cur_rj->pid];
+        auto rbp_pass = &rbp->passes[mp->rbp_pid];
+        auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
+        auto mview = &m->views[cur_rj->vid];
+
+        // Must have all slots assigned
+        asrt(rbp_pass->slots.size == mp->slot_assignments.size);
+
+        // Create all needed barriers for the current pass resources (according to what we have for the current state)
+        emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->pid, buf, fif);
+
+        // Setup framebuffer and clear vals by looping over slots
+        static_array<VkClearValue, MAX_BP_PASS_SLOT_COUNT> att_clear_vals{};
+        vkr_framebuffer_key_data fb_kd{};
+        setup_framebuffer_key_and_clear_vals(&fb_kd, att_clear_vals.data, &att_clear_vals.size, vk_rpass, *mp, *rbp_pass, *m, fif);
+        auto fb = get_or_create_framebuffer(&m->rndr->fb_cache, fb_kd, &m->rndr->vk);
+
+        // RENDER AREA
+        VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? get_vk_rect_from_normalized(mp->norm_render_area, fb->kd.dims)
+                                                                       : get_vk_rect(mp->render_area);
+        vkr_cmd_begin_rpass(buf, vk_rpass, fb, ra, att_clear_vals.data, att_clear_vals.size);
+
+        // VIEWPORT
+        VkViewport viewport = (mview->vp_size_mode == rect_size_mode::NORMALIZED)
+                                  ? get_vk_viewport(mview->vp, mview->vp_depth_min_max, fb->kd.dims)
+                                  : get_vk_viewport(mview->vp, mview->vp_depth_min_max);
+        vkCmdSetViewport(buf, 0, 1, &viewport);
+
+        // SCISSOR
+        VkRect2D scissor = (mview->scissor_size_mode == rect_size_mode::NORMALIZED)
+                               ? get_vk_rect_from_normalized(mview->norm_scissor, fb->kd.dims)
+                               : get_vk_rect(mview->scissor);
+        vkCmdSetScissor(buf, 0, 1, &scissor);
+
+        if (cur_rj->cb) {
+            render_job_cb_params p{};
+            p.cmd_buf = (u64)buf;
+            p.draw_calls = &cur_rj->draw_calls;
+            cur_rj->cb(p, cur_rj->cb_user);
+        }
+        else {
+            wlog("No draw function assigned for render-job %d (pass-id:%u view-id:%u rbp-pass:%s vkpass:%p blueprint:%s)",
+                 rji,
+                 cur_rj->pid,
+                 cur_rj->vid,
+                 rbp_pass->name,
+                 rbp_pass->vk_handle,
+                 rbp->name);
+        }
+        vkr_cmd_end_rpass(buf);
+
+        // Update our working copy manifest states - we will copy these over to our renderer states once done executing
+        // the manifest
+        update_manifest_pass_states(m, *rbp_pass, *mp, fif);
+    }
+    vkr_end_cmd_buf(buf);
+    return true;
+}
 
 mpass_idx push_pass_helper(rmanifest *m, rbp_pass_idx pid, mpass_slot_assignment *assignments, sizet assignment_count)
 {
@@ -28,12 +428,12 @@ mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const rect &norm_render_area
     return pind;
 }
 
-mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const srect &render_area, mpass_slot_assignment *assignments, sizet assignment_count) {
+mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const srect &render_area, mpass_slot_assignment *assignments, sizet assignment_count)
+{
     auto pind = push_pass_helper(m, pid, assignments, assignment_count);
     m->passes[pind].ra_size_mode = rect_size_mode::ABSOLUTE;
     m->passes[pind].render_area = render_area;
     return pind;
-    
 }
 
 u32 push_slot_assignment(rmanifest *m, mpass_idx pid, const mpass_slot_assignment &sa)
@@ -85,6 +485,165 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
         }
     }
     return push_cnt;
+}
+
+rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
+{
+    PROFILE_SCOPE("begin_render_frame");
+    ptimer_split(&rndr->pt);
+    auto dev = &rndr->vk.inst.device;
+
+    // Update finished frames which is used to get the current frame
+    u32 fif = get_fif_ind(rndr);
+    auto *cur_fif = &rndr->fifs[fif];
+
+    // Window resize
+    if (!window_resize_continue_check(rndr, cur_fif)) {
+        return nullptr;
+    }
+
+    // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
+    // triggered state so there will be no waiting on the first time. We then reset the fence (aka set it to
+    // untriggered) and it is passed to the vkQueueSubmit call to trigger it again. So if not the first time rendering
+    // this FIF, we are waiting for the vkQueueSubmit from the previous time this FIF was rendered to complete
+    int vk_res = vkWaitForFences(dev->hndl, 1, &cur_fif->in_flight, VK_TRUE, UINT64_MAX);
+    asrt(vk_res == VK_SUCCESS);
+
+    /////////////////////////////////
+    // Acquire Swapchain Image Ind //
+    /////////////////////////////////
+    // Acquire the image, signal the image_avail semaphore once the image has been acquired. We get the index back, but
+    // that doesn't mean the image is ready. The image is only ready (on the GPU side) once the image avail semaphore is triggered
+    vk_res =
+        vkAcquireNextImageKHR(dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_fif->image_avail, VK_NULL_HANDLE, &cur_fif->cur_im_ind);
+
+    // If the image is out of date we need to recreate the swapchain and our caller needs to exit early as
+    // well. It seems that on some platforms, if the result from above is out of date or suboptimal, the semaphore
+    // associated with it will never get triggered. So if we were to continue and just resize at the end of frame it
+    // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
+    // At least.. i think?
+    if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
+        cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
+        return nullptr;
+    }
+    asrt(vk_res == VK_SUCCESS || vk_res == VK_SUBOPTIMAL_KHR);
+
+    reset_arena(&rndr->vk_frame_linear);
+    reset_arena(&rndr->frame_linear);
+
+    // Reset command pool
+    for (u32 ti = 0; ti < cur_fif->thread_pools.size; ++ti) {
+        vk_res = vkResetCommandPool(dev->hndl, cur_fif->thread_pools[ti].pool, {});
+        asrt(vk_res == VK_SUCCESS);
+    }
+
+    /////////////////////
+    // Reset FIF Fence //
+    /////////////////////
+    // Here we reset the fence for the current frame fence as we know we are going to call queue submit which is the
+    // only thing that will trigger the fence - so this is why this reset needs to come here (rather than right after
+    // waiting) because if we return early due to swapchain resize, and we had reset the fence, then the next time our
+    // frame came around we would just be stuck waiting forever
+    vk_res = vkResetFences(dev->hndl, 1, &cur_fif->in_flight);
+    asrt(vk_res == VK_SUCCESS);
+
+    // Update our special swapchain handle
+    auto sw = &rndr->vk.inst.device.swapchain;
+    auto sw_hndl = find_rtexture_target(rndr, SWAPCHAIN_ID);
+    auto swapchain = get_rtexture_target(rndr, sw_hndl);
+    swapchain->frames[fif].view = sw->image_views[cur_fif->cur_im_ind];
+    swapchain->frames[fif].image = sw->images[cur_fif->cur_im_ind];
+    swapchain->frames[fif].state = {};
+
+// Start GUI frame
+#ifdef USE_IMGUI
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+#endif
+
+    rmanifest *m = create_manifest(rndr, fif);
+    m->rndr = rndr;
+    m->rbp = bp;
+
+    return m;
+}
+
+bool end_render_frame(rmanifest *m)
+{
+    PROFILE_SCOPE("end_render_frame");
+    asrt(m);
+    asrt(is_valid(m->rbp));
+    auto dev = &m->rndr->vk.inst.device;
+    u32 fif = get_fif_ind(m->rndr);
+    auto *cur_frame = &m->rndr->fifs[fif];
+
+// Finalize IM GUI data - not dependent on our render stuff currently
+#ifdef USE_IMGUI
+    ImGui::Render();
+#endif
+
+    // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
+    // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
+    // ind to the command pool
+    // auto fb = &dev->swapchain.fbs[cur_frame->cur_im_ind];
+    // asrt(fb && "Invalid framebuffer");
+
+    ////////////////////////////
+    // Record Command Buffers //
+    ////////////////////////////
+    // Just use buf 0 for now
+    auto buf = cur_frame->thread_pools[0].buf;
+    bool result = execute_manifest(m, buf, fif);
+    if (!result) {
+        return false;
+    }
+
+    //////////////////////////////////
+    // Submit command buffer to GPU //
+    //////////////////////////////////
+    // Get the info ready to submit our command buffer to the queue. We need to wait until the image avail semaphore has
+    // signaled, and then we need to trigger the render finished signal once the the command buffer completes
+    VkSubmitInfo submit_info{};
+    VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = &cur_frame->image_avail;
+    submit_info.pWaitDstStageMask = wait_stages;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &buf;
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
+    s32 vk_res = vkQueueSubmit(dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE], 1, &submit_info, cur_frame->in_flight);
+    asrt(vk_res == VK_SUCCESS);
+
+    ///////////////////
+    // Present Image //
+    ///////////////////
+    // Once the rendering signal has fired, present the image (show it on screen)
+    VkPresentInfoKHR present_info{};
+    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = &dev->swapchain.swapchain;
+    present_info.pImageIndices = &cur_frame->cur_im_ind;
+    present_info.pResults = nullptr; // Optional - check for individual swaps
+    vk_res = vkQueuePresentKHR(dev->qfams[VKR_QUEUE_FAM_TYPE_PRESENT].qs[VKR_RENDER_QUEUE], &present_info);
+
+    // Update global state from manifest
+    update_global_target_state(m, fif);
+
+    // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
+    // the next frame, but it seems to resize more smoothly doing it here
+    if (vk_res == VK_ERROR_OUT_OF_DATE_KHR || vk_res == VK_SUBOPTIMAL_KHR) {
+        cur_frame->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
+    }
+    else {
+        asrt(vk_res == VK_SUCCESS);
+        ++m->rndr->finished_frames;
+    }
+    return true;
 }
 
 } // namespace nslib

@@ -26,7 +26,7 @@ enum asset_flag : u32
     ASSET_FLAG_LOADED = make_flag(1),
     ASSET_FLAG_USER_BASE = make_flag(2),
 };
-using asset_flags = u64;
+using asset_flags = u32;
 
 
 const sizet ASSET_POOL_MEMORY_BUDGETS[ASSET_TYPE_USER] = {

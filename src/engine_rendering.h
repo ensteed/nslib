@@ -20,6 +20,8 @@ intern const rres_id MAIN_GEOM_STREAM_GP_ID = hash_type(MAIN_GEOM_STREAM_GP);
 
 struct mem_arena;
 struct renderer;
+struct sim_region;
+
 enum rvert_stream
 {
     RVERT_STREAM_POS_COL,
@@ -46,30 +48,6 @@ struct material_ssbo_data {
     vec4 col;
 };
 
-// This data is used in uniform buffer - needs to be aligned to 16 bytes
-struct draw_ubo_data {
-    u32 material_idx;
-    u32 instance_idx;
-    // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
-    svec2 suser;
-    vec4 fuser;
-};
-
-struct frame_ubo_data {
-    mat4 view;
-    mat4 proj;
-    mat4 view_proj;
-    mat4 inv_view_proj;
-
-    float elapsed;
-    float dt;
-    u32 frame_count;
-    u32 padding;
-
-    vec2 resolution;
-    vec2 inv_resolution;
-};
-
 struct rgeom_vert_pos_col
 {
     vec3 pos;
@@ -89,6 +67,7 @@ struct rgeom_vert_bone_weights_ids
     vec4 bone_weights;
     uvec4 bone_ids;
 };
+
 
 // Setup vert/index buffers (stream group) for this geometry type and get the runtime id for it
 u32 setup_geometry_stream_group(renderer *rndr);

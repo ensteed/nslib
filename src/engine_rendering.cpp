@@ -1,3 +1,5 @@
+#include "render_manifest.h"
+#include "sim_region.h"
 #include "engine_rendering.h"
 #include "model.h"
 #include "renderer.h"
@@ -50,6 +52,33 @@ intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
     }
     return success_count;
 }
+
+void update_and_draw_region(rmanifest *m, sim_region *sr)
+{
+    auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
+    auto tftbs = get_comp_tbl<transform>(&sr->cdb);
+
+    transform_tbl *tftb = get_comp_tbl<transform>(&sr->cdb);
+    for (u32 i = 0; i < sr->ents.size; ++i) {
+        transform* tf = get_comp<transform>(sr->ents[i].id, tftb);
+        static_mesh* sm = get_comp<static_mesh>(sr->ents[i].id, smtbl);
+        if (test_flags(tf->flags, TRANSFORM_FLAG_DIRTY)) {
+            tf->cached_prev = tf->cached;
+            tf->cached = math::model_tform(tf->world_pos, tf->orientation, tf->scale);
+            tf->flags &= ~TRANSFORM_FLAG_DIRTY;
+            
+            instance_ssbo_data update_d{};
+            update_d.model = tf->cached;
+            update_d.prev_model = tf->cached_prev;
+
+            if (sm) {
+                mdraw_params dp{};
+                push_draw(m, dp);
+            }
+        }
+    }
+}
+
 
 u32 setup_geometry_stream_group(renderer *rndr)
 {

@@ -9,14 +9,21 @@ enum comp_type
 {
     COMP_TYPE_TRANSFORM,
     COMP_TYPE_CAMERA,
-    COMP_TYPE_STATIC_MODEL,
+    COMP_TYPE_STATIC_MESH,
     COMP_TYPE_USER
 };
 
-enum comp_flags : u64
+enum comp_flag : u32
 {
-    COMP_FLAG_DIRTY = 1
+    COMP_FLAG_USER_BASE = make_flag(0),
 };
+using comp_flags = u64;
+
+enum transform_flag : u32
+{
+    TRANSFORM_FLAG_DIRTY = make_flag_base(COMP_FLAG_USER_BASE, 0),
+};
+
 
 #define COMP(type)                                                                                                                         \
     static constexpr const char *type_str = #type;                                                                                         \
@@ -31,6 +38,7 @@ enum comp_flags : u64
 struct transform
 {
     COMP(TRANSFORM)
+    mat4 cached_prev;
     mat4 cached;
     vec3 world_pos;
     quat orientation;
@@ -43,9 +51,9 @@ struct material_subgeom_mapping
     u32 sm_mat_slot;
 };
 
-struct static_model
+struct static_mesh
 {
-    COMP(STATIC_MODEL)
+    COMP(STATIC_MESH)
     asset_id geom_id;
     array<material_subgeom_mapping> mat_mapping{};
 };
@@ -221,8 +229,12 @@ sizet get_comp_ind(const T *comp, const comp_db *cdb)
     return get_comp_ind(comp, get_comp_tbl<T>(cdb));
 }
 
-void init_static_model(static_model *sm, mem_arena *arena);
-void terminate_static_model(static_model *sm);
+using transform_tbl = comp_table<transform>;
+using camera_tbl = comp_table<camera>;
+using static_mesh_tbl = comp_table<static_mesh>;
+
+void init_static_model(static_mesh *sm, mem_arena *arena);
+void terminate_static_model(static_mesh *sm);
 
 sizet add_entities(sizet count, sim_region *reg);
 entity *add_entity(const entity &copy, sim_region *reg);

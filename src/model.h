@@ -32,7 +32,7 @@ enum struct texture_usage : u8
     HDR,
 };
 
-enum texture_flag
+enum texture_flag: u32
 {
     TEXTURE_FLAG_CUBEMAP = make_flag_base(ASSET_FLAG_USER_BASE, 0),
 };

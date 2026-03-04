@@ -3,12 +3,12 @@
 namespace nslib
 {
 
-void init_static_model(static_model *sm, mem_arena *arena)
+void init_static_model(static_mesh *sm, mem_arena *arena)
 {
     arr_init(&sm->mat_mapping, arena);
 }
 
-void terminate_static_model(static_model *sm)
+void terminate_static_model(static_mesh *sm)
 {
     arr_terminate(&sm->mat_mapping);
 }
@@ -95,7 +95,7 @@ void init_sim_region(sim_region *reg, mem_arena *arena)
     init_comp_db(&reg->cdb, arena);
     hmap_init(&reg->entmap, hash_type, arena);
 
-    add_comp_tbl<static_model>(&reg->cdb);
+    add_comp_tbl<static_mesh>(&reg->cdb);
     add_comp_tbl<camera>(&reg->cdb, 64);
     add_comp_tbl<transform>(&reg->cdb, 5000);
 }
@@ -104,7 +104,7 @@ void terminate_sim_region(sim_region *reg)
 {
     remove_comp_tbl<transform>(&reg->cdb);
     remove_comp_tbl<camera>(&reg->cdb);
-    remove_comp_tbl<static_model>(&reg->cdb);
+    remove_comp_tbl<static_mesh>(&reg->cdb);
 
     hmap_terminate(&reg->entmap);
     terminate_comp_db(&reg->cdb);

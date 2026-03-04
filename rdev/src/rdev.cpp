@@ -178,7 +178,7 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
                 sizet ent_ind = zind * (width * len) + yind * width + xind + ent_offset;
                 auto ent = &region->ents[ent_ind];
                 auto tfcomp = add_comp<transform>(ent->id, tf_tbl);
-                auto sc = add_comp<static_model>(ent);
+                auto sc = add_comp<static_mesh>(ent);
                 if (xind % 2) {
                     sc->geom_id = cube_geom.id;
                     ent->name = to_str("cube-%d", ent_ind);
