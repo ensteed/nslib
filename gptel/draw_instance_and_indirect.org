@@ -1,0 +1,167 @@
+:PROPERTIES:
+:GPTEL_MODEL: gpt-5.2
+:GPTEL_BACKEND: OpenAI
+:GPTEL_SYSTEM: You are a large language model living in Emacs and a helpful assistant. Respond concisely.
+:GPTEL_TOOLS:
+:GPTEL_BOUNDS: ((response (711 3722) (3945 7071) (7165 10049)))
+:END:
+
+*** If I have a manifest system that has passes, views, and render jobs, each render job has a pass id, a view id, and a list of draw calls, then I really should have a uniform block entry per job right? How else would i pass view/projection matrices? Theoretically you can have multiple passes with a single view and multiple views with a single pass, how else would i get the view/proj matrices and the current fb resolution and other things to the shaders?
+
+You don’t need /one uniform block per render job/, but you do need a way for each draw to see the correct *(pass, view, frame)* state. The usual way is to split state into a few uniform blocks (or equivalent) by /update frequency/ and bind the right ones for each job.
+
+*** Common pattern: 3 (sometimes 4) blocks
+1. *Per-frame (global) UBO*
+   - time, frame index, jitter, etc.
+2. *Per-pass UBO*
+   - things tied to the render target / pass: framebuffer resolution, render scale, MSAA params, exposure pipeline params, maybe light list handles, etc.
+   - If the same “pass” can render to different sized targets, then “resolution” is really /per render-target instance/, but you can still treat it as “pass state for this job”.
+3. *Per-view UBO*
+   - view matrix, projection matrix, view-proj, inverse matrices, camera pos, near/far, etc.
+4. *Per-draw (or per-object/material)*
+   - model matrix, skinning, material params. Often via push constants, SSBO, or an instance buffer, depending on API.
+
+*** How it maps to your “render job”
+A render job referencing =(passId, viewId, drawCalls[])= can be executed like:
+
+- bind pipeline(s) as needed
+- bind *PerPass* for =passId= (or the pass-instance for this job)
+- bind *PerView* for =viewId=
+- then iterate draw calls binding per-draw/per-material data
+
+So the job is just the /glue/ that selects which pass data + which view data to bind; it doesn’t require its own unique UBO unless you specifically want a “job UBO”.
+
+*** When a “per-job UBO” makes sense
+A per-job block is useful if you have parameters that are /not purely pass/ and /not purely view/, e.g.:
+- same pass+view but different viewport/scissor, dynamic resolution, or per-layer rendering
+- per-job overrides (clip planes, debug modes, per-job exposure, etc.)
+- you want to avoid rebinding multiple blocks and just bind one packed block per job (sometimes done for simplicity)
+
+But conceptually it’s still just “state for this draw list”; it’s not required for correctness.
+
+*** Practical binding model
+- *UBO/CBV ring buffer* (or dynamic uniform buffer offsets): allocate one chunk per pass instance and one per view, update once, then for each job bind with an offset.
+- Or *descriptor sets* (VK/Metal style): have a set for pass, a set for view, and a set for material/object. Job chooses which sets to bind.
+
+*** Answering your specific concerns
+- *View/projection matrices*: belong in *PerView* (indexed by viewId).
+- *Current framebuffer resolution*: belongs in *PerPass* /or/ “per target instance used by this job”. If your passId implies a specific render target size, PerPass is fine. If not, treat it as part of the job’s pass-instance data.
+- *Multiple passes with one view / multiple views with one pass*: that’s exactly why separating PerPass and PerView works well—jobs just bind the appropriate combination.
+
+If you tell me which API you’re targeting (GL, D3D11/12, Vulkan, Metal) I can suggest a concrete layout (UBO structs + binding strategy) that minimizes updates and bindings.
+
+*** I'm using vulkan. I'm thinking of doing per FIF uniform buffers for frame, for pass, and for views. Then binding the descriptor to the entire buffer and using an index in the draw buffer to read it. Would that work?
+
+Yes, that works well in Vulkan, and it’s a common approach: one big per‑FIF buffer for each “frequency” (frame/pass/view), bind once, then index into it from the shader using an ID stored in your draw/instance data.
+
+Two good ways to implement it:
+
+** Option A: SSBOs for frame/pass/view (simplest indexing)
+Use =VK_DESCRIPTOR_TYPE_STORAGE_BUFFER= for =FrameData[]=, =PassData[]=, =ViewData[]=.
+
+- You bind 3 descriptors (frame/pass/view buffers) for the whole frame (or per pipeline layout).
+- Each draw provides =passIndex=, =viewIndex= (and =objectIndex/materialIndex=) via push constants or an instance/draw-command buffer.
+- Shader does =view = viewBuf.views[viewIndex];= etc.
+
+Pros: easiest dynamic indexing, no alignment fuss beyond std430 rules.  
+Cons: slightly “heavier” than UBOs, but in practice usually fine.
+
+** Option B: UBO + dynamic offsets (more “uniform-y”, less indexing)
+Use =VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC= for pass and view (and maybe frame too).
+
+- You still have one big buffer, but you bind an offset per draw/job using dynamic offsets.
+- No indexing in shader; shader just reads =layout(set=...,binding=...) uniform View { ... } uView;=
+
+Pros: clean shader code; uses UBO path.  
+Cons: you must supply dynamic offsets at bind time (so more CPU bookkeeping), and you must obey =minUniformBufferOffsetAlignment=.
+
+Given what you described (“bind the descriptor to the entire buffer and use an index in the draw buffer”), *Option A (SSBO)* matches that directly.
+
+---
+
+** If you want to keep “uniform buffers” specifically
+You /can/ index UBO arrays too, but there are caveats:
+
+- If you use a single UBO containing arrays (=layout(std140) uniform Views { View views[MAX]; }=), you need a fixed MAX (unless using descriptor indexing features with arrays of descriptors).
+- Indexing into big UBO arrays can be fine, but size limits (=maxUniformBufferRange=) can bite if you store a lot of views/passes.
+- Alignment/padding of =std140= is more annoying.
+
+That’s why many engines just use *SSBO for big indexed tables*, even if the data is “uniform-like”.
+
+---
+
+** Practical recommendation
+- *Frame data*: UBO (single struct) is perfect.
+- *View + Pass tables*: SSBOs (arrays) are usually the sweet spot.
+- *Per-draw IDs*: put =viewIndex/passIndex/objectIndex= in:
+  - push constants (if you do one draw at a time), or
+  - an instance buffer / draw-command SSBO (if you’re doing GPU-driven/indirect).
+
+*** Descriptor layout example
+- set 0: frame UBO
+- set 1: view SSBO + pass SSBO
+- set 2: material/object resources
+
+Bind set 0/1 once per frame; set 2 per material batch; per draw only changes IDs.
+
+---
+
+** Synchronization / FIF notes
+Per-FIF buffers are fine. Typical pattern:
+- allocate buffers sized for worst-case number of passes/views that frame
+- write into the region for =frameIndex=
+- use =VK_MEMORY_PROPERTY_HOST_VISIBLE= + persistently mapped, or staging to device local if you care
+
+---
+
+If you tell me whether you’re doing classic CPU draws or =vkCmdDrawIndirect(Count)= / GPU-driven, I can suggest the cleanest place to store/pass the indices (push constants vs per-draw SSBO).
+
+*** So the draw buffer would need to be an SSBO if im ever planning on using indirect draw
+
+If you plan to do *GPU-driven indirect* (GPU writes/compacts draw calls), then yes: your “draw buffer” effectively needs to live in a *storage buffer* (SSBO) because the GPU must be able to write it, and you’ll read per-draw metadata from it in the shader.
+
+More precise breakdown:
+
+** 1) Plain indirect (CPU-built) doesn’t require SSBO for metadata
+You can do:
+- CPU fills a =VkBuffer= containing =VkDrawIndirectCommand= (usage includes =INDIRECT_BUFFER=)
+- For per-draw IDs (view/pass/material), you can still:
+  - use *push constants* if you’re issuing draws one-by-one (not great if you want multi-draw)
+  - or use an *instance vertex buffer* / extra vertex buffer stream (works if you use instancing and can map =gl_InstanceIndex=)
+  - or use an SSBO anyway (often simplest)
+
+So: *indirect alone* doesn’t force SSBO, but it strongly nudges you there if you want multi-draw with varied state.
+
+** 2) Multi-draw indirect (MDI) + varying view/pass per draw: SSBO is the standard solution
+With =vkCmdDrawIndirectCount= / MDI, you submit many draws in one call. You can’t change push constants/descriptors per draw from the CPU inside that one call.
+
+So you typically do:
+- Indirect command buffer: array of =VkDrawIndirectCommand=
+- *Parallel metadata buffer* (SSBO): array of =DrawData { uint viewId; uint passId; uint objId; ... }=
+- In shader, index metadata using something like =gl_DrawID= (or =gl_DrawIDARB=) + base offset.
+
+This is the common “draw buffer” people mean.
+
+** 3) True GPU-generated draws: definitely SSBO
+If the GPU is culling/sorting/compacting:
+- it writes indirect commands into a storage-capable buffer
+- it writes per-draw metadata into a storage buffer
+- graphics reads metadata as SSBO
+
+(You may still bind the indirect buffer as =INDIRECT_BUFFER=, but it also needs the right usage flags to be written by compute, e.g. =STORAGE_BUFFER= and proper barriers.)
+
+** Key point: how do you get “which draw am I” in the shader?
+For MDI, you need =gl_DrawID= support:
+- Vulkan: enable =VK_EXT_multi_draw= (or rely on Vulkan 1.2+ features depending on platform) / =shaderDrawParameters= (=gl_DrawID=, =gl_BaseInstance=, etc.).
+- Or fallback: encode an index via =firstInstance= in the indirect command and use =gl_InstanceIndex + gl_BaseInstance= to look up metadata.
+
+That fallback is very common and avoids relying on =gl_DrawID= everywhere.
+
+** Recommended pattern
+- Keep *ViewData[]* and *PassData[]* as SSBO tables.
+- Have *DrawData[]* as SSBO (or packed into an instance buffer) containing indices into those tables.
+- For indirect, set =firstInstance = drawIndexBase + i= and index =DrawData[firstInstance + gl_InstanceIndex]= (or just =DrawData[firstInstance]= if you ensure instanceCount=1 per draw).
+
+So: if you want indirect + many draws with different view/pass, making draw metadata an SSBO (or equivalent storage buffer) is the most robust approach.
+
+*** 
