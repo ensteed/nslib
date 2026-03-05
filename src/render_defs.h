@@ -5,8 +5,6 @@
 namespace nslib
 {
 
-// Rendering resource id
-using rres_id = u64;
 // Maximum number of techniques the renderer supports
 inline constexpr u32 MAX_SHADER_COUNT = 1024;
 // Maximum number of techniques the renderer supports
@@ -143,14 +141,7 @@ using render_blueprint_handle = slot_handle<render_blueprint>;
 using render_blueprint_ref = slot_item_ref<render_blueprint>;
 
 using gpu_handle = u64;
-using idx_t = u32;
-using key_t = u64;
-
-#define get_idx_item(array, id) is_valid(id) ? &array[id] : nullptr
-#define get_idxn_item(array, id, n) (id < n) ? &array[id] : nullptr
-#define get_idxn_arr_item(array, id) get_idxn_item(array, id, array.size)
-
-using key_t = u64;
+using rres_id = u64;
 
 enum rshader_stage_type
 {

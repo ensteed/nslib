@@ -1309,7 +1309,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         /////////////////////
         // Create pipeline //
         /////////////////////
-        key_t key = ((u64)rtech.hndl.index << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;        
+        key_t key = ((u64)rtech.hndl.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;        
         ilog("Creating new pipeline for key %lu", key);
         auto new_slot = acquire_slot(&rndr->pline_cache.items);
         asrt(is_valid(new_slot) && "Out of pipeline slots");

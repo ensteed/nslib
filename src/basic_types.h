@@ -3,8 +3,6 @@
 #include <cstddef>
 #include <cassert>
 #include <climits>
-#include "osdef.h"
-// #include "osdef.h"
 
 // Check if all of the flags in provided flags
 #define test_all_flags(bitmask, flags) (((bitmask) & (flags)) == (flags))
@@ -90,12 +88,17 @@ using cstr = const char *;
 
 const sizet KB_SIZE = 1024;
 const sizet MB_SIZE = 1024 * KB_SIZE;
-
+using idx_t = u32;
+using key_t = u64;
 using small_str = char[SMALL_STR_LEN];
+
+#define get_idx_item(array, id) is_valid(id) ? &array[id] : nullptr
+#define get_idxn_item(array, id, n) (id < n) ? &array[id] : nullptr
+#define get_idxn_arr_item(array, id) get_idxn_item(array, id, array.size)
 
 inline constexpr const u64 INVALID_ID = ~(0UL);
 inline constexpr const sizet INVALID_IND = ~(0UL);
-inline constexpr const u32 INVALID_IDX = ~(0U);
+inline constexpr const idx_t INVALID_IDX = ~(0U);
 #if defined(PLATFORM_APPLE_MACOS)
 inline bool is_valid(u64 v)
 {

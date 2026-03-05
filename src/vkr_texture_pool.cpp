@@ -177,11 +177,11 @@ intern void build_contiguous_slot_ranges(const rtexture_pool_item_ref *tslots, u
     asrt(tslots);
     asrt(tslot_count > 0);
 
-    u32 first_slot = tslots[0].hndl.index;
+    u32 first_slot = tslots[0].hndl.si;
     u32 prev_slot = first_slot;
     u32 run_count = 1;
     for (u32 i = 1; i < tslot_count; ++i) {
-        u32 slot = tslots[i].hndl.index;
+        u32 slot = tslots[i].hndl.si;
         if (slot == prev_slot + 1) {
             ++run_count;
             prev_slot = slot;

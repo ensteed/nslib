@@ -111,7 +111,7 @@ intern const vkr_framebuffer *get_or_create_framebuffer(renderer *rndr,
         u32 att_ind = rbp_pass.slots[si].att_ind;
         if (is_valid(att_ind)) {
             asrt(att_ind < MAX_FRAMEBUFFER_ATTACHMENT_COUNT);
-            const rtexture_target_fif *cur_t = &m.textures[cur_sl->t.hndl.index];
+            const rtexture_target_fif *cur_t = &m.textures[cur_sl->t.hndl.si];
 
             // Can't use the value from cfg - swapchain images don't have correct data in the cfg field as they were
             // never actually created..
@@ -233,8 +233,8 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, idx_
         const mpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
         if (assignment.type == mslot_target_type::TEXTURE) {
             asrt(is_valid(assignment.t.hndl));
-            asrt(assignment.t.hndl.index < m->textures.size);
-            auto cur_t = &m->textures[assignment.t.hndl.index];
+            asrt(assignment.t.hndl.si < m->textures.size);
+            auto cur_t = &m->textures[assignment.t.hndl.si];
             rtexture_state *cur_st = &cur_t->state;
             rtexture_state req_st = get_required_texture_state(rbpp, *first, *cur_st);
 
@@ -276,8 +276,8 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, idx_
         }
         else if (assignment.type == mslot_target_type::BUFFER) {
             asrt(is_valid(assignment.b));
-            asrt(assignment.b.index < m->buffers.size);
-            auto cur_b = &m->buffers[assignment.b.index];
+            asrt(assignment.b.si < m->buffers.size);
+            auto cur_b = &m->buffers[assignment.b.si];
             rbuffer_state *cur_st = &cur_b->state;
             rbuffer_state req_st = get_updated_buffer_state(rbpp, *first);
 
@@ -348,14 +348,14 @@ intern void update_manifest_pass_states(rmanifest *m, const rbp_pass &rbp_pass, 
         if (assignment.type == mslot_target_type::TEXTURE) {
             // Final state after the pass completes (attachments use final layout).
             asrt(is_valid(assignment.t.hndl));
-            asrt(assignment.t.hndl.index < m->textures.size);
-            m->textures[assignment.t.hndl.index].state = get_updated_texture_state(rbp_pass, *last);
+            asrt(assignment.t.hndl.si < m->textures.size);
+            m->textures[assignment.t.hndl.si].state = get_updated_texture_state(rbp_pass, *last);
         }
         else if (assignment.type == mslot_target_type::BUFFER) {
             // Final buffer access/stage after the pass completes.
             asrt(is_valid(assignment.b));
-            asrt(assignment.b.index < m->buffers.size);
-            m->buffers[assignment.b.index].state = get_updated_buffer_state(rbp_pass, *last);
+            asrt(assignment.b.si < m->buffers.size);
+            m->buffers[assignment.b.si].state = get_updated_buffer_state(rbp_pass, *last);
         }
     }
 }
@@ -509,8 +509,8 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 arr_resize(&cur_rj->dcs, dc_ind + 1);
                 mdraw_call *cur_d = &cur_rj->dcs[dc_ind];
                 cur_d->geom = dp.geom;
-                cur_d->mat_idx = dp.mat.index;
-                cur_d->pl_idx = cur_pl->pline.index;
+                cur_d->mat_idx = dp.mat.si;
+                cur_d->pl_idx = cur_pl->pline.si;
                 cur_d->sort_key = ((u64)cur_d->pl_idx << 32) | (u64)cur_d->mat_idx;
                 ++push_cnt;
             }
