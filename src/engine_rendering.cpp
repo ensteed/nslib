@@ -27,6 +27,7 @@ intern rformat get_rformat_for_usage(texture_usage usage)
 template<typename T>
 intern bool get_and_log_upload_result(T *asset)
 {
+    // This is a clarification comment
     bool result = is_valid(asset->rhndl);
     if (result) {
         ilog("Uploaded %s %s to renderer", asset->type_str, ls(asset->name));
