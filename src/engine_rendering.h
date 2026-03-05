@@ -50,7 +50,7 @@ struct material_ssbo_data {
 
 struct draw_ssbo_data {
     u32 material_idx;
-    u32 instance_idx;
+    u32 idx_t;
     svec2 suser;
     vec4 fuser;
 };

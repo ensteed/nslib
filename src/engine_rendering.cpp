@@ -195,14 +195,14 @@ intern rtexture_flags get_rtexture_flags(asset_flags flags)
 
 intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp, render_blueprint_ref bp)
 {
-    rbp_pass_idx pass_idx = find_rbp_pass(bp.item, src.bp_pass);
+    idx_t pass_idx = find_rbp_pass(bp.item, src.bp_pass);
     asrt(is_valid(pass_idx));
     
     shader_item_ref shdr = find_asset(sp, src.shader);
     dst->shader = is_valid(shdr) ? shdr.item->rhndl : rshader_handle{};
     dst->bp_info.bp = bp.hndl;
     dst->bp_info.pid = pass_idx;
-    dst->bp_info.subpass_ind = src.bp_subpass;
+    dst->bp_info.spi = src.bp_subpass;
     dst->geom_buffer_layout = src.gsg_layout;
     
     // Sensible defaults for fields not driven by technique_pass

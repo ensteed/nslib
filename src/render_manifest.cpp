@@ -71,18 +71,36 @@ intern rmanifest *create_manifest(renderer *rndr, u32 fif)
     return m;
 }
 
-intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd,
-                                                 VkClearValue *cv,
-                                                 sizet *cv_size,
-                                                 VkRenderPass vk_rpass,
-                                                 const mpass &mp,
-                                                 const rbp_pass &rbp_pass,
-                                                 const rmanifest &m,
-                                                 u32 fif)
+intern u64 hash_framebuffer_config(const vkr_framebuffer_cfg &cfg)
 {
-    u32 att_cnt{};
-    fb_kd->layers = 1;
-    fb_kd->rpass = vk_rpass;
+    u64 h = 0;
+    hash_combine(&h, hash_type(&cfg.meta, sizeof(cfg.meta)));
+    hash_combine(&h, hash_type(cfg.atts, cfg.att_count * sizeof(VkImageView)));
+    return h;
+}
+
+intern const vkr_framebuffer *get_or_create_framebuffer(renderer *rndr,
+                                                        VkClearValue *cv,
+                                                        sizet *cv_size,
+                                                        VkRenderPass vk_rpass,
+                                                        const mpass &mp,
+                                                        const rbp_pass &rbp_pass,
+                                                        const rmanifest &m,
+                                                        u32 fif)
+{
+    //////////////////
+    // Build config //
+    //////////////////
+    VkImageView atts[MAX_FRAMEBUFFER_ATTACHMENT_COUNT]{};
+    vkr_framebuffer_cfg cfg{};
+    cfg.meta.layers = 1;
+    cfg.meta.rpass = vk_rpass;
+
+    // The slot attachments might not be in the same order - ie slot 0 -> att 3, slot 1 -> att 1, slot 2 -> no att, slot
+    // 3 ->att 0, slot 4 -> att 2, so we set the cfg att count to the highest att ind we find + 1. But we keep track of
+    // the att_cnt also so we can assert that att_cnt == cfg.att_count at the end - so this is purely for debug info basically
+    u32 att_cnt{0};
+
     for (u32 si = 0; si < mp.slot_assignments.size; ++si) {
         auto cur_sl = &mp.slot_assignments[si];
         bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t.hndl);
@@ -92,7 +110,7 @@ intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd
         // If is attachment, we add to framebuffer
         u32 att_ind = rbp_pass.slots[si].att_ind;
         if (is_valid(att_ind)) {
-            asrt(att_ind < fb_kd->atts.capacity);
+            asrt(att_ind < MAX_FRAMEBUFFER_ATTACHMENT_COUNT);
             const rtexture_target_fif *cur_t = &m.textures[cur_sl->t.hndl.index];
 
             // Can't use the value from cfg - swapchain images don't have correct data in the cfg field as they were
@@ -100,19 +118,17 @@ intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd
             uvec2 tex_dims = cur_t->image.dims.xy;
 
             // The frame buffer can only be as big as the smallest texture - so that's what we set it to
-            if (fb_kd->dims.x == 0 || tex_dims.x < fb_kd->dims.x) {
-                fb_kd->dims.x = tex_dims.x;
+            if (cfg.meta.dims.x == 0 || tex_dims.x < cfg.meta.dims.x) {
+                cfg.meta.dims.x = tex_dims.x;
             }
-            if (fb_kd->dims.y == 0 || tex_dims.y < fb_kd->dims.y) {
-                fb_kd->dims.y = tex_dims.y;
+            if (cfg.meta.dims.y == 0 || tex_dims.y < cfg.meta.dims.y) {
+                cfg.meta.dims.y = tex_dims.y;
             }
 
-            // Resize only if cur att ind is less than or equal our size - we have no guarentees
-            // that the slot order will necessarily match the attachment order
-            if (att_ind >= fb_kd->atts.size) {
-                arr_resize(&fb_kd->atts, att_ind + 1);
+            if (att_ind >= cfg.att_count) {
+                cfg.att_count = att_ind + 1;
             }
-            fb_kd->atts[att_ind] = cur_t->view;
+            atts[att_ind] = cur_t->view;
 
             // Set clear value
             rformat tex_format = get_rformat(cur_t->image.format);
@@ -122,7 +138,26 @@ intern void setup_framebuffer_key_and_clear_vals(vkr_framebuffer_key_data *fb_kd
             ++att_cnt;
         }
     }
-    asrt(fb_kd->atts.size == att_cnt);
+    asrt(cfg.att_count == att_cnt);
+    cfg.atts = atts;
+
+    ///////////////////
+    // Create or get //
+    ///////////////////
+    key_t key = hash_framebuffer_config(cfg);
+    auto fiter = hmap_find(&rndr->fb_cache.key_lut, key);
+    if (fiter) {
+        auto slitem = get_slot_item(&rndr->fb_cache.items, fiter->val);
+        asrt(slitem);
+        return &slitem->gpu_d;
+    }
+    ilog("Creating new framebuffer for unique hash %lu", key);
+    auto new_slot = acquire_slot(&rndr->fb_cache.items);
+    asrt(is_valid(new_slot) && "Out of framebuffer slots");
+    int result = vkr_init_framebuffer(&new_slot.item->gpu_d, cfg, &rndr->vk);
+    asrt(result == err_code::VKR_NO_ERROR);
+    hmap_insert(&rndr->fb_cache.key_lut, key, new_slot.hndl);
+    return &new_slot.item->gpu_d;
 }
 
 struct rbp_slot_usage_info
@@ -176,10 +211,10 @@ intern rbuffer_state get_updated_buffer_state(const rbp_pass &rbpp, const rbp_re
     return updated;
 }
 
-intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, mrender_job_idx rjid, VkCommandBuffer buf, u32 fif)
+intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, idx_t rjid, VkCommandBuffer buf, u32 fif)
 {
     const mrender_job &rj = m->jobs[rjid];
-    const mpass &mp = m->passes[rj.pid];
+    const mpass &mp = m->passes[rj.mp];
 
     rbp_slot_usage_info slot_usage[MAX_BP_PASS_SLOT_COUNT]{};
     gather_pass_slot_usage_info(slot_usage, rbpp);
@@ -345,51 +380,49 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
     for (u32 rji = 0; rji < m->jobs.size; ++rji) {
         auto rbp = get_render_blueprint(m->rndr, m->rbp);
         auto cur_rj = &m->jobs[rji];
-        auto mp = &m->passes[cur_rj->pid];
-        auto rbp_pass = &rbp->passes[mp->rbp_pid];
+        auto mp = &m->passes[cur_rj->mp];
+        auto rbp_pass = &rbp->passes[mp->rbpp];
         auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
-        auto mview = &m->views[cur_rj->vid];
+        auto mview = &m->views[cur_rj->mv];
 
         // Must have all slots assigned
         asrt(rbp_pass->slots.size == mp->slot_assignments.size);
 
         // Create all needed barriers for the current pass resources (according to what we have for the current state)
-        emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->pid, buf, fif);
+        emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->mp, buf, fif);
 
         // Setup framebuffer and clear vals by looping over slots
         static_array<VkClearValue, MAX_BP_PASS_SLOT_COUNT> att_clear_vals{};
-        vkr_framebuffer_key_data fb_kd{};
-        setup_framebuffer_key_and_clear_vals(&fb_kd, att_clear_vals.data, &att_clear_vals.size, vk_rpass, *mp, *rbp_pass, *m, fif);
-        auto fb = get_or_create_framebuffer(&m->rndr->fb_cache, fb_kd, &m->rndr->vk);
+        const vkr_framebuffer*fb = get_or_create_framebuffer(m->rndr, att_clear_vals.data, &att_clear_vals.size, vk_rpass, *mp, *rbp_pass, *m, fif);
 
         // RENDER AREA
-        VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? get_vk_rect_from_normalized(mp->norm_render_area, fb->kd.dims)
+        VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? get_vk_rect_from_normalized(mp->norm_render_area, fb->meta.dims)
                                                                        : get_vk_rect(mp->render_area);
         vkr_cmd_begin_rpass(buf, vk_rpass, fb, ra, att_clear_vals.data, att_clear_vals.size);
 
         // VIEWPORT
         VkViewport viewport = (mview->vp_size_mode == rect_size_mode::NORMALIZED)
-                                  ? get_vk_viewport(mview->vp, mview->vp_depth_min_max, fb->kd.dims)
+                                  ? get_vk_viewport(mview->vp, mview->vp_depth_min_max, fb->meta.dims)
                                   : get_vk_viewport(mview->vp, mview->vp_depth_min_max);
         vkCmdSetViewport(buf, 0, 1, &viewport);
 
         // SCISSOR
         VkRect2D scissor = (mview->scissor_size_mode == rect_size_mode::NORMALIZED)
-                               ? get_vk_rect_from_normalized(mview->norm_scissor, fb->kd.dims)
+                               ? get_vk_rect_from_normalized(mview->norm_scissor, fb->meta.dims)
                                : get_vk_rect(mview->scissor);
         vkCmdSetScissor(buf, 0, 1, &scissor);
 
         if (cur_rj->cb) {
             render_job_cb_params p{};
             p.cmd_buf = (u64)buf;
-            p.draw_calls = &cur_rj->draw_calls;
+            p.draw_calls = &cur_rj->dcs;
             cur_rj->cb(p, cur_rj->cb_user);
         }
         else {
             wlog("No draw function assigned for render-job %d (pass-id:%u view-id:%u rbp-pass:%s vkpass:%p blueprint:%s)",
                  rji,
-                 cur_rj->pid,
-                 cur_rj->vid,
+                 cur_rj->mp,
+                 cur_rj->mv,
                  rbp_pass->name,
                  rbp_pass->vk_handle,
                  rbp->name);
@@ -404,11 +437,11 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
     return true;
 }
 
-mpass_idx push_pass_helper(rmanifest *m, rbp_pass_idx pid, mpass_slot_assignment *assignments, sizet assignment_count)
+idx_t push_pass_helper(rmanifest *m, idx_t pid, mpass_slot_assignment *assignments, sizet assignment_count)
 {
-    mpass_idx pind = (mpass_idx)m->passes.size;
+    idx_t pind = (idx_t)m->passes.size;
     arr_resize(&m->passes, pind + 1);
-    m->passes[pind].rbp_pid = pid;
+    m->passes[pind].rbpp = pid;
     if (assignment_count && assignment_count != 0) {
         auto bp = get_render_blueprint(m->rndr, m->rbp);
         asrt(assignment_count == bp->passes[pid].slots.size);
@@ -420,7 +453,7 @@ mpass_idx push_pass_helper(rmanifest *m, rbp_pass_idx pid, mpass_slot_assignment
     return pind;
 }
 
-mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const rect &norm_render_area, mpass_slot_assignment *assignments, sizet assignment_count)
+idx_t push_pass(rmanifest *m, idx_t pid, const rect &norm_render_area, mpass_slot_assignment *assignments, sizet assignment_count)
 {
     auto pind = push_pass_helper(m, pid, assignments, assignment_count);
     m->passes[pind].ra_size_mode = rect_size_mode::NORMALIZED;
@@ -428,7 +461,7 @@ mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const rect &norm_render_area
     return pind;
 }
 
-mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const srect &render_area, mpass_slot_assignment *assignments, sizet assignment_count)
+idx_t push_pass(rmanifest *m, idx_t pid, const srect &render_area, mpass_slot_assignment *assignments, sizet assignment_count)
 {
     auto pind = push_pass_helper(m, pid, assignments, assignment_count);
     m->passes[pind].ra_size_mode = rect_size_mode::ABSOLUTE;
@@ -436,29 +469,29 @@ mpass_idx push_pass(rmanifest *m, rbp_pass_idx pid, const srect &render_area, mp
     return pind;
 }
 
-u32 push_slot_assignment(rmanifest *m, mpass_idx pid, const mpass_slot_assignment &sa)
+u32 push_slot_assignment(rmanifest *m, idx_t pid, const mpass_slot_assignment &sa)
 {
     // We cannot add more assignments than slots!
     auto bp = get_render_blueprint(m->rndr, m->rbp);
-    asrt(m->passes[pid].slot_assignments.size < bp->passes[m->passes[pid].rbp_pid].slots.size);
+    asrt(m->passes[pid].slot_assignments.size < bp->passes[m->passes[pid].rbpp].slots.size);
 
     u32 sa_ind = m->passes[pid].slot_assignments.size++;
     m->passes[pid].slot_assignments[sa_ind] = sa;
     return sa_ind;
 }
 
-mview_idx push_view(rmanifest *m, const mview &view)
+idx_t push_view(rmanifest *m, const mview &view)
 {
-    mview_idx ind = (mview_idx)m->views.size;
+    idx_t ind = (idx_t)m->views.size;
     arr_push_back(&m->views, view);
     return ind;
 }
 
-mrender_job_idx push_render_job(rmanifest *m, mpass_idx pass, mview_idx view, render_job_cb *cb, void *cb_params)
+idx_t push_render_job(rmanifest *m, idx_t pass, idx_t view, render_job_cb *cb, void *cb_params)
 {
-    mrender_job_idx ind = (mrender_job_idx)m->jobs.size;
+    idx_t ind = (idx_t)m->jobs.size;
     auto rj = arr_emplace_back(&m->jobs, pass, view, array<mdraw_call>{}, cb, cb_params);
-    arr_init(&rj->draw_calls, m->jobs.arena, 64);
+    arr_init(&rj->dcs, m->jobs.arena, 64);
     return ind;
 }
 
@@ -467,19 +500,18 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
     u32 push_cnt{0};
     rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.technique.hndl);
     for (u32 i = 0; i < tptr->rpass_plines.size; ++i) {
+        auto cur_pl = &tptr->rpass_plines[i];
         for (u32 rji = 0; rji < m->jobs.size; ++rji) {
             mrender_job *cur_rj = &m->jobs[rji];
-            if (m->passes[cur_rj->pid].rbp_pid == tptr->rpass_plines[i].bp_pass) {
-                u32 dc_ind = (u32)cur_rj->draw_calls.size;
-                arr_resize(&cur_rj->draw_calls, dc_ind + 1);
-                mdraw_call *cur_d = &cur_rj->draw_calls[dc_ind];
+            mpass *cur_mp = &m->passes[cur_rj->mp];
+            if (cur_mp->rbpp == cur_pl->bp_pass) {
+                u32 dc_ind = (u32)cur_rj->dcs.size;
+                arr_resize(&cur_rj->dcs, dc_ind + 1);
+                mdraw_call *cur_d = &cur_rj->dcs[dc_ind];
                 cur_d->geom = dp.geom;
-                cur_d->iid = dp.iid;
-                cur_d->mat = dp.mat;
-                cur_d->pipeline = (sizet)tptr->rpass_plines[i].pline;
-                for (sizet texi = 0; texi < dp.tex_assignment_count; ++texi) {
-                    cur_d->textures[dp.tex_assignments[texi].unit] = dp.tex_assignments[texi].tex;
-                }
+                cur_d->mat_idx = dp.mat.index;
+                cur_d->pl_idx = cur_pl->pline.index;
+                cur_d->sort_key = ((u64)cur_d->pl_idx << 32) | (u64)cur_d->mat_idx;
                 ++push_cnt;
             }
         }

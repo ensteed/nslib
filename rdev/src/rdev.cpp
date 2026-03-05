@@ -241,9 +241,9 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
                                       });
 
     // Main geometry pass
-    rbp_slot_idx col_slot_ind = add_rbp_resource_slot(
+    idx_t col_slot_ind = add_rbp_resource_slot(
         rbp.item, pass_id, {.name = "color", .format = get_swapchain_format(rndr), .usage = RBP_RES_USAGE_COLOR_ATTACHMENT});
-    rbp_slot_idx depth_slot_ind =
+    idx_t depth_slot_ind =
         add_rbp_resource_slot(rbp.item, pass_id, {.name = "depth", .format = RFMT_D32_SFLOAT, .usage = RBP_RES_USAGE_DEPTH_ATTACHMENT});
 
     add_rbp_resource_requirement(rbp.item,
@@ -264,7 +264,7 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
 
     // I'm gui will double as the place we render UI and the place where our layout conversion happens - no depth buffer
     // needed for imgui
-    rbp_slot_idx imgui_col_slot_ind = add_rbp_resource_slot(
+    idx_t imgui_col_slot_ind = add_rbp_resource_slot(
         rbp.item, imgui_pass_id, {.name = "color", .format = get_swapchain_format(rndr), .usage = RBP_RES_USAGE_COLOR_ATTACHMENT});
 
     add_rbp_resource_requirement(rbp.item,

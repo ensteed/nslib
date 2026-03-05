@@ -245,7 +245,7 @@ intern void terminate_framebuffers_with_image(renderer *rndr, VkImageView iv)
     ilog("Destroying framebuffers for image view %p", iv);
     for (auto sliter = slot_pool_begin(&rndr->fb_cache.items); is_valid(sliter); sliter = slot_pool_next(&rndr->fb_cache.items, sliter)) {
         // If it had one, we delete it and continue, otherwise we leave it alone and continue
-        if (arr_find(&sliter.item->gpu_d.kd.atts, iv)) {
+        if (arr_find(&sliter.item->gpu_d.atts, iv)) {
             ilog("-> destroying framebuffer %p", sliter.item->gpu_d.hndl, iv);
             vkr_terminate_framebuffer(&sliter.item->gpu_d, &rndr->vk);
             hmap_remove(&rndr->fb_cache.key_lut, sliter.item->key);
@@ -373,10 +373,12 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     // Terminate our default descriptor layout sets
     ilog("Terminating global desc info");
     vkr_terminate_desc_pool(rndr->desc_info.pool, &rndr->vk);
-    vkr_terminate_buffer(&rndr->desc_info.draw_ssbo, &rndr->vk);
-    vkr_terminate_buffer(&rndr->desc_info.frame_ubo, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.material_ssbo, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.instance_ssbo, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.frame_ubo, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.pass_ssbo, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.view_ssbo, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.draw_ssbo, &rndr->vk);
     vkr_terminate_desc_set_layouts(rndr->desc_info.dset_layouts, RDSET_LAYOUT_COUNT, &rndr->vk);
     vkr_terminate_pipeline_layout(rndr->desc_info.pline_layout, &rndr->vk);
 }
@@ -822,9 +824,7 @@ intern void terminate_blueprints(renderer *rndr)
 intern void terminate_rtechnique(renderer *rndr, rtechnique_info *info)
 {
     ilog("Terminating technique %s with %lu pass pipelines", info->name, info->rpass_plines.size);
-    for (u32 i = 0; i < info->rpass_plines.size; ++i) {
-        vkr_terminate_pipeline(info->rpass_plines[i].pline, &rndr->vk);
-    }
+    *info = {};
 }
 
 intern void init_render_resources(renderer *rndr, const renderer_cfg &rcfg)
@@ -924,26 +924,8 @@ void handle_window_resize(renderer *rndr)
     }
 }
 
-const vkr_framebuffer *get_or_create_framebuffer(framebuffer_cache *cache, const vkr_framebuffer_key_data &kd, const vkr_context *vk)
-{
-    u64 hash = hash_type((const char *)&kd, sizeof(vkr_framebuffer_key_data));
-    auto fiter = hmap_find(&cache->key_lut, hash);
-    if (fiter) {
-        auto slitem = get_slot_item(&cache->items, fiter->val);
-        asrt(slitem);
-        return &slitem->gpu_d;
-    }
-    ilog("Creating new framebuffer for unique hash %lu", hash);
-    auto new_slot = acquire_slot(&cache->items);
-    asrt(is_valid(new_slot) && "Out of framebuffer slots");
-    vkr_framebuffer_cfg cfg{.kd = kd};
-    int result = vkr_init_framebuffer(&new_slot.item->gpu_d, cfg, vk);
-    asrt(result == err_code::VKR_NO_ERROR);
-    hmap_insert(&cache->key_lut, hash, new_slot.hndl);
-    return &new_slot.item->gpu_d;
-}
 
-geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
+idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
     asrt(desc.layouts.size > 0);
@@ -999,7 +981,7 @@ geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_
     return geom_id;
 }
 
-geom_stream_group_idx find_geometry_stream_group(renderer *rndr, rres_id group_id)
+idx_t find_geometry_stream_group(renderer *rndr, rres_id group_id)
 {
     auto id_fiter = hmap_find(&rndr->geom_group_id_map, group_id);
     return id_fiter ? id_fiter->val : INVALID_IDX;
@@ -1179,13 +1161,13 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
 
         asrt(cur_desc->bp_info.pid < rbp_bp->passes.size);
         auto rbp_pass = &rbp_bp->passes[cur_desc->bp_info.pid];
-        asrt(cur_desc->bp_info.subpass_ind < rbp_pass->subpasses.size);
+        asrt(cur_desc->bp_info.spi < rbp_pass->subpasses.size);
 
         auto shdr = get_slot_item(&rndr->shaders, cur_desc->shader);
         asrt(shdr);
 
         // Stream group stuff
-        geom_stream_group_idx geom_gp = find_geometry_stream_group(rndr, rbp_pass->geom_streams_group);
+        idx_t geom_gp = find_geometry_stream_group(rndr, rbp_pass->geom_streams_group);
         geom_stream_group *gsg = get_idxn_arr_item(rndr->geom_groups, geom_gp);
         asrt(gsg);
         asrt(cur_desc->geom_buffer_layout < gsg->layouts.size);
@@ -1194,7 +1176,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
 
         vkr_pipeline_cfg cfg{};
         cfg.rpass = (VkRenderPass)rbp_pass->vk_handle;
-        cfg.subpass = cur_desc->bp_info.subpass_ind;
+        cfg.subpass = cur_desc->bp_info.spi;
         cfg.vert_desc = vert_layout->vert_layout;
         cfg.layout_hndl = rndr->desc_info.pline_layout;
 
@@ -1324,13 +1306,22 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         // Dynamic - don't care
         cfg.depth_stencil.back = {};
 
+        /////////////////////
+        // Create pipeline //
+        /////////////////////
+        key_t key = ((u64)rtech.hndl.index << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;        
+        ilog("Creating new pipeline for key %lu", key);
+        auto new_slot = acquire_slot(&rndr->pline_cache.items);
+        asrt(is_valid(new_slot) && "Out of pipeline slots");
+        int result = vkr_init_pipeline((VkPipeline*)&new_slot.item->gpu_d, cfg, &rndr->vk);
+        asrt(result == err_code::VKR_NO_ERROR);
+        asrt(hmap_insert(&rndr->pline_cache.key_lut, key, new_slot.hndl));
+
+        // Set the technique values
         rtech.item->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
-        s32 result = vkr_init_pipeline(&rtech.item->rpass_plines[i].pline, cfg, &rndr->vk);
-        if (result != err_code::VKR_NO_ERROR) {
-            terminate_rtechnique(rndr, rtech.item);
-            release_slot(&rndr->techniques, rtech.hndl);
-            return {};
-        }
+        rtech.item->rpass_plines[i].subpass = cur_desc->bp_info.spi;
+        rtech.item->rpass_plines[i].pline = new_slot.hndl;
+        
         ++rtech.item->rpass_plines.size;
     }
     return rtech.hndl;

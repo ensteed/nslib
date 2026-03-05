@@ -247,22 +247,23 @@ struct vkr_phys_device
     VkPhysicalDeviceMemoryProperties mem_properties{};
 };
 
-struct vkr_framebuffer_key_data
-{
+struct vkr_framebuffer_meta {
     VkRenderPass rpass{VK_NULL_HANDLE};
     uvec2 dims{};
     u32 layers{};
-    static_array<VkImageView, MAX_FRAMEBUFFER_ATTACHMENT_COUNT> atts{0, VK_NULL_HANDLE};
 };
 
 struct vkr_framebuffer_cfg
 {
-    vkr_framebuffer_key_data kd{};
+    vkr_framebuffer_meta meta;
+    const VkImageView *atts;
+    sizet att_count;
 };
 
 struct vkr_framebuffer
 {
-    vkr_framebuffer_key_data kd{};
+    vkr_framebuffer_meta meta{};
+    static_array<VkImageView, MAX_FRAMEBUFFER_ATTACHMENT_COUNT> atts{};
     VkFramebuffer hndl{VK_NULL_HANDLE};
 };
 

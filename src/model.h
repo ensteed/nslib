@@ -142,9 +142,9 @@ struct technique_pass
     asset_id shader;
     // Blueprint pass id and subpass index 
     rres_id bp_pass;
-    rbp_subpass_idx bp_subpass;
+    idx_t bp_subpass;
     // Which layout the technique uses within the stream group. The stream group is specified in the blueprint pass.
-    geom_buffer_layout_idx gsg_layout;
+    idx_t gsg_layout;
     // Default state is provided for each material referencing this technique - we use these values unless the material
     // specifically overrides it
     raster_state dflt_st{.rmask = RASTER_FLAG_CULL_BACK | RASTER_FLAG_DEPTH_TEST | RASTER_FLAG_DEPTH_WRITE,

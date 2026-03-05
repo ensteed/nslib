@@ -59,6 +59,11 @@ u64 hash_ptr_xxh64(const void *data, sizet len, u64 seed0, u64 seed1);
 
 u64 hash_ptr_xxh3(const void *data, sizet len);
 
+inline void hash_combine(u64 *h, u64 v)
+{
+    *h ^= v + 0x9e3779b97f4a7c15ull + (*h << 6) + (*h >> 2);
+} 
+
 // Hash strings
 
 // Simply 1 for 1 hash - the key has been computed already and we just make use of the hash buckets

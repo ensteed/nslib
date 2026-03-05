@@ -152,7 +152,7 @@ u32 get_rbp_slot_count(const rbp_pass &rbp, rbp_resource_usage_flags flags)
     return cnt;
 }
 
-rbp_slot_idx add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_idx pid, const rbp_resource_slot_desc &desc)
+idx_t add_rbp_resource_slot(render_blueprint *rbp, idx_t pid, const rbp_resource_slot_desc &desc)
 {
     auto pass = &rbp->passes[pid];
     auto ind = pass->slots.size++;
@@ -166,10 +166,10 @@ rbp_slot_idx add_rbp_resource_slot(render_blueprint *rbp, rbp_pass_idx pid, cons
     return ind;
 }
 
-rbp_resource_req_idx add_rbp_resource_requirement(render_blueprint *rbp,
-                                                  rbp_pass_idx pid,
+idx_t add_rbp_resource_requirement(render_blueprint *rbp,
+                                                  idx_t pid,
                                                   const rbp_resource_requirement &req,
-                                                  rbp_subpass_idx spid)
+                                                  idx_t spid)
 {
     auto ind = rbp->passes[pid].subpasses[spid].resources.size++;
     asrt(ind < rbp->passes[pid].subpasses[spid].resources.capacity);
@@ -178,7 +178,7 @@ rbp_resource_req_idx add_rbp_resource_requirement(render_blueprint *rbp,
     return ind;
 }
 
-rbp_subpass_idx add_rbp_subpass(render_blueprint *rbp, rbp_pass_idx pid)
+idx_t add_rbp_subpass(render_blueprint *rbp, idx_t pid)
 {
     auto pass = &rbp->passes[pid];
     auto ret = pass->subpasses.size++;
@@ -186,9 +186,9 @@ rbp_subpass_idx add_rbp_subpass(render_blueprint *rbp, rbp_pass_idx pid)
     return ret;
 }
 
-rbp_pass_idx add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
+idx_t add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
 {
-    rbp_pass_idx ind = (u32)rbp->passes.size++;
+    idx_t ind = (u32)rbp->passes.size++;
     asrt(ind < rbp->passes.capacity);
     rbp_pass *pass = &rbp->passes[ind];
     strncpy(pass->name, pdesc.name, SMALL_STR_LEN - 1);
@@ -205,7 +205,7 @@ rbp_pass_idx add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
     return ind;
 }
 
-rbp_pass_idx find_rbp_pass(render_blueprint *rbp, rres_id id)
+idx_t find_rbp_pass(render_blueprint *rbp, rres_id id)
 {
     auto fiter = hmap_find(&rbp->pass_idmap, id);
     return fiter ? fiter->val : INVALID_IDX;

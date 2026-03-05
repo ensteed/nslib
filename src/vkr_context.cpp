@@ -1251,17 +1251,18 @@ void vkr_terminate_pipeline(VkPipeline hndl, const vkr_context *vk)
 
 int vkr_init_framebuffer(vkr_framebuffer *fb, const vkr_framebuffer_cfg &cfg, const vkr_context *vk)
 {
-    asrt(cfg.kd.rpass);
-    fb->kd = cfg.kd;
+    asrt(cfg.meta.rpass);
+    fb->meta = cfg.meta;
+    arr_copy(&fb->atts, cfg.atts, cfg.att_count);
 
     VkFramebufferCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    create_info.renderPass = fb->kd.rpass;
-    create_info.pAttachments = fb->kd.atts.data;
-    create_info.attachmentCount = fb->kd.atts.size;
-    create_info.width = fb->kd.dims.x;
-    create_info.height = fb->kd.dims.y;
-    create_info.layers = fb->kd.layers;
+    create_info.renderPass = fb->meta.rpass;
+    create_info.pAttachments = fb->atts.data;
+    create_info.attachmentCount = (u32)fb->atts.size;
+    create_info.width = fb->meta.dims.x;
+    create_info.height = fb->meta.dims.y;
+    create_info.layers = fb->meta.layers;
     int res = vkCreateFramebuffer(vk->inst.device.hndl, &create_info, &vk->alloc_cbs, &fb->hndl);
     if (res != VK_SUCCESS) {
         elog("Failed to create framebuffer with vk err %d", res);

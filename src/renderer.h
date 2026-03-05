@@ -13,6 +13,29 @@ struct ImGuiContext;
 
 namespace nslib
 {
+
+template<typename T>
+struct gpu_resource_entry
+{
+    T gpu_d;
+    u64 key;
+};
+
+template<typename T>
+struct gpu_resource_cache
+{
+    hmap<u64, slot_handle<gpu_resource_entry<T>>> key_lut;
+    slot_pool<gpu_resource_entry<T>> items;
+};
+
+using rframebuffer_entry = gpu_resource_entry<vkr_framebuffer>;
+using rframebuffer_handle = slot_handle<rframebuffer_entry>;
+using rframebuffer_cache = gpu_resource_cache<vkr_framebuffer>;
+
+using rpipeline_entry = gpu_resource_entry<gpu_handle>;
+using rpipeline_handle = slot_handle<rpipeline_entry>;
+using rpipeline_cache = gpu_resource_cache<gpu_handle>;
+
 struct camera;
 struct transform;
 struct rmanifest;
@@ -43,8 +66,10 @@ struct rshader_desc
 struct rbp_info
 {
     render_blueprint_handle bp;
-    rbp_pass_idx pid;
-    u32 subpass_ind{0};
+    // Pass ind
+    idx_t pid;
+    // Subpass ind
+    idx_t spi{0};
 };
 
 struct rblend_info
@@ -95,7 +120,7 @@ struct rtechnique_pass_desc
     rtechnique_desc_flags tmask;
     rshader_handle shader;
     rbp_info bp_info{};
-    geom_buffer_layout_idx geom_buffer_layout;
+    idx_t geom_buffer_layout;
 };
 
 struct rtechnique_desc
@@ -206,8 +231,9 @@ struct rshader_info
 
 struct rtechnique_pass_entry
 {
-    rbp_pass_idx bp_pass;
-    VkPipeline pline{VK_NULL_HANDLE};
+    idx_t subpass;
+    idx_t bp_pass;
+    rpipeline_handle pline;
 };
 
 struct rtechnique_info
@@ -433,27 +459,6 @@ struct rtexture_target_desc
 
 // rbp_pass *create_pass(render_blueprint *bp, const char *pass_t);
 // void add_subpass(rbp_pass *pass);
-template<typename T>
-struct gpu_resource_entry
-{
-    T gpu_d;
-    u64 key;
-};
-
-template<typename T>
-struct gpu_resource_cache
-{
-    hmap<u64, slot_handle<gpu_resource_entry<T>>> key_lut;
-    slot_pool<gpu_resource_entry<T>> items;
-};
-
-using framebuffer_entry = gpu_resource_entry<vkr_framebuffer>;
-using framebuffer_handle = slot_handle<framebuffer_entry>;
-using framebuffer_cache = gpu_resource_cache<vkr_framebuffer>;
-
-using pipeline_entry = gpu_resource_entry<gpu_handle>;
-using pipeline_handle = slot_handle<pipeline_entry>;
-using pipeline_cache = gpu_resource_cache<gpu_handle>;
 
 struct global_descriptor_info
 {
@@ -494,8 +499,8 @@ struct renderer
 
     // Renderer resources
     // TODO: Implement this for smarter pipeline creation
-    pipeline_cache pline_cache;
-    framebuffer_cache fb_cache;
+    rpipeline_cache pline_cache;
+    rframebuffer_cache fb_cache;
 
     slot_pool<rshader_info> shaders;
     slot_pool<rtechnique_info> techniques;
@@ -512,7 +517,7 @@ struct renderer
     global_descriptor_info desc_info{};
 
     // Really a single
-    hmap<rres_id, geom_stream_group_idx> geom_group_id_map{};
+    hmap<rres_id, idx_t> geom_group_id_map{};
     static_array<geom_stream_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
     // Transient pool for image transfers and such
@@ -578,11 +583,10 @@ struct renderer_cfg
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
 
-const vkr_framebuffer *get_or_create_framebuffer(framebuffer_cache *cache, const vkr_framebuffer_key_data &kd, const vkr_context *vk);
 void handle_window_resize(renderer *rndr);
 
-geom_stream_group_idx push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
-geom_stream_group_idx find_geometry_stream_group(renderer *rndr, rres_id group_id);
+idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
+idx_t find_geometry_stream_group(renderer *rndr, rres_id group_id);
 
 // Geometry group desc builder
 geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count);
@@ -609,7 +613,7 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
-void post_instance_update(renderer* rndr, u32 instance_idx, const void* instance_data);
+void post_instance_update(renderer* rndr, u32 idx_t, const void* instance_data);
 void post_material_update(renderer* rndr, u32 material_idx, const void* material_data);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);

@@ -143,25 +143,14 @@ using render_blueprint_handle = slot_handle<render_blueprint>;
 using render_blueprint_ref = slot_item_ref<render_blueprint>;
 
 using gpu_handle = u64;
-
-using rbp_pass_idx = u32;
-using rbp_subpass_idx = u32;
-using rbp_resource_req_idx = u32;
-using rbp_slot_idx = u32;
-using mpass_idx = u32;
-using mview_idx = u32;
-using mrender_job_idx = u32;
-using instance_idx = u32;
-using dset_layout_idx = u32;
-using geom_stream_group_idx = u32;
-using geom_buffer_layout_idx = u32;
+using idx_t = u32;
+using key_t = u64;
 
 #define get_idx_item(array, id) is_valid(id) ? &array[id] : nullptr
 #define get_idxn_item(array, id, n) (id < n) ? &array[id] : nullptr
 #define get_idxn_arr_item(array, id) get_idxn_item(array, id, array.size)
 
-using pipeline_key = u64;
-using framebuffer_key = u64;
+using key_t = u64;
 
 enum rshader_stage_type
 {

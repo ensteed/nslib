@@ -54,31 +54,22 @@ struct rtechnique_draw_info
     rtechnique_dyn_state dstate;
 };
 
-struct rtexture_assignment
-{
-    u32 unit;
-    rtexture_handle tex;
-};
-
 struct mdraw_params
 {
     rgeom_handle geom;
     rmaterial_handle mat;
     rtechnique_draw_info technique;
-    const rtexture_assignment *tex_assignments;
-    sizet tex_assignment_count;
-    instance_idx iid;
 };
 
 struct mdraw_call
 {
     rgeom_handle geom;
-    rmaterial_handle mat;
-    gpu_handle pipeline;
-    static_array<rtexture_handle, RMATERIAL_TEXTURE_COUNT> textures;
-    instance_idx iid;
-    // Mostly for UI
+    u32 mat_idx;
+    u32 pl_idx;
     vec4 scissor_override{};
+    // Computed sort key for the draw call - used to sort the draw calls in a render job before submission.
+    // Feel free to override for custom sorting
+    u64 sort_key;
 };
 
 enum struct mslot_target_type
@@ -214,7 +205,8 @@ struct mpass
 {
     // These need to match exactly in size with the rbp slot count
     static_array<mpass_slot_assignment, MAX_BP_PASS_SLOT_COUNT> slot_assignments;
-    rbp_pass_idx rbp_pid;
+    // Render blueprint pass idx
+    idx_t rbpp;
 
     // Coordinates x,y and width/height of the render area normalized to the framebuffer size
     // Anything outside this area has no render operation
@@ -258,10 +250,15 @@ using render_job_cb = void(const render_job_cb_params &, void *user);
 
 struct mrender_job
 {
-    mpass_idx pid;
-    mview_idx vid;
-    array<mdraw_call> draw_calls;
+    // Manifest pass idx
+    idx_t mp;
+    // Manifest view idx
+    idx_t mv;
+    // Job draw calls
+    array<mdraw_call> dcs;
+    // Callback draw function
     render_job_cb *cb;
+    // Draw function param
     void *cb_user;
 };
 
@@ -297,19 +294,19 @@ void update_instance_data(rmanifest *rm, void *block, sizet block_size);
 void update_material_data(rmanifest *rm, void *block, sizet block_size);
 
 
-mpass_idx push_pass(rmanifest *m,
-                    rbp_pass_idx pid,
+idx_t push_pass(rmanifest *m,
+                    idx_t pid,
                     const rect &norm_render_area = {0.0f, 0.0f, 1.0f, 1.0f},
                     mpass_slot_assignment *assignments = nullptr,
                     sizet assignment_count = 0);
-mpass_idx push_pass(rmanifest *m,
-                    rbp_pass_idx pid,
+idx_t push_pass(rmanifest *m,
+                    idx_t pid,
                     const srect &render_area,
                     mpass_slot_assignment *assignments = nullptr,
                     sizet assignment_count = 0);
-u32 push_slot_assignment(rmanifest *m, mpass_idx pid, const mpass_slot_assignment &sa);
-mview_idx push_view(rmanifest *m, const mview &view);
-mrender_job_idx push_render_job(rmanifest *m, mpass_idx pass, mview_idx view, render_job_cb *cb, void *cb_params);
+u32 push_slot_assignment(rmanifest *m, idx_t pid, const mpass_slot_assignment &sa);
+idx_t push_view(rmanifest *m, const mview &view);
+idx_t push_render_job(rmanifest *m, idx_t pass, idx_t view, render_job_cb *cb, void *cb_params);
 u32 push_draw(rmanifest *m, const mdraw_params &dp);
 
 } // namespace nslib
