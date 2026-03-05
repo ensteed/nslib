@@ -467,14 +467,18 @@ struct global_descriptor_info
     //////////////////////////////////////////////////////
     // For all buffers, each fif has its own subsection //
     //////////////////////////////////////////////////////
+    // Filled every frame with per instance draw call data of the callers choosing
+    vkr_buffer draw_ssbo;
+    // Filled every frame with per view data of user's choosing
+    vkr_buffer view_ssbo;
+    // Filled every frame with per pass data of user's choosing
+    vkr_buffer pass_ssbo;
+    // Per frame data
+    vkr_buffer frame_ubo;
     // All instance data
     vkr_chunked_buffer instance_ssbo;
     // All material data
     vkr_chunked_buffer material_ssbo;
-    // Per frame data
-    vkr_buffer frame_ubo;
-    // Filled every frame with per instance draw call data like material and instance indices, as well as user data for each draw call
-    vkr_buffer draw_ubo;
 };
 
 struct renderer
@@ -548,10 +552,12 @@ struct push_constant_range {
 
 struct rpipeline_layout_cfg
 {
+    sbuffer_cfg draw_ssbo;
+    sbuffer_cfg view_ssbo;
+    sbuffer_cfg pass_ssbo;
+    sbuffer_cfg frame_ubo;
     sbuffer_cfg instance_ssbo;
     sbuffer_cfg material_ssbo;
-    sbuffer_cfg frame_ubo;
-    sbuffer_cfg draw_ubo;
     u32 push_const_range_count;
     const push_constant_range *push_const_ranges;
 };

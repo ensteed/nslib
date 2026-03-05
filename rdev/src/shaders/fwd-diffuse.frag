@@ -4,7 +4,7 @@ layout(location = 1) in vec2 frag_uv;
 
 layout(location = 0) out vec4 out_color;
 
-layout(set = 0, binding = 4) uniform sampler samplers[1];
+layout(set = 0, binding = 6) uniform sampler samplers[1];
 layout(set = 1, binding = 0) uniform texture2DArray tex_pools[2];
 
 // Helper to pick the sampler

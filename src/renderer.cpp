@@ -373,7 +373,7 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     // Terminate our default descriptor layout sets
     ilog("Terminating global desc info");
     vkr_terminate_desc_pool(rndr->desc_info.pool, &rndr->vk);
-    vkr_terminate_buffer(&rndr->desc_info.draw_ubo, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.draw_ssbo, &rndr->vk);
     vkr_terminate_buffer(&rndr->desc_info.frame_ubo, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.material_ssbo, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.instance_ssbo, &rndr->vk);
@@ -393,6 +393,34 @@ intern b32 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
     // array can come in any order.. as long as the binding member is set to the right thing
     u32 bi = 0;
 
+    // Draw buffer built each frame
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_DRAW_SSBO;
+    g_set_main_data_bindings[bi].descriptorCount = 1;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ++bi;
+
+    // Per view data buffer build each frame
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_VIEW_SSBO;
+    g_set_main_data_bindings[bi].descriptorCount = 1;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ++bi;
+
+    // Per pass data buffer built each frame
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_PASS_SSBO;
+    g_set_main_data_bindings[bi].descriptorCount = 1;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ++bi;
+
+    // Frame data filled each frame
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_FRAME_UBO;
+    g_set_main_data_bindings[bi].descriptorCount = 1;
+    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ++bi;
+
     // Instance ssbo
     g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
     g_set_main_data_bindings[bi].descriptorCount = 1;
@@ -405,20 +433,6 @@ intern b32 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
     g_set_main_data_bindings[bi].descriptorCount = 1;
     g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    ++bi;
-
-    // Frame data
-    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_FRAME_UBO;
-    g_set_main_data_bindings[bi].descriptorCount = 1;
-    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
-    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    ++bi;
-
-    // Per instance data
-    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_DRAW_UBO;
-    g_set_main_data_bindings[bi].descriptorCount = 1;
-    g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_ALL;
-    g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     ++bi;
 
     // Immutable samplers
@@ -461,10 +475,12 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     ilog("Initializing global descriptor info");
 
     // Not exactly needed for SSBO but its best to align to 16 bytes anyways
+    asrt(dip.draw_ssbo.block_size % 16 == 0);
+    asrt(dip.view_ssbo.block_size % 16 == 0);
+    asrt(dip.pass_ssbo.block_size % 16 == 0);
     asrt(dip.instance_ssbo.block_size % 16 == 0);
     asrt(dip.material_ssbo.block_size % 16 == 0);
     // Absolute requirement for uniform buffers
-    asrt(dip.draw_ubo.block_size % 16 == 0);
     asrt(dip.frame_ubo.block_size % 16 == 0);
     // Limit our ranges - we can always increase this number if we needed but right now it's unnecessary
     asrt(dip.push_const_range_count <= MAX_PUSH_CONSTANT_RANGES);
@@ -492,6 +508,64 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         return false;
     }
 
+
+    // Setup up shared buffer config
+    vkr_buffer_cfg b_cfg{};
+    b_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    b_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
+    b_cfg.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    b_cfg.alloc_flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    b_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+
+    //////////////////////
+    // Create Draw SSBO //
+    //////////////////////
+    sizet draw_buf_fif_sz = dip.draw_ssbo.block_size * dip.draw_ssbo.block_count;
+    b_cfg.buffer_size = draw_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
+    b_cfg.vma_alloc_name = "draw_ssbo";
+    result = vkr_init_buffer(&rndr->desc_info.draw_ssbo, b_cfg);
+    if (result != err_code::VKR_NO_ERROR) {
+        terminate_global_descriptor_info(rndr);
+        return result;
+    }
+
+    //////////////////////
+    // Create View SSBO //
+    //////////////////////
+    sizet view_buf_fif_sz = dip.view_ssbo.block_size * dip.view_ssbo.block_count;
+    b_cfg.buffer_size = view_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
+    b_cfg.vma_alloc_name = "view_ssbo";
+    result = vkr_init_buffer(&rndr->desc_info.view_ssbo, b_cfg);
+    if (result != err_code::VKR_NO_ERROR) {
+        terminate_global_descriptor_info(rndr);
+        return result;
+    }
+
+    //////////////////////
+    // Create Pass SSBO //
+    //////////////////////
+    sizet pass_buf_fif_sz = dip.pass_ssbo.block_size * dip.pass_ssbo.block_count;
+    b_cfg.buffer_size = pass_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
+    b_cfg.vma_alloc_name = "pass_ssbo";
+    result = vkr_init_buffer(&rndr->desc_info.pass_ssbo, b_cfg);
+    if (result != err_code::VKR_NO_ERROR) {
+        terminate_global_descriptor_info(rndr);
+        return result;
+    }
+
+    //////////////////////
+    // Create Frame UBO //
+    //////////////////////
+    sizet frame_buf_fif_sz = dip.frame_ubo.block_size * dip.frame_ubo.block_count;
+    b_cfg.buffer_size = frame_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
+    b_cfg.vma_alloc_name = "frame_ubo";
+    b_cfg.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    result = vkr_init_buffer(&rndr->desc_info.frame_ubo, b_cfg);
+    if (result != err_code::VKR_NO_ERROR) {
+        terminate_global_descriptor_info(rndr);
+        return result;
+    }
+
     // Set up shared chunked buffer config
     vkr_chunked_buffer_cfg cb_cfg{};
     cb_cfg.buffer_cfg.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
@@ -500,6 +574,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     cb_cfg.buffer_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
     cb_cfg.chunk_tracking_arena = &rndr->persist_fl;
 
+    
     //////////////////////////
     // Create Instance SSBO //
     //////////////////////////
@@ -528,38 +603,6 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         return false;
     }
 
-    // Setup up shared buffer config
-    vkr_buffer_cfg ubo_cfg{};
-    ubo_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-    ubo_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
-    ubo_cfg.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    ubo_cfg.alloc_flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    ubo_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
-
-    //////////////////////
-    // Create Frame UBO //
-    //////////////////////
-    sizet frame_buf_fif_sz = dip.frame_ubo.block_size * dip.frame_ubo.block_count;
-    ubo_cfg.buffer_size = frame_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
-    ubo_cfg.vma_alloc_name = "frame_ubo";
-    result = vkr_init_buffer(&rndr->desc_info.frame_ubo, ubo_cfg);
-    if (result != err_code::VKR_NO_ERROR) {
-        terminate_global_descriptor_info(rndr);
-        return result;
-    }
-
-    /////////////////////
-    // Create Draw UBO //
-    /////////////////////
-    sizet draw_buf_fif_sz = dip.draw_ubo.block_size * dip.draw_ubo.block_count;
-    ubo_cfg.buffer_size = draw_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
-    ubo_cfg.vma_alloc_name = "draw_ubo";
-    result = vkr_init_buffer(&rndr->desc_info.draw_ubo, ubo_cfg);
-    if (result != err_code::VKR_NO_ERROR) {
-        terminate_global_descriptor_info(rndr);
-        return result;
-    }
-
     ////////////////////////////
     // Create descriptor pool //
     ////////////////////////////
@@ -567,8 +610,8 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     vkr_desc_cfg desc_cfg{};
     desc_cfg.max_sets = MAX_FRAMES_IN_FLIGHT + 1;
     // Instance and material ssbos
-    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = 2 * MAX_FRAMES_IN_FLIGHT;
-    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = 2 * MAX_FRAMES_IN_FLIGHT;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = 5 * MAX_FRAMES_IN_FLIGHT;
+    desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = 1 * MAX_FRAMES_IN_FLIGHT;
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = rndr->textures.pools.size;
     desc_cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_SAMPLER] = RSAMPLER_TYPE_COUNT * MAX_FRAMES_IN_FLIGHT;
     result = vkr_init_desc_pool(&rndr->desc_info.pool, desc_cfg, &rndr->vk);
@@ -591,22 +634,53 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     alloc_dset_cfg.set_layouts = layouts;
     vkr_alloc_desc_sets(rndr->desc_info.main_data, alloc_dset_cfg, &rndr->vk);
 
-    // We skip the immutable sampler bidning - why it's -1 here
-    constexpr u32 DESC_WRITE_COUNT = RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS * MAX_FRAMES_IN_FLIGHT + (u32)RDSET_IMAGE_BINDING_COUNT;
-    VkWriteDescriptorSet desc_writes[DESC_WRITE_COUNT]{};
-    VkDescriptorType types[] = {
+    // We don't write out the immutable samplers - they are included in the layout
+    VkDescriptorType main_data_write_types[] = {
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // Draw SSBO
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // View SSBO
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // Pass SSBO
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, // Frame UBO
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // Instance SSBO
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // Material SSBO
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, // Frame UBO
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, // Draw UBO
     };
 
+    constexpr u32 MAIN_DATA_WRITE_FIF_STRIDE = ARR_SIZE(main_data_write_types);
+    constexpr u32 MAIN_DATA_WRITE_COUNT = MAIN_DATA_WRITE_FIF_STRIDE * MAX_FRAMES_IN_FLIGHT;
+    constexpr u32 DESC_WRITE_COUNT = MAIN_DATA_WRITE_COUNT + (u32)RDSET_IMAGE_BINDING_COUNT;
+    VkWriteDescriptorSet desc_writes[DESC_WRITE_COUNT]{};
+
     // First we pile together all of the buffer infos
-    VkDescriptorBufferInfo buffer_infos[RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS * MAX_FRAMES_IN_FLIGHT]{};
+    VkDescriptorBufferInfo buffer_infos[MAIN_DATA_WRITE_COUNT]{};
     for (u32 fif_i = 0; fif_i < MAX_FRAMES_IN_FLIGHT; ++fif_i) {
+        u32 bi_offset = fif_i * MAIN_DATA_WRITE_FIF_STRIDE;
+        u32 bi{0};
+
+        // Draw SSBO
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_DRAW_SSBO;
+        buffer_infos[bi].buffer = rndr->desc_info.draw_ssbo.hndl;
+        buffer_infos[bi].offset = fif_i * draw_buf_fif_sz;
+        buffer_infos[bi].range = draw_buf_fif_sz;
+
+        // View SSBO
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_VIEW_SSBO;
+        buffer_infos[bi].buffer = rndr->desc_info.view_ssbo.hndl;
+        buffer_infos[bi].offset = fif_i * view_buf_fif_sz;
+        buffer_infos[bi].range = view_buf_fif_sz;
+
+        // Pass SSBO
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_PASS_SSBO;
+        buffer_infos[bi].buffer = rndr->desc_info.pass_ssbo.hndl;
+        buffer_infos[bi].offset = fif_i * pass_buf_fif_sz;
+        buffer_infos[bi].range = pass_buf_fif_sz;
+
+        // Frame UBO
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_FRAME_UBO;
+        buffer_infos[bi].buffer = rndr->desc_info.frame_ubo.hndl;
+        buffer_infos[bi].offset = fif_i * frame_buf_fif_sz;
+        buffer_infos[bi].range = frame_buf_fif_sz;
+
         // Instance SSBO
-        u32 bi_offset = fif_i * RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
-        u32 bi = bi_offset + RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
         buffer_infos[bi].buffer = rndr->desc_info.instance_ssbo.buffer.hndl;
         buffer_infos[bi].offset = fif_i * instance_buf_fif_sz;
         buffer_infos[bi].range = instance_buf_fif_sz;
@@ -616,18 +690,6 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         buffer_infos[bi].buffer = rndr->desc_info.material_ssbo.buffer.hndl;
         buffer_infos[bi].offset = fif_i * mat_buf_fif_sz;
         buffer_infos[bi].range = mat_buf_fif_sz;
-
-        // Frame UBO
-        bi = bi_offset + RDSET_MAIN_DATA_BINDING_FRAME_UBO;
-        buffer_infos[bi].buffer = rndr->desc_info.frame_ubo.hndl;
-        buffer_infos[bi].offset = fif_i * frame_buf_fif_sz;
-        buffer_infos[bi].range = frame_buf_fif_sz;
-
-        // Draw UBO
-        bi = bi_offset + RDSET_MAIN_DATA_BINDING_DRAW_UBO;
-        buffer_infos[bi].buffer = rndr->desc_info.draw_ubo.hndl;
-        buffer_infos[bi].offset = fif_i * draw_buf_fif_sz;
-        buffer_infos[bi].range = draw_buf_fif_sz;
     }
 
     // Create all of the image infos for each pool in the texture registry
@@ -644,13 +706,14 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     // Now we create all the descriptor writes referencing the above buffer/image infos..
     for (u32 i = 0; i < DESC_WRITE_COUNT; ++i) {
         auto cur_dw = &desc_writes[i];
-        u32 fif = i / RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS;
-        bool is_main_data = i < (RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS * MAX_FRAMES_IN_FLIGHT);
+        u32 fif = i / MAIN_DATA_WRITE_FIF_STRIDE;
+        u32 bi = i % MAIN_DATA_WRITE_FIF_STRIDE;
+        bool is_main_data = i < MAIN_DATA_WRITE_COUNT;
         cur_dw->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         cur_dw->dstSet = is_main_data ? rndr->desc_info.main_data[fif] : rndr->desc_info.images;
-        cur_dw->dstBinding = is_main_data ? i % RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS : 0;
+        cur_dw->dstBinding = is_main_data ? bi : 0;
         cur_dw->dstArrayElement = 0;
-        cur_dw->descriptorType = is_main_data ? types[i % RDSET_MAIN_DATA_BINDING_IMMUTABLE_SAMPLERS] : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        cur_dw->descriptorType = is_main_data ? main_data_write_types[bi] : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         cur_dw->descriptorCount = is_main_data ? 1 : rndr->textures.pools.size;
         cur_dw->pBufferInfo = is_main_data ? &buffer_infos[i] : nullptr;
         cur_dw->pImageInfo = !is_main_data ? image_infos.data : nullptr;

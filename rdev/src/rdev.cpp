@@ -55,10 +55,12 @@ const rtexture_pool_cfg TPOOL_CFGS[] = {
 };
 
 rpipeline_layout_cfg PL_LAYOUT_CFG{
-    .instance_ssbo{1000, 64},
-    .material_ssbo{256, 64},
-    .frame_ubo{1, 64},
-    .draw_ubo{1, 32},
+    .draw_ssbo{1000, sizeof(draw_ssbo_data)},
+    .view_ssbo{10, sizeof(view_ssbo_data)},
+    .pass_ssbo{10, sizeof(pass_ssbo_data)},
+    .frame_ubo{1, sizeof(frame_ubo_data)},
+    .instance_ssbo{1000, sizeof(instance_ssbo_data)},
+    .material_ssbo{256, sizeof(material_ssbo_data)},
     .push_const_range_count = 0,
     .push_const_ranges = nullptr,
 };

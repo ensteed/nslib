@@ -48,6 +48,33 @@ struct material_ssbo_data {
     vec4 col;
 };
 
+struct draw_ssbo_data {
+    u32 material_idx;
+    u32 instance_idx;
+    svec2 suser;
+    vec4 fuser;
+};
+
+struct view_ssbo_data {
+    mat4 view;
+    mat4 proj;
+    mat4 view_proj;
+    mat4 inv_view_proj;
+};
+
+struct pass_ssbo_data {
+    vec2 resolution;
+    vec2 inv_resolution;
+};
+
+// This data is used in uniform buffer - needs to be aligned to 16 bytes
+struct frame_ubo_data {
+    float elapsed;
+    float dt;
+    u32 frame_count;
+    u32 padding;
+};
+
 struct rgeom_vert_pos_col
 {
     vec3 pos;

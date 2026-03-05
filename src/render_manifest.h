@@ -11,32 +11,6 @@ struct renderer;
 struct rbuffer_target_fif;
 struct rtexture_target_fif;
 
-// This data is used in uniform buffer - needs to be aligned to 16 bytes
-struct draw_ubo_data {
-    u32 material_idx;
-    u32 instance_idx;
-    // These padd the struct to 32 total bytes and allow for a few extra values to go to each draw instance
-    svec2 suser;
-    vec4 fuser;
-};
-
-// This data is used in uniform buffer - needs to be aligned to 16 bytes
-struct frame_ubo_data {
-    mat4 view;
-    mat4 proj;
-    mat4 view_proj;
-    mat4 inv_view_proj;
-
-    float elapsed;
-    float dt;
-    u32 frame_count;
-    u32 padding;
-
-    vec2 resolution;
-    vec2 inv_resolution;
-};
-
-
 struct rstencil_op_state
 {
     rstencil_op on_fail;
