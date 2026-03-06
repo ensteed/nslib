@@ -370,6 +370,40 @@ intern void update_global_target_state(rmanifest *m, u32 fif)
     }
 }
 
+intern void sort_draw_list(mrender_job *rjob) {
+    sizet n = rjob->dcs.size;
+    if (n <= 1) return;
+
+    mdraw_call *src = rjob->dcs.data;
+    mdraw_call *tmp = mem_alloc<mdraw_call>(rjob->dcs.arena, n);
+
+    // LSD radix sort: 8 passes over 8-bit digits of the 64-bit sort_key.
+    // After 8 swaps (even), src is back to rjob->dcs.data — no copy-back needed.
+    for (u32 byte = 0; byte < 8; ++byte) {
+        u32 shift = byte * 8;
+
+        u32 counts[256]{};
+        for (sizet i = 0; i < n; ++i)
+            ++counts[(u8)(src[i].sort_key >> shift)];
+
+        // Exclusive prefix sum
+        u32 total = 0;
+        for (u32 b = 0; b < 256; ++b) {
+            u32 c = counts[b];
+            counts[b] = total;
+            total += c;
+        }
+
+        // Scatter
+        for (sizet i = 0; i < n; ++i)
+            tmp[counts[(u8)(src[i].sort_key >> shift)]++] = src[i];
+
+        mdraw_call *swap_ptr = src;
+        src = tmp;
+        tmp = swap_ptr;
+    }
+}
+
 intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
 {
     int err = vkr_begin_cmd_buf(buf, {});
@@ -411,6 +445,9 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
                                ? get_vk_rect_from_normalized(mview->norm_scissor, fb->meta.dims)
                                : get_vk_rect(mview->scissor);
         vkCmdSetScissor(buf, 0, 1, &scissor);
+
+        // Sort it baby boo
+        sort_draw_list(cur_rj);
 
         if (cur_rj->cb) {
             render_job_cb_params p{};
