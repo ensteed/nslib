@@ -13,6 +13,7 @@ namespace nslib
 {
 
 intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
+intern constexpr sizet DEFAULT_RJOB_DRAW_CALL_CAPACITY = 64;
 
 struct render_job_cb_params
 {
@@ -29,6 +30,8 @@ struct render_job_cb_params
     // Geometry stream group for this pass
     const geom_stream_group *geom_gp;
     const global_descriptor_info *desc_info{};
+    // Frame in flight index
+    idx_t fif;
     
     // Job draw calls
     const array<mdraw_call> *dcs;
@@ -64,13 +67,17 @@ void draw_geometry(const render_job_cb_params &p, void *)
     vkCmdBindIndexBuffer(cb, p.geom_gp->indice_stream.buffer.hndl, 0, get_vk_index_type(sizeof(ind_t)));
 
     // Bind global descriptor sets
-    
+    VkDescriptorSet desc_sets[RDSET_LAYOUT_COUNT]{};
+    desc_sets[RDSET_LAYOUT_MAIN_DATA] = p.desc_info->main_data[p.fif];
+    desc_sets[RDSET_LAYOUT_IMAGES] = p.desc_info->images;
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p.desc_info->pline_layout, 0, RDSET_LAYOUT_COUNT, desc_sets, 0, nullptr);
 
     for (u32 dci = 0; dci < p.dcs->size; ++dci) {
         const mdraw_call &dc = p.dcs->data[dci];
         const rgeom_info *geom = &p.geometry->slots[dc.geom].item;
         const rmaterial_info *mat = &p.materials->slots[dc.mat].item;
         const rpipeline_entry *pl = &p.plines->items.slots[dc.pl].item;
+        
         asrt(geom && mat && pl);
     }    
 }
@@ -83,7 +90,7 @@ void draw_imgui(const render_job_cb_params &p, void *)
 }
 #endif
 
-intern u32 get_fif_ind(renderer *rndr)
+intern idx_t get_fif_ind(renderer *rndr)
 {
     return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
 }
@@ -463,7 +470,7 @@ intern void sort_draw_list(mrender_job *rjob) {
     }
 }
 
-intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
+intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
 {
     int err = vkr_begin_cmd_buf(buf, {});
     if (err != err_code::VKR_NO_ERROR) {
@@ -508,6 +515,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
             p.materials = &m->rndr->materials;
             p.plines = &m->rndr->pline_cache;
             p.geom_gp = &m->rndr->geom_groups[gsg];
+            p.fif = fif;
             cur_rj->cb(p, cur_rj->cb_user);
         }
         else {
@@ -529,35 +537,24 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
     return true;
 }
 
-idx_t push_pass_helper(rmanifest *m, idx_t pid, mpass_slot_assignment *assignments, sizet assignment_count)
+idx_t push_pass(rmanifest *m, const mpass_params &p)
 {
     idx_t pind = (idx_t)m->passes.size;
     arr_resize(&m->passes, pind + 1);
-    m->passes[pind].rbpp = pid;
-    if (assignment_count && assignment_count != 0) {
+    m->passes[pind].rbpp = p.rbpp;
+    if (p.assignments && p.assignment_count != 0) {
         auto bp = get_render_blueprint(m->rndr, m->rbp);
-        asrt(assignment_count == bp->passes[pid].slots.size);
-        arr_resize(&m->passes[pind].slot_assignments, assignment_count);
+        asrt(p.assignment_count == bp->passes[p.rbpp].slots.size);
+        arr_resize(&m->passes[pind].slot_assignments, p.assignment_count);
         for (sizet i = 0; i < m->passes[pind].slot_assignments.size; ++i) {
-            m->passes[pind].slot_assignments[i] = assignments[i];
+            m->passes[pind].slot_assignments[i] = p.assignments[i];
         }
     }
-    return pind;
-}
-
-idx_t push_pass(rmanifest *m, idx_t pid, const rect &norm_render_area, mpass_slot_assignment *assignments, sizet assignment_count)
-{
-    auto pind = push_pass_helper(m, pid, assignments, assignment_count);
-    m->passes[pind].ra_size_mode = rect_size_mode::NORMALIZED;
-    m->passes[pind].norm_render_area = norm_render_area;
-    return pind;
-}
-
-idx_t push_pass(rmanifest *m, idx_t pid, const srect &render_area, mpass_slot_assignment *assignments, sizet assignment_count)
-{
-    auto pind = push_pass_helper(m, pid, assignments, assignment_count);
-    m->passes[pind].ra_size_mode = rect_size_mode::ABSOLUTE;
-    m->passes[pind].render_area = render_area;
+    // SSBO per pass data update
+    sizet blocksz = m->rndr->desc_info.pass_ssbo.block_size;
+    sizet buf_offset = pind * blocksz;
+    void *dst = (void*)((sizet)m->rndr->desc_info.pass_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    memcpy(dst, p.pass_sdata, blocksz);
     return pind;
 }
 
@@ -572,25 +569,31 @@ u32 push_slot_assignment(rmanifest *m, idx_t pid, const mpass_slot_assignment &s
     return sa_ind;
 }
 
-idx_t push_view(rmanifest *m, const mview &view)
+idx_t push_view(rmanifest *m, const mview_params &p)
 {
     idx_t ind = (idx_t)m->views.size;
-    arr_push_back(&m->views, view);
+    arr_push_back(&m->views, p.vdata);
+
+    // SSBO per pass data update
+    sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
+    sizet buf_offset = ind * blocksz;
+    void *dst = (void*)((sizet)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    memcpy(dst, p.view_sdata, blocksz);
     return ind;
 }
 
-idx_t push_render_job(rmanifest *m, idx_t pass, idx_t view, render_job_cb *cb, void *cb_params)
+idx_t push_render_job(rmanifest *m, const mrender_job_params &p)
 {
     idx_t ind = (idx_t)m->jobs.size;
-    auto rj = arr_emplace_back(&m->jobs, pass, view, array<mdraw_call>{}, cb, cb_params);
-    arr_init(&rj->dcs, m->jobs.arena, 64);
+    auto rj = arr_emplace_back(&m->jobs, p.pass, p.view, array<mdraw_call>{}, p.cb, p.cb_user);
+    arr_init(&rj->dcs, m->jobs.arena, DEFAULT_RJOB_DRAW_CALL_CAPACITY);
     return ind;
 }
 
 u32 push_draw(rmanifest *m, const mdraw_params &dp)
 {
     u32 push_cnt{0};
-    rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.technique.hndl);
+    rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.tech);
     for (u32 i = 0; i < tptr->rpass_plines.size; ++i) {
         auto cur_pl = &tptr->rpass_plines[i];
         for (u32 rji = 0; rji < m->jobs.size; ++rji) {
@@ -600,10 +603,11 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 u32 dc_ind = (u32)cur_rj->dcs.size;
                 arr_resize(&cur_rj->dcs, dc_ind + 1);
                 mdraw_call *cur_d = &cur_rj->dcs[dc_ind];
-                cur_d->geom = dp.geom;
-                cur_d->mat_idx = dp.mat.si;
-                cur_d->pl_idx = cur_pl->pline.si;
-                cur_d->sort_key = ((u64)cur_d->pl_idx << 32) | (u64)cur_d->mat_idx;
+                cur_d->geom = dp.geom.si;
+                cur_d->mat = dp.mat.si;
+                cur_d->pl = cur_pl->pline.si;
+                cur_d->sort_key = ((u64)cur_d->pl << 32) | (u64)cur_d->mat;
+                cur_d->dstate = cur_pl->dstate;
                 ++push_cnt;
             }
         }
@@ -611,14 +615,14 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
     return push_cnt;
 }
 
-rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
+rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
 {
     PROFILE_SCOPE("begin_render_frame");
     ptimer_split(&rndr->pt);
     auto dev = &rndr->vk.inst.device;
 
     // Update finished frames which is used to get the current frame
-    u32 fif = get_fif_ind(rndr);
+    idx_t fif = get_fif_ind(rndr);
     auto *cur_fif = &rndr->fifs[fif];
 
     // Window resize
@@ -688,8 +692,14 @@ rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp)
 
     rmanifest *m = create_manifest(rndr, fif);
     m->rndr = rndr;
-    m->rbp = bp;
-
+    m->rbp = p.rbp;
+    
+    // UBO per pass frame update - the block size was already aligned to UBO min offset so no need to do any alignment
+    // funny business here
+    sizet blocksz;
+    sizet buf_offset = fif * m->rndr->desc_info.frame_ubo.block_size;
+    void *dst = (void*)((sizet)m->rndr->desc_info.frame_ubo.buffer.mem_info.pMappedData + buf_offset);
+    memcpy(dst, p.frame_sdata, blocksz);
     return m;
 }
 

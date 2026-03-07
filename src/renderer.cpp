@@ -375,10 +375,10 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     vkr_terminate_desc_pool(rndr->desc_info.pool, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.material_ssbo, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.instance_ssbo, &rndr->vk);
-    vkr_terminate_buffer(&rndr->desc_info.frame_ubo, &rndr->vk);
-    vkr_terminate_buffer(&rndr->desc_info.pass_ssbo, &rndr->vk);
-    vkr_terminate_buffer(&rndr->desc_info.view_ssbo, &rndr->vk);
-    vkr_terminate_buffer(&rndr->desc_info.draw_ssbo, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.frame_ubo.buffer, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.pass_ssbo.buffer, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.view_ssbo.buffer, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.draw_ssbo.buffer, &rndr->vk);
     vkr_terminate_desc_set_layouts(rndr->desc_info.dset_layouts, RDSET_LAYOUT_COUNT, &rndr->vk);
     vkr_terminate_pipeline_layout(rndr->desc_info.pline_layout, &rndr->vk);
 }
@@ -523,9 +523,10 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     // Create Draw SSBO //
     //////////////////////
     sizet draw_buf_fif_sz = dip.draw_ssbo.block_size * dip.draw_ssbo.block_count;
+    rndr->desc_info.draw_ssbo.block_size = dip.draw_ssbo.block_size;
     b_cfg.buffer_size = draw_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "draw_ssbo";
-    result = vkr_init_buffer(&rndr->desc_info.draw_ssbo, b_cfg);
+    result = vkr_init_buffer(&rndr->desc_info.draw_ssbo.buffer, b_cfg);
     if (result != err_code::VKR_NO_ERROR) {
         terminate_global_descriptor_info(rndr);
         return result;
@@ -535,9 +536,10 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     // Create View SSBO //
     //////////////////////
     sizet view_buf_fif_sz = dip.view_ssbo.block_size * dip.view_ssbo.block_count;
+    rndr->desc_info.view_ssbo.block_size = dip.view_ssbo.block_size;
     b_cfg.buffer_size = view_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "view_ssbo";
-    result = vkr_init_buffer(&rndr->desc_info.view_ssbo, b_cfg);
+    result = vkr_init_buffer(&rndr->desc_info.view_ssbo.buffer, b_cfg);
     if (result != err_code::VKR_NO_ERROR) {
         terminate_global_descriptor_info(rndr);
         return result;
@@ -547,9 +549,10 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     // Create Pass SSBO //
     //////////////////////
     sizet pass_buf_fif_sz = dip.pass_ssbo.block_size * dip.pass_ssbo.block_count;
+    rndr->desc_info.pass_ssbo.block_size = dip.pass_ssbo.block_size;
     b_cfg.buffer_size = pass_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "pass_ssbo";
-    result = vkr_init_buffer(&rndr->desc_info.pass_ssbo, b_cfg);
+    result = vkr_init_buffer(&rndr->desc_info.pass_ssbo.buffer, b_cfg);
     if (result != err_code::VKR_NO_ERROR) {
         terminate_global_descriptor_info(rndr);
         return result;
@@ -562,10 +565,11 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     // ones offset by FIF_SIZE * fif_i
     sizet ubo_min_offset = rndr->vk.inst.pdev_info.props.limits.minUniformBufferOffsetAlignment;
     sizet frame_buf_fif_sz = align_up(dip.frame_ubo.block_size * dip.frame_ubo.block_count, ubo_min_offset);
+    rndr->desc_info.frame_ubo.block_size = dip.frame_ubo.block_size;
     b_cfg.buffer_size = frame_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "frame_ubo";
     b_cfg.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    result = vkr_init_buffer(&rndr->desc_info.frame_ubo, b_cfg);
+    result = vkr_init_buffer(&rndr->desc_info.frame_ubo.buffer, b_cfg);
     if (result != err_code::VKR_NO_ERROR) {
         terminate_global_descriptor_info(rndr);
         return result;
@@ -662,25 +666,25 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
 
         // Draw SSBO
         bi = bi_offset + RDSET_MAIN_DATA_BINDING_DRAW_SSBO;
-        buffer_infos[bi].buffer = rndr->desc_info.draw_ssbo.hndl;
+        buffer_infos[bi].buffer = rndr->desc_info.draw_ssbo.buffer.hndl;
         buffer_infos[bi].offset = fif_i * draw_buf_fif_sz;
         buffer_infos[bi].range = draw_buf_fif_sz;
 
         // View SSBO
         bi = bi_offset + RDSET_MAIN_DATA_BINDING_VIEW_SSBO;
-        buffer_infos[bi].buffer = rndr->desc_info.view_ssbo.hndl;
+        buffer_infos[bi].buffer = rndr->desc_info.view_ssbo.buffer.hndl;
         buffer_infos[bi].offset = fif_i * view_buf_fif_sz;
         buffer_infos[bi].range = view_buf_fif_sz;
 
         // Pass SSBO
         bi = bi_offset + RDSET_MAIN_DATA_BINDING_PASS_SSBO;
-        buffer_infos[bi].buffer = rndr->desc_info.pass_ssbo.hndl;
+        buffer_infos[bi].buffer = rndr->desc_info.pass_ssbo.buffer.hndl;
         buffer_infos[bi].offset = fif_i * pass_buf_fif_sz;
         buffer_infos[bi].range = pass_buf_fif_sz;
 
         // Frame UBO
         bi = bi_offset + RDSET_MAIN_DATA_BINDING_FRAME_UBO;
-        buffer_infos[bi].buffer = rndr->desc_info.frame_ubo.hndl;
+        buffer_infos[bi].buffer = rndr->desc_info.frame_ubo.buffer.hndl;
         buffer_infos[bi].offset = fif_i * frame_buf_fif_sz;
         buffer_infos[bi].range = frame_buf_fif_sz;
 

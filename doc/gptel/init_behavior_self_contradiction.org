@@ -1,0 +1,248 @@
+:PROPERTIES:
+:GPTEL_MODEL: gpt-5.2
+:GPTEL_BACKEND: OpenAI
+:GPTEL_SYSTEM: You are a large language model living in Emacs and a helpful assistant. Respond concisely.
+:GPTEL_TOOLS:
+:GPTEL_BOUNDS: ((response (1224 2480) (2710 3800) (3960 5457) (5932 7757) (8550 9575) (9611 9868) (9902 11477)))
+:END:
+
+*** Let's say I have some structs
+
+#+begin_src cpp
+  struct rtechnique_dyn_state
+  {
+      rtechnique_dyn_state_flags dflags;
+      rstencil_op_state stencil_front;
+      rstencil_op_state stencil_back;
+      rdepth_bias depth_b;
+      vec4 blend_ops;
+      // Should almost never be set to something different
+      rfront_face_winding ffw{DEFAULT_FRONT_FACE_WINDING};
+  };
+
+  struct mdraw_rtechnique_info
+  {
+      rtechnique_handle hndl;
+      rtechnique_dyn_state dstate;
+  };
+    
+  struct mdraw_params
+  {
+      rgeom_handle geom;
+      rmaterial_handle mat;
+      mdraw_rtechnique_info technique;
+      mbuffer_write_info idraw_data;
+  };
+#+end_src
+
+I understand that if I do
+#+begin_src cpp
+  mdraw_params dp{};
+#+end_src
+
+It will initialize the ffw in rtechnique dyn state to the value specified in the struct (DEFAUILT_FRONT_FACE_WINDING). But if I do
+
+#+begin_src cpp
+  mdraw_params dp;
+#+end_src
+
+will it still?
+
+No.
+
+=rfront_face_winding ffw{DEFAULT_FRONT_FACE_WINDING};= is a /default member initializer/. It is used *only when that member is not otherwise initialized* during /construction/.
+
+- =mdraw_params dp{};= performs *value-initialization* of =dp=, which (for an aggregate like this) means aggregate initialization where members are initialized from ={}=:
+  - members with no explicit initializer in ={}= get value-initialized (e.g., zero-initialized for scalars)
+  - members with a *default member initializer* (like =ffw=) get that default
+  So =ffw= becomes =DEFAULT_FRONT_FACE_WINDING=.
+
+- =mdraw_params dp;= is *default-initialization*. For an aggregate with no user-provided constructors, this means *no initialization is performed* for its members. So:
+  - fundamental/scalar members are *indeterminate*
+  - subobjects are default-initialized similarly
+  - and crucially: since no aggregate initialization happens, =ffw{DEFAULT_FRONT_FACE_WINDING}= is *not applied* here.
+
+So =dp.technique.dstate.ffw= is *uninitialized/indeterminate* in the =mdraw_params dp;= case (unless something else in your types makes it initialized, e.g., a user-defined constructor somewhere).
+
+If you want it reliably set, use =mdraw_params dp{};= (or provide constructors).
+
+*** Okay, but in the first case, the member "technique" does not have an initializer specified even though it's struct type does for the member ffw. Despite this, the first case will still initialize ffw to the provided value?
+
+Yes.
+
+With =mdraw_params dp{};=, you’re doing aggregate initialization with an empty initializer list. That means:
+
+- =mdraw_params=’s members are initialized in order.
+- For a member like =technique= where you didn’t provide an explicit initializer, it is *value-initialized*.
+- Since =mdraw_rtechnique_info= is itself an aggregate, value-initializing it behaves like aggregate-initializing it with ={}=.
+- That, in turn, value-initializes its member =dstate=.
+- And value-initializing =rtechnique_dyn_state= also behaves like aggregate-initializing it with ={}=.
+
+At that deepest level, when an aggregate member has a *default member initializer* (your =ffw{DEFAULT_FRONT_FACE_WINDING}=), and the aggregate initialization doesn’t explicitly initialize that member, the default member initializer is used.
+
+So even though =technique= isn’t explicitly mentioned at the top level, the “={}= cascades” through the nested aggregates, and =ffw= ends up initialized to =DEFAULT_FRONT_FACE_WINDING=.
+
+In contrast, =mdraw_params dp;= performs no such cascading initialization, so =ffw= is not set.
+
+*** So, doing {} after a struct member is kind of pointless, because in case 1 that would happen automatically, and in case two, it wouldn't happen anyways.
+
+It’s not pointless; it changes behavior in an important way.
+
+*** Default member initializer (=ffw{DEFAULT_FRONT_FACE_WINDING}=)
+This is used when that member is *not otherwise initialized* /as part of construction/.
+
+*** Case A: =mdraw_params dp{};=
+This /does/ “construct” all subobjects via value-/aggregate-initialization all the way down. So default member initializers like =ffw{...}= get applied.
+
+*** Case B: =mdraw_params dp;=
+This does *not* initialize the object (for an aggregate with no ctor). Many members are left indeterminate, and there’s no aggregate initialization happening—so default member initializers like =ffw{...}= are *not applied*.
+
+So the ={...}= on a member is /not/ “pointless”; it’s valuable because it provides a sensible default *when the object is actually initialized* (e.g., via ={}= or designated initializers or a constructor call). It just doesn’t “rescue” you from leaving the whole aggregate uninitialized with =T t;=.
+
+If you want “always initialized even for =T t;=”, you need a user-provided default constructor (or make it non-aggregate and ensure construction happens), e.g.:
+
+#+begin_src cpp
+struct mdraw_params {
+  mdraw_params() = default; // now T t; will run construction
+  // ...
+};
+#+end_src
+
+But note: even with a defaulted constructor, members without default member initializers still won’t be zeroed unless you also give them defaults or explicitly initialize them. The reliable “everything zero + apply defaults” pattern remains =T t{};=.
+
+*** What I mean is that, its kind of pointless to make a struct that has members set to the zero case - {}, not {...}. I understand {...} is still useful for the first case, but a zero initializer would happen by default when the struct is instantiated with "my_struct s{};" (so its members that should be zeroed wouldn't need anything), and if the struct is instantiated with "my_struct s;" then if a member had "{}" it wouldn't be zero initialized in that case anyways.
+
+A member initializer of ={}= (e.g. =int x{};=) is still useful; it’s just solving a different problem than =T s{};=.
+
+*** What =member{}= buys you
+It guarantees that member gets value-initialized /whenever the object is actually constructed/, even if the enclosing object is not brace-initialized.
+
+Example:
+
+#+begin_src cpp
+struct S {
+  int x{};   // default member initializer
+  int y;     // no default
+};
+
+S a{};  // x=0, y=0
+S b;    // x=0, y=indeterminate   (because x has a default member initializer)
+#+end_src
+
+So =x{}= *does take effect in the =S b;= case*, unlike your earlier nested-aggregate example where you were default-initializing an aggregate with no constructors and no initialization happening at all. The key distinction:
+
+- =S b;= still /default-initializes/ =S=. Default member initializers are used during default-initialization.
+- What /doesn’t/ happen in =S b;= is implicit zeroing of members that have *no* default member initializer.
+
+*** Why your earlier conclusion happened
+In your earlier setup, =mdraw_params dp;= leaves subobjects uninitialized because they are aggregates with no initialization, so for members without default member initializers you get indeterminate values. But for a member that /does/ have a default member initializer (=ffw{...}=), that initializer is still applied when that subobject is actually default-initialized as part of constructing the containing object.
+
+*** So is =member{}= pointless?
+No. It’s useful when you want a specific member to have a safe default even if someone writes =T t;= instead of =T t{};=.
+
+What is true is:
+- If your coding rule is “always write =T t{};=”, then many =member{}= initializers become redundant for “zeroing” purposes.
+- But they still serve as self-documenting defaults and protect you from accidental =T t;= in other code.
+
+*** Okay so, if I had:
+#+begin_src
+#+begin_src cpp
+  struct rtechnique_dyn_state
+  {
+      rtechnique_dyn_state_flags dflags;
+      rstencil_op_state stencil_front;
+      rstencil_op_state stencil_back;
+      rdepth_bias depth_b;
+      vec4 blend_ops;
+      // Should almost never be set to something different
+      rfront_face_winding ffw{DEFAULT_FRONT_FACE_WINDING};
+  };
+
+  struct mdraw_rtechnique_info
+  {
+      rtechnique_handle hndl;
+      rtechnique_dyn_state dstate{};
+  };
+    
+  struct mdraw_params
+  {
+      rgeom_handle geom;
+      rmaterial_handle mat;
+      mdraw_rtechnique_info technique{};
+      mbuffer_write_info idraw_data;
+  };
+#+end_src
+
+instead, then "mdraw_params d;" would still set ffw to the default specified because if the braces next to technique and dstate?
+
+No. =mdraw_params d;= still will *not* apply those ={}=
+member initializers.
+
+Those ={}=
+initializers on =technique{}= and =dstate{}=
+are *default member initializers*, and they are only used when the containing object is actually /initialized/ (e.g. =mdraw_params d{};=, or =mdraw_params d = {};=, or if a constructor initializes/omits them).
+
+For aggregates with no user-provided constructors:
+
+- =mdraw_params d;= → *default-initialization* → members are *not initialized* (for built-in types), and default member initializers are *not run*.
+- =mdraw_params d{};= → *value/aggregate-initialization* → uses the member initializers (=technique{}= → =dstate{}= → =ffw{DEFAULT...}=), so =ffw= gets the default.
+
+So the braces on =technique{}= / =dstate{}=
+help in the =d{}= case, not in the =d;= case.
+
+If you want =mdraw_params d;= to reliably initialize everything, give =mdraw_params= a user-provided default constructor (and initialize what you want inside it), or enforce always writing ={}= at the point of construction.
+
+*** But you litereally just said:
+#+begin_src cpp
+struct S {
+  int x{};   // default member initializer
+  int y;     // no default
+};
+
+S a{};  // x=0, y=0
+S b;    // x=0, y=indeterminate   (because x has a default member initializer)
+#+end_src
+
+So =x{}= *does take effect in the =S b;= case*
+
+You are contradicting yourself
+
+You’re right to call that out — I misstated the rule earlier.
+
+Correct rule:
+
+- For a class type object, =T t;= performs *default-initialization*.
+- During default-initialization, *default member initializers /are used*/ (for members that aren’t otherwise initialized by a constructor).
+- What does /not/ happen with =T t;= is implicit zeroing of members *without* default member initializers.
+
+So:
+
+*** Your modified code
+#+begin_src cpp
+struct mdraw_rtechnique_info {
+    rtechnique_handle hndl;
+    rtechnique_dyn_state dstate{};   // default member initializer
+};
+
+struct mdraw_params {
+    rgeom_handle geom;
+    rmaterial_handle mat;
+    mdraw_rtechnique_info technique{};  // default member initializer
+    mbuffer_write_info idraw_data;
+};
+#+end_src
+
+*** What happens with =mdraw_params d;=
+- =technique{}= *does run*, because it’s a default member initializer.
+- That value-initializes =technique=, which uses =dstate{}=.
+- That value-initializes =dstate=, which uses =ffw{DEFAULT_FRONT_FACE_WINDING}=.
+- Therefore *=ffw= will be set to =DEFAULT_FRONT_FACE_WINDING=*.
+
+But note:
+- =geom=, =mat=, and =idraw_data= (unless they themselves have default member initializers or constructors doing initialization) will still be default-initialized, which for fundamental/handle-like types may mean *indeterminate* values.
+
+*** Summary
+- Yes: adding =technique{}= and =dstate{}= makes =mdraw_params d;= initialize that chain down to =ffw=.
+- No: it does /not/ automatically zero/initialize the other members unless they also have defaults (or their types’ constructors do).
+
+*** 

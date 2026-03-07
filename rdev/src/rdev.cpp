@@ -399,24 +399,42 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     auto bp_main_pass = find_rbp_pass(bp, MAIN_PASS_ID);
     auto imgui_pass = find_rbp_pass(bp, IMGUI_PASS_ID);
 
-    auto mp_id = push_pass(m, bp_main_pass);
+    pass_ssbo_data pdata{};
+
+    auto text_target = find_rtexture_target(m->rndr, SWAPCHAIN_ID);
+    auto text_target_ptr = get_rtexture_target(m->rndr, text_target);
+    asrt(text_target_ptr);
+    pdata.resolution = text_target_ptr->cfg.dims.xy;
+    pdata.inv_resolution = 1.0f / pdata.resolution;
+
+    mpass_params p{};
+    p.rbpp = bp_main_pass;
+    p.pass_sdata = &pdata;
+    auto mp_id = push_pass(m, p);
     push_slot_assignment(m, mp_id, MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0f, 1.0f, 1.0f, 1.0f)));
     push_slot_assignment(m, mp_id, MPASS_TEXTURE_SA_DS(find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID), 1.0f, 0));
 
-    auto imgui_id = push_pass(m, imgui_pass);
+    idx_t imgui_id = push_pass(m, {.rbpp = imgui_pass});
     push_slot_assignment(m, imgui_id, MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0f, 1.0f, 1.0f, 1.0f)));
 
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
     auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
 
-    mview gui_view{cam->proj, cam->view};
-    gui_view.norm_scissor = {0.25, 0.25, 0.5, 0.5};
+    view_ssbo_data vdata{};
+    vdata.view = cam->view;
+    vdata.proj = cam->proj;
+    vdata.view_proj = cam->view * cam->proj;
+    vdata.inv_view_proj = math::inverse(vdata.view_proj);
 
-    auto view_id = push_view(m, {cam->proj, cam->view});
-    auto gui_view_id = push_view(m, gui_view);
+    mview_params vp{};
+    vp.view_sdata = &vdata;
+    vp.vdata.norm_scissor = {0.25, 0.25, 0.5, 0.5};
 
-    push_render_job(m, mp_id, view_id, [](const render_job_cb_params &, void *) {}, nullptr);
-    push_render_job(m, imgui_id, gui_view_id, draw_imgui, nullptr);
+    auto view_id = push_view(m, vp);
+    auto imgui_view_id = push_view(m, {});
+
+    push_render_job(m, {.pass = mp_id, .view = view_id, .cb = draw_geometry, .cb_user = nullptr});
+    push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
 }
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
@@ -435,8 +453,13 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     f64 alpha = app->accumulater / 0.010;
     PROFILE_END();
 
+    frame_ubo_data fdata{};
+    fdata.frame_count = app->rndr.finished_frames;
+    fdata.dt = ctxt->time_pts.dt;
+    fdata.elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
+
     auto bp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
-    rmanifest *m = begin_render_frame(&app->rndr, bp.hndl);
+    rmanifest *m = begin_render_frame(&app->rndr, {.rbp = bp.hndl, .frame_sdata = &fdata});
     if (!m) return true;
 
     build_manifest(m, app);

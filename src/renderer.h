@@ -5,6 +5,7 @@
 #include "containers/slot_pool.h"
 #include "vkr_context.h"
 #include "render_blueprint.h"
+#include "render_manifest.h"
 #include "rformat.h"
 #include "rtexture_registry.h"
 #include "vkr_chunked_buffer.h"
@@ -38,8 +39,6 @@ using rpipeline_cache = gpu_resource_cache<gpu_handle>;
 
 struct camera;
 struct transform;
-struct rmanifest;
-struct render_job_cb_params;
 struct rsubgeom_range
 {
     // Indice offset
@@ -234,6 +233,7 @@ struct rtechnique_pass_entry
     idx_t subpass;
     idx_t bp_pass;
     rpipeline_handle pline;
+    rtechnique_dyn_state dstate;
 };
 
 struct rtechnique_info
@@ -460,6 +460,11 @@ struct rtexture_target_desc
 // rbp_pass *create_pass(render_blueprint *bp, const char *pass_t);
 // void add_subpass(rbp_pass *pass);
 
+struct desc_block_buffer {
+    vkr_buffer buffer;
+    sizet block_size;
+};
+
 struct global_descriptor_info
 {
     VkDescriptorSetLayout dset_layouts[RDSET_LAYOUT_COUNT];
@@ -473,13 +478,13 @@ struct global_descriptor_info
     // For all buffers, each fif has its own subsection //
     //////////////////////////////////////////////////////
     // Filled every frame with per instance draw call data of the callers choosing
-    vkr_buffer draw_ssbo;
+    desc_block_buffer draw_ssbo;
     // Filled every frame with per view data of user's choosing
-    vkr_buffer view_ssbo;
+    desc_block_buffer view_ssbo;
     // Filled every frame with per pass data of user's choosing
-    vkr_buffer pass_ssbo;
+    desc_block_buffer pass_ssbo;
     // Per frame data
-    vkr_buffer frame_ubo;
+    desc_block_buffer frame_ubo;
     // All instance data
     vkr_chunked_buffer instance_ssbo;
     // All material data
