@@ -63,9 +63,9 @@ struct mdraw_params
 
 struct mdraw_call
 {
-    rgeom_handle geom;
-    u32 mat_idx;
-    u32 pl_idx;
+    idx_t geom;
+    idx_t mat;
+    idx_t pl;
     vec4 scissor_override{};
     // Computed sort key for the draw call - used to sort the draw calls in a render job before submission.
     // Feel free to override for custom sorting
@@ -240,12 +240,7 @@ struct mview
     };
 };
 
-struct render_job_cb_params
-{
-    u64 cmd_buf;
-    const array<mdraw_call> *draw_calls;
-};
-
+struct render_job_cb_params;
 using render_job_cb = void(const render_job_cb_params &, void *user);
 
 struct mrender_job
@@ -286,24 +281,18 @@ void draw_imgui(const render_job_cb_params &, void *);
 #endif
 void draw_geometry(const render_job_cb_params &, void *);
 
-
 rmanifest *begin_render_frame(renderer *rndr, render_blueprint_handle bp);
 bool end_render_frame(rmanifest *m);
 
 void update_instance_data(rmanifest *rm, void *block, sizet block_size);
 void update_material_data(rmanifest *rm, void *block, sizet block_size);
 
-
 idx_t push_pass(rmanifest *m,
-                    idx_t pid,
-                    const rect &norm_render_area = {0.0f, 0.0f, 1.0f, 1.0f},
-                    mpass_slot_assignment *assignments = nullptr,
-                    sizet assignment_count = 0);
-idx_t push_pass(rmanifest *m,
-                    idx_t pid,
-                    const srect &render_area,
-                    mpass_slot_assignment *assignments = nullptr,
-                    sizet assignment_count = 0);
+                idx_t pid,
+                const rect &norm_render_area = {0.0f, 0.0f, 1.0f, 1.0f},
+                mpass_slot_assignment *assignments = nullptr,
+                sizet assignment_count = 0);
+idx_t push_pass(rmanifest *m, idx_t pid, const srect &render_area, mpass_slot_assignment *assignments = nullptr, sizet assignment_count = 0);
 u32 push_slot_assignment(rmanifest *m, idx_t pid, const mpass_slot_assignment &sa);
 idx_t push_view(rmanifest *m, const mview &view);
 idx_t push_render_job(rmanifest *m, idx_t pass, idx_t view, render_job_cb *cb, void *cb_params);

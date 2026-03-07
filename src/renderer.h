@@ -285,7 +285,7 @@ struct geom_buffer_layout_entry
 {
     vkr_vertex_layout vert_layout;
     VmaVirtualBlock vert_block;
-    static_array<stream_buffer_entry, 16> vert_streams;
+    static_array<stream_buffer_entry, MAX_VERT_BINDINGS> vert_streams;
 };
 
 // Geometry stream groups all share the same indice buffer, so can all bound bound at the same time
@@ -486,6 +486,11 @@ struct global_descriptor_info
     vkr_chunked_buffer material_ssbo;
 };
 
+using rshader_pool = slot_pool<rshader_info>;
+using rtechnique_pool = slot_pool<rtechnique_info>;
+using rmaterial_pool = slot_pool<rmaterial_info>;
+using rgeometry_pool = slot_pool<rgeom_info>;
+
 struct renderer
 {
     // Owned vulkan context and mem arenas used only for vulkan stuff
@@ -502,10 +507,10 @@ struct renderer
     rpipeline_cache pline_cache;
     rframebuffer_cache fb_cache;
 
-    slot_pool<rshader_info> shaders;
-    slot_pool<rtechnique_info> techniques;
-    slot_pool<rmaterial_info> materials;
-    slot_pool<rgeom_info> geometry;
+    rshader_pool shaders;
+    rtechnique_pool techniques;
+    rmaterial_pool materials;
+    rgeometry_pool geometry;
 
     // Specialized registry for textures
     rtexture_registry textures;

@@ -10,10 +10,13 @@ struct slot_handle
 {
     union
     {
+        // Combined id
         u64 id;
         struct
         {
+            // Slot index
             idx_t si;
+            // Generation id
             u32 gen_id;
         };
     };

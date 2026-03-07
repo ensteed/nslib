@@ -64,9 +64,9 @@ inline constexpr sizet MAX_FRAMES_IN_FLIGHT = 2;
 inline constexpr u32 VKR_INVALID = (u32)-1;
 inline constexpr u32 MEM_ALLOC_TYPE_COUNT = VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE + 1;
 inline constexpr u32 VKR_API_VERSION = VK_API_VERSION_1_3;
-inline constexpr sizet MAX_PUSH_CONSTANT_RANGES = 12;
-inline constexpr sizet MAX_VERT_BINDINGS = 12;
-inline constexpr sizet MAX_VERT_ATTRIBS = 12;
+inline constexpr sizet MAX_PUSH_CONSTANT_RANGES = 16;
+inline constexpr sizet MAX_VERT_BINDINGS = 16;
+inline constexpr sizet MAX_VERT_ATTRIBS = 16;
 inline constexpr sizet MAX_FRAMEBUFFER_ATTACHMENT_COUNT = 8;
 
 struct vkr_device;

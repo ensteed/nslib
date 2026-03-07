@@ -35,6 +35,10 @@ struct pair
 u64 generate_rand_seed();
 u64 generate_unique_id();
 u16 get_username_hash();
+inline size_t align_up(size_t block, size_t alignment)
+{
+    return ((block + alignment - 1) / alignment) * alignment;
+}
 
 pup_func_tt(key_val_pair)
 {

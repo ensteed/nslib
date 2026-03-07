@@ -21,10 +21,10 @@ inline constexpr u32 MAX_TEXTURE_COUNT = 4096;
 inline constexpr u32 MAX_OBJECT_COUNT = 1000000;
 // Max subgeometry per rgeom_info - easy to change later
 inline constexpr u8 MAX_SUBGEOM_COUNT = 16;
-// Max number of geometry layouts - each layout gets it own set of buffers
-inline constexpr u8 MAX_GEOMETRY_LAYOUT_COUNT = 8;
-// Max number of vert groups per layout
+// Max number of vert groups
 inline constexpr u8 MAX_GEOMETRY_STREAM_GROUP_COUNT = 8;
+// Max number of geometry (pipeline) layouts per stream group - each layout gets it own set of vert buffers
+inline constexpr u8 MAX_GEOMETRY_LAYOUT_COUNT = 8;
 // Max number of texture targets we can create in the renderer
 inline constexpr u8 MAX_TEXTURE_TARGET_COUNT = 32;
 // Max number of buffer targets we can create in the renderer

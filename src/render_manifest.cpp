@@ -14,6 +14,67 @@ namespace nslib
 
 intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
 
+struct render_job_cb_params
+{
+    // Manifest pass
+    const mpass *mp;
+    // Manifest view
+    const mview *mv;
+    // Current framebuffer
+    const vkr_framebuffer *fb;
+    // Renderer source data
+    const rgeometry_pool *geometry;
+    const rmaterial_pool *materials;
+    const rpipeline_cache *plines;
+    // Geometry stream group for this pass
+    const geom_stream_group *geom_gp;
+    const global_descriptor_info *desc_info{};
+    
+    // Job draw calls
+    const array<mdraw_call> *dcs;
+    u64 cmd_buf;
+};
+
+void draw_geometry(const render_job_cb_params &p, void *)
+{
+    VkCommandBuffer cb = (VkCommandBuffer)p.cmd_buf;
+    // VIEWPORT
+    VkViewport viewport = (p.mv->vp_size_mode == rect_size_mode::NORMALIZED)
+        ? get_vk_viewport(p.mv->vp, p.mv->vp_depth_min_max, p.fb->meta.dims)
+        : get_vk_viewport(p.mv->vp, p.mv->vp_depth_min_max);
+    vkCmdSetViewport(cb, 0, 1, &viewport);
+
+    // SCISSOR
+    VkRect2D scissor = (p.mv->scissor_size_mode == rect_size_mode::NORMALIZED)
+        ? get_vk_rect_from_normalized(p.mv->norm_scissor, p.fb->meta.dims)
+        : get_vk_rect(p.mv->scissor);
+    vkCmdSetScissor(cb, 0, 1, &scissor);
+
+    // Bind pass vert/indice buffers
+    VkBuffer vbufs[MAX_VERT_BINDINGS*MAX_GEOMETRY_LAYOUT_COUNT]{};
+    VkDeviceSize offsets[MAX_VERT_BINDINGS*MAX_GEOMETRY_LAYOUT_COUNT]{};
+    u32 bi_count{0};
+    for (u32 i = 0; i < p.geom_gp->layouts.size; ++i) {
+        for (u32 j = 0; j < p.geom_gp->layouts[i].vert_streams.size; ++j, ++bi_count) {
+            vbufs[bi_count] = p.geom_gp->layouts[i].vert_streams[j].buffer.hndl;
+            offsets[bi_count] = 0;
+        }
+    }
+    vkCmdBindVertexBuffers(cb, 0, bi_count, vbufs, offsets);
+    vkCmdBindIndexBuffer(cb, p.geom_gp->indice_stream.buffer.hndl, 0, get_vk_index_type(sizeof(ind_t)));
+
+    // Bind global descriptor sets
+    
+
+    for (u32 dci = 0; dci < p.dcs->size; ++dci) {
+        const mdraw_call &dc = p.dcs->data[dci];
+        const rgeom_info *geom = &p.geometry->slots[dc.geom].item;
+        const rmaterial_info *mat = &p.materials->slots[dc.mat].item;
+        const rpipeline_entry *pl = &p.plines->items.slots[dc.pl].item;
+        asrt(geom && mat && pl);
+    }    
+}
+
 #if defined USE_IMGUI
 void draw_imgui(const render_job_cb_params &p, void *)
 {
@@ -21,8 +82,6 @@ void draw_imgui(const render_job_cb_params &p, void *)
     ImGui_ImplVulkan_RenderDrawData(img_data, (VkCommandBuffer)p.cmd_buf);
 }
 #endif
-
-void draw_geometry(const render_job_cb_params &, void *);
 
 intern u32 get_fif_ind(renderer *rndr)
 {
@@ -415,12 +474,15 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
         auto rbp = get_render_blueprint(m->rndr, m->rbp);
         auto cur_rj = &m->jobs[rji];
         auto mp = &m->passes[cur_rj->mp];
+        auto mv = &m->views[cur_rj->mv];
         auto rbp_pass = &rbp->passes[mp->rbpp];
         auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
-        auto mview = &m->views[cur_rj->mv];
 
         // Must have all slots assigned
         asrt(rbp_pass->slots.size == mp->slot_assignments.size);
+
+        // Sort it baby boo
+        sort_draw_list(cur_rj);
 
         // Create all needed barriers for the current pass resources (according to what we have for the current state)
         emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->mp, buf, fif);
@@ -434,25 +496,18 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, u32 fif)
                                                                        : get_vk_rect(mp->render_area);
         vkr_cmd_begin_rpass(buf, vk_rpass, fb, ra, att_clear_vals.data, att_clear_vals.size);
 
-        // VIEWPORT
-        VkViewport viewport = (mview->vp_size_mode == rect_size_mode::NORMALIZED)
-                                  ? get_vk_viewport(mview->vp, mview->vp_depth_min_max, fb->meta.dims)
-                                  : get_vk_viewport(mview->vp, mview->vp_depth_min_max);
-        vkCmdSetViewport(buf, 0, 1, &viewport);
-
-        // SCISSOR
-        VkRect2D scissor = (mview->scissor_size_mode == rect_size_mode::NORMALIZED)
-                               ? get_vk_rect_from_normalized(mview->norm_scissor, fb->meta.dims)
-                               : get_vk_rect(mview->scissor);
-        vkCmdSetScissor(buf, 0, 1, &scissor);
-
-        // Sort it baby boo
-        sort_draw_list(cur_rj);
-
         if (cur_rj->cb) {
+            auto gsg = find_geometry_stream_group(m->rndr, rbp_pass->geom_streams_group);
+            asrt(is_valid(gsg));
             render_job_cb_params p{};
             p.cmd_buf = (u64)buf;
-            p.draw_calls = &cur_rj->dcs;
+            p.dcs = &cur_rj->dcs;
+            p.mp = mp;
+            p.mv = mv;
+            p.geometry = &m->rndr->geometry;
+            p.materials = &m->rndr->materials;
+            p.plines = &m->rndr->pline_cache;
+            p.geom_gp = &m->rndr->geom_groups[gsg];
             cur_rj->cb(p, cur_rj->cb_user);
         }
         else {

@@ -558,7 +558,10 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////
     // Create Frame UBO //
     //////////////////////
-    sizet frame_buf_fif_sz = dip.frame_ubo.block_size * dip.frame_ubo.block_count;
+    // Need to align to UBO min offset alignment because we will have a single buffer for all FIFs with later
+    // ones offset by FIF_SIZE * fif_i
+    sizet ubo_min_offset = rndr->vk.inst.pdev_info.props.limits.minUniformBufferOffsetAlignment;
+    sizet frame_buf_fif_sz = align_up(dip.frame_ubo.block_size * dip.frame_ubo.block_count, ubo_min_offset);
     b_cfg.buffer_size = frame_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "frame_ubo";
     b_cfg.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
