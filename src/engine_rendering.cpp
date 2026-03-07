@@ -53,11 +53,13 @@ intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
     return success_count;
 }
 
-void update_and_draw_region(rmanifest *m, sim_region *sr)
+void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
 {
     auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
     auto tftbs = get_comp_tbl<transform>(&sr->cdb);
-
+    auto mpool = get_asset_pool<material>(cg);
+    auto techpool = get_asset_pool<technique>(cg);
+    auto geompool = get_asset_pool<geometry>(cg);
     transform_tbl *tftb = get_comp_tbl<transform>(&sr->cdb);
     for (u32 i = 0; i < sr->ents.size; ++i) {
         transform* tf = get_comp<transform>(sr->ents[i].id, tftb);
@@ -72,8 +74,30 @@ void update_and_draw_region(rmanifest *m, sim_region *sr)
             update_d.prev_model = tf->cached_prev;
 
             if (sm) {
-                mdraw_params dp{};
-                push_draw(m, dp);
+                geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
+                asrt(is_valid(gref));
+                
+                for (u32 mi = 0; mi < sm->mat_mapping.size; ++mi) {
+                    material_item_ref mref = find_asset<material>(mpool, sm->mat_mapping[mi].mat_id);
+                    asrt(is_valid(mref));
+                    
+                    for (u32 bpi = 0; bpi < mref.item->bp_techniques.size; ++bpi) {
+                        technique_item_ref tref = find_asset<technique>(techpool, mref.item->bp_techniques[bpi]);
+                        asrt(is_valid(tref));
+                    
+                        mdraw_params dp{};
+                        draw_ssbo_data dd{};
+                        dd.idx_t = tf - tftbs->entries.data;
+                        dd.material_idx = mref.item->rhndl.si;
+                        dp.draw_sdata = &dd;
+                        dp.geom = gref.item->rhndl;
+                        dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
+                        dp.mat = mref.item->rhndl;
+                        dp.tech = tref.item->rhndl;
+                        
+                        push_draw(m, dp);
+                    }
+                }
             }
         }
     }

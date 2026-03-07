@@ -21,6 +21,7 @@ intern const rres_id MAIN_GEOM_STREAM_GP_ID = hash_type(MAIN_GEOM_STREAM_GP);
 struct mem_arena;
 struct renderer;
 struct sim_region;
+struct rmanifest;
 
 enum rvert_stream
 {
@@ -95,6 +96,7 @@ struct rgeom_vert_bone_weights_ids
     uvec4 bone_ids;
 };
 
+void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg);
 
 // Setup vert/index buffers (stream group) for this geometry type and get the runtime id for it
 u32 setup_geometry_stream_group(renderer *rndr);

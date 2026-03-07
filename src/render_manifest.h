@@ -112,8 +112,15 @@ struct rdepth_bias
     float clamp;
 };
 
-struct rtechnique_dyn_state
+op_eq_func(rdepth_bias) {
+    return fequals(lhs.clamp, rhs.clamp) && fequals(lhs.const_factor, rhs.const_factor) && fequals(lhs.slope_factor, rhs.slope_factor);
+}
+
+op_neq_func(rdepth_bias);
+
+struct rpline_dyn_state
 {
+    idx_t last_pline{INVALID_IDX};
     rtechnique_dyn_state_flags dflags;
     rstencil_op_state stencil_front;
     rstencil_op_state stencil_back;
@@ -126,22 +133,27 @@ struct rtechnique_dyn_state
 struct mdraw_params
 {
     rgeom_handle geom;
+    idx_t subgeom;
     rmaterial_handle mat;
     rtechnique_handle tech;
-    // Draw ssbo data 
+    // Draw ssbo data - copied to draw call - the original pointer is not stored
     const void* draw_sdata;
 };
 
 struct mdraw_call
 {
     idx_t geom;
+    idx_t subgeom;    
     idx_t mat;
     idx_t pl;
-    rtechnique_dyn_state dstate;
+    // Dynamic pipeline state
+    rpline_dyn_state dstate;
     vec4 scissor_override{};
     // Computed sort key for the draw call - used to sort the draw calls in a render job before submission.
     // Feel free to override for custom sorting
     u64 sort_key;
+    // Copy of the passed in draw_sdata allocated from the frame linear allocator
+    const void *draw_sdata;    
 };
 
 enum struct mslot_target_type
@@ -270,8 +282,12 @@ struct mrender_job
     idx_t mp;
     // Manifest view idx
     idx_t mv;
+    // Per job arena
+    mem_arena arena;
     // Job draw calls
     array<mdraw_call> dcs;
+    // Sorted draw calls
+    array<idx_t> sorted_dcs;
     // Callback draw function
     render_job_cb *cb;
     // Draw function param
@@ -282,6 +298,7 @@ struct mrender_job_params
 {
     idx_t pass;
     idx_t view;
+    sizet mem_arena_size{10 * KB_SIZE};
     render_job_cb *cb;
     void *cb_user;
 };

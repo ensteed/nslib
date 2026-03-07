@@ -42,9 +42,9 @@ struct transform;
 struct rsubgeom_range
 {
     // Indice offset
-    sizet offset;
+    u32 offset;
     // Indice count
-    sizet count;
+    u32 count;
 };
 
 struct rshader_stage_desc
@@ -233,7 +233,7 @@ struct rtechnique_pass_entry
     idx_t subpass;
     idx_t bp_pass;
     rpipeline_handle pline;
-    rtechnique_dyn_state dstate;
+    rpline_dyn_state dstate;
 };
 
 struct rtechnique_info
@@ -462,6 +462,7 @@ struct rtexture_target_desc
 
 struct desc_block_buffer {
     vkr_buffer buffer;
+    u32 fif_block_count;
     sizet block_size;
 };
 
@@ -555,7 +556,7 @@ struct renderer
 
 struct sbuffer_cfg
 {
-    sizet block_count;
+    u32 block_count;
     sizet block_size;
 };
 

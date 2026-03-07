@@ -389,6 +389,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
                 curtf->orientation *= math::orientation(vec4{0.0, 0.0, 1.0, (f32)dt});
             }
             curtf->cached = math::model_tform(curtf->world_pos, curtf->orientation, curtf->scale);
+            curtf->flags |= TRANSFORM_FLAG_DIRTY;
         }
     }
 }
@@ -435,6 +436,8 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
 
     push_render_job(m, {.pass = mp_id, .view = view_id, .cb = draw_geometry, .cb_user = nullptr});
     push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
+
+    update_and_draw_region(m, &app->rgn, &app->cg);
 }
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)

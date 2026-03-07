@@ -236,7 +236,7 @@ struct subgeom_range
     // Indice count
     u32 count;
     small_str mat_slot_name;
-    u32 mat_slot_ind;
+    idx_t mat_slot_ind;
 };
 
 pup_func(subgeom_range)
@@ -292,10 +292,11 @@ void init_asset(material *mat);
 void terminate_asset(material *mat);
 
 // GEOMETRY
-void make_rect(geometry *geom);
-void make_cube(geometry *geom);
 void init_asset(geometry *geom);
 void release_ram_data(geometry *geom);
 void terminate_asset(geometry *geom);
+void make_rect(geometry *geom);
+void make_cube(geometry *geom);
+idx_t find_subgeom_by_mat_slot(const geometry *geom, idx_t mat_slot);
 
 } // namespace nslib

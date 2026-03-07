@@ -524,6 +524,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////
     sizet draw_buf_fif_sz = dip.draw_ssbo.block_size * dip.draw_ssbo.block_count;
     rndr->desc_info.draw_ssbo.block_size = dip.draw_ssbo.block_size;
+    rndr->desc_info.draw_ssbo.fif_block_count = dip.draw_ssbo.block_count;
     b_cfg.buffer_size = draw_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "draw_ssbo";
     result = vkr_init_buffer(&rndr->desc_info.draw_ssbo.buffer, b_cfg);
@@ -537,6 +538,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////
     sizet view_buf_fif_sz = dip.view_ssbo.block_size * dip.view_ssbo.block_count;
     rndr->desc_info.view_ssbo.block_size = dip.view_ssbo.block_size;
+    rndr->desc_info.view_ssbo.fif_block_count = dip.view_ssbo.block_count;
     b_cfg.buffer_size = view_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "view_ssbo";
     result = vkr_init_buffer(&rndr->desc_info.view_ssbo.buffer, b_cfg);
@@ -550,6 +552,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////
     sizet pass_buf_fif_sz = dip.pass_ssbo.block_size * dip.pass_ssbo.block_count;
     rndr->desc_info.pass_ssbo.block_size = dip.pass_ssbo.block_size;
+    rndr->desc_info.pass_ssbo.fif_block_count = dip.pass_ssbo.block_count;
     b_cfg.buffer_size = pass_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "pass_ssbo";
     result = vkr_init_buffer(&rndr->desc_info.pass_ssbo.buffer, b_cfg);
@@ -566,6 +569,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     sizet ubo_min_offset = rndr->vk.inst.pdev_info.props.limits.minUniformBufferOffsetAlignment;
     sizet frame_buf_fif_sz = align_up(dip.frame_ubo.block_size * dip.frame_ubo.block_count, ubo_min_offset);
     rndr->desc_info.frame_ubo.block_size = dip.frame_ubo.block_size;
+    rndr->desc_info.frame_ubo.fif_block_count = dip.frame_ubo.block_count;
     b_cfg.buffer_size = frame_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "frame_ubo";
     b_cfg.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;

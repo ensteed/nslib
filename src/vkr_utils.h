@@ -331,6 +331,18 @@ constexpr const char *get_vk_format_str(VkFormat fmt)
     return get_rformat_str(get_rformat(fmt));
 }
 
+constexpr VkCullModeFlags get_vk_cullmode(rtechnique_flags flags)
+{
+    VkCullModeFlags ret{};
+    if (test_flags(flags, RTECHNIQUE_FLAG_CULL_BACK)) {
+        ret |= VK_CULL_MODE_BACK_BIT;
+    }
+    if (test_flags(flags, RTECHNIQUE_FLAG_CULL_FRONT)) {
+        ret |= VK_CULL_MODE_FRONT_BIT;
+    }
+    return ret;
+}
+
 constexpr VkFormat get_vk_format(rformat format)
 {
     switch (format) {

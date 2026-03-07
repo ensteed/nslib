@@ -32,30 +32,208 @@ struct render_job_cb_params
     const global_descriptor_info *desc_info{};
     // Frame in flight index
     idx_t fif;
-    
+    // Dynamic state tracked at the job level - each draw function should update this as it goes
+    rpline_dyn_state *dyn_state;
+
     // Job draw calls
     const array<mdraw_call> *dcs;
+    const array<idx_t> *sorted_dcs;
     u64 cmd_buf;
 };
 
+enum pline_dstate_update_flag
+{
+    PLINE_DSTATE_UPDATE_NONE = 0,
+    PLINE_DSTATE_UPDATE_CULL_MODE = make_flag(0),
+    PLINE_DSTATE_UPDATE_FRONT_FACE = make_flag(1),
+    PLINE_DSTATE_UPDATE_STENCIL_TEST_ENABLE = make_flag(2),
+    PLINE_DSTATE_UPDATE_STENCIL_OP_FRONT = make_flag(3),
+    PLINE_DSTATE_UPDATE_STENCIL_OP_BACK = make_flag(4),
+    PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_FRONT = make_flag(5),
+    PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_BACK = make_flag(6),
+    PLINE_DSTATE_UPDATE_STENCIL_WRITE_MASK_FRONT = make_flag(7),
+    PLINE_DSTATE_UPDATE_STENCIL_WRITE_MASK_BACK = make_flag(8),
+    PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_FRONT = make_flag(9),
+    PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_BACK = make_flag(10),
+    PLINE_DSTATE_UPDATE_DEPTH_BIAS = make_flag(11),
+    PLINE_DSTATE_UPDATE_BLEND_CONSTANTS = make_flag(12),
+    PLINE_DSTATE_UPDATE_ALL = PLINE_DSTATE_UPDATE_CULL_MODE | PLINE_DSTATE_UPDATE_FRONT_FACE | PLINE_DSTATE_UPDATE_STENCIL_TEST_ENABLE |
+                              PLINE_DSTATE_UPDATE_STENCIL_OP_FRONT | PLINE_DSTATE_UPDATE_STENCIL_OP_BACK |
+                              PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_FRONT | PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_BACK |
+                              PLINE_DSTATE_UPDATE_STENCIL_WRITE_MASK_FRONT | PLINE_DSTATE_UPDATE_STENCIL_WRITE_MASK_BACK |
+                              PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_FRONT | PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_BACK |
+                              PLINE_DSTATE_UPDATE_DEPTH_BIAS | PLINE_DSTATE_UPDATE_BLEND_CONSTANTS,
+};
+
+struct vk_stencil_op_info
+{};
+
+void setup_pline_dynamic_state(VkCommandBuffer cb, const mdraw_call &dc, rpline_dyn_state *state)
+{
+    bool state_valid = is_valid(state->last_pline);
+    u32 state_update_mask = state_valid ? PLINE_DSTATE_UPDATE_NONE : PLINE_DSTATE_UPDATE_ALL;
+
+    VkCullModeFlags cur_cm = get_vk_cullmode(dc.dstate.dflags);
+    VkFrontFace cur_ff = get_vk_front_face(dc.dstate.ffw);
+    VkBool32 cur_stest_enable = test_flags(dc.dstate.dflags, RTECHNIQUE_DYN_STATE_FLAG_STENCIL_TEST);
+
+    VkStencilOpState cur_st_opstate_front{};
+    fill_vk_stencil_op_state(&cur_st_opstate_front, dc.dstate.stencil_front);
+
+    VkStencilOpState cur_st_opstate_back{};
+    fill_vk_stencil_op_state(&cur_st_opstate_back, dc.dstate.stencil_back);
+
+    if (state_valid) {
+        VkCullModeFlags prev_cm = get_vk_cullmode(state->dflags);
+        VkFrontFace prev_ff = get_vk_front_face(state->ffw);
+        VkBool32 prev_stest_enable = test_flags(state->dflags, RTECHNIQUE_DYN_STATE_FLAG_STENCIL_TEST);
+
+        VkStencilOpState prev_st_opstate_front{};
+        fill_vk_stencil_op_state(&prev_st_opstate_front, state->stencil_front);
+
+        VkStencilOpState prev_st_opstate_back{};
+        fill_vk_stencil_op_state(&prev_st_opstate_back, state->stencil_back);
+
+        state_update_mask |= (prev_cm != cur_cm) ? PLINE_DSTATE_UPDATE_CULL_MODE : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (prev_ff != cur_ff) ? PLINE_DSTATE_UPDATE_FRONT_FACE : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (prev_stest_enable != cur_stest_enable) ? PLINE_DSTATE_UPDATE_STENCIL_TEST_ENABLE : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |=
+            (prev_st_opstate_front.failOp != cur_st_opstate_front.failOp || prev_st_opstate_front.passOp != cur_st_opstate_front.passOp ||
+             prev_st_opstate_front.depthFailOp != cur_st_opstate_front.depthFailOp ||
+             prev_st_opstate_front.compareOp != cur_st_opstate_front.compareOp)
+                ? PLINE_DSTATE_UPDATE_STENCIL_OP_FRONT
+                : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |=
+            (prev_st_opstate_back.failOp != cur_st_opstate_back.failOp || prev_st_opstate_back.passOp != cur_st_opstate_back.passOp ||
+             prev_st_opstate_back.depthFailOp != cur_st_opstate_back.depthFailOp ||
+             prev_st_opstate_back.compareOp != cur_st_opstate_back.compareOp)
+                ? PLINE_DSTATE_UPDATE_STENCIL_OP_BACK
+                : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (prev_st_opstate_front.compareMask != cur_st_opstate_front.compareMask)
+                                 ? PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_FRONT
+                                 : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (prev_st_opstate_back.compareMask != cur_st_opstate_back.compareMask)
+                                 ? PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_BACK
+                                 : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (prev_st_opstate_front.writeMask != cur_st_opstate_front.writeMask)
+                                 ? PLINE_DSTATE_UPDATE_STENCIL_WRITE_MASK_FRONT
+                                 : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (prev_st_opstate_back.writeMask != cur_st_opstate_back.writeMask) ? PLINE_DSTATE_UPDATE_STENCIL_WRITE_MASK_BACK
+                                                                                               : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (prev_st_opstate_front.reference != cur_st_opstate_front.reference) ? PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_FRONT
+                                                                                                 : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (prev_st_opstate_back.reference != cur_st_opstate_back.reference) ? PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_BACK
+                                                                                               : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (state->depth_b != dc.dstate.depth_b) ? PLINE_DSTATE_UPDATE_DEPTH_BIAS : PLINE_DSTATE_UPDATE_NONE;
+
+        state_update_mask |= (state->blend_ops != dc.dstate.blend_ops) ? PLINE_DSTATE_UPDATE_BLEND_CONSTANTS : PLINE_DSTATE_UPDATE_NONE;
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_CULL_MODE)) {
+        vkCmdSetCullMode(cb, cur_cm);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_FRONT_FACE)) {
+        vkCmdSetFrontFace(cb, cur_ff);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_TEST_ENABLE)) {
+        vkCmdSetStencilTestEnable(cb, cur_stest_enable);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_OP_FRONT)) {
+        vkCmdSetStencilOp(cb,
+                          VK_STENCIL_FACE_FRONT_BIT,
+                          cur_st_opstate_front.failOp,
+                          cur_st_opstate_front.passOp,
+                          cur_st_opstate_front.depthFailOp,
+                          cur_st_opstate_front.compareOp);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_OP_BACK)) {
+        vkCmdSetStencilOp(cb,
+                          VK_STENCIL_FACE_BACK_BIT,
+                          cur_st_opstate_back.failOp,
+                          cur_st_opstate_back.passOp,
+                          cur_st_opstate_back.depthFailOp,
+                          cur_st_opstate_back.compareOp);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_FRONT)) {
+        vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_FRONT_BIT, dc.dstate.stencil_front.comp_mask);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_BACK)) {
+        vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_BACK_BIT, dc.dstate.stencil_back.comp_mask);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_WRITE_MASK_FRONT)) {
+        vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_FRONT_BIT, dc.dstate.stencil_front.write_mask);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_WRITE_MASK_BACK)) {
+        vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_BACK_BIT, dc.dstate.stencil_back.write_mask);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_FRONT)) {
+        vkCmdSetStencilReference(cb, VK_STENCIL_FACE_FRONT_BIT, dc.dstate.stencil_front.ref);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_BACK)) {
+        vkCmdSetStencilReference(cb, VK_STENCIL_FACE_BACK_BIT, dc.dstate.stencil_back.ref);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_DEPTH_BIAS)) {
+        vkCmdSetDepthBias(cb, dc.dstate.depth_b.const_factor, dc.dstate.depth_b.slope_factor, dc.dstate.depth_b.clamp);
+    }
+
+    if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_BLEND_CONSTANTS)) {
+        vkCmdSetBlendConstants(cb, dc.dstate.blend_ops.data);
+    }
+    *state = dc.dstate;
+}
+
 void draw_geometry(const render_job_cb_params &p, void *)
 {
+    asrt(p.mp);
+    asrt(p.mv);
+    asrt(p.fb);
+    asrt(p.geometry);
+    asrt(p.materials);
+    asrt(p.plines);
+    asrt(p.geom_gp);
+    asrt(p.desc_info);
+    asrt(p.dyn_state);
+    asrt(p.dcs);
+    asrt(p.sorted_dcs);
+
     VkCommandBuffer cb = (VkCommandBuffer)p.cmd_buf;
     // VIEWPORT
     VkViewport viewport = (p.mv->vp_size_mode == rect_size_mode::NORMALIZED)
-        ? get_vk_viewport(p.mv->vp, p.mv->vp_depth_min_max, p.fb->meta.dims)
-        : get_vk_viewport(p.mv->vp, p.mv->vp_depth_min_max);
+                              ? get_vk_viewport(p.mv->vp, p.mv->vp_depth_min_max, p.fb->meta.dims)
+                              : get_vk_viewport(p.mv->vp, p.mv->vp_depth_min_max);
     vkCmdSetViewport(cb, 0, 1, &viewport);
 
     // SCISSOR
     VkRect2D scissor = (p.mv->scissor_size_mode == rect_size_mode::NORMALIZED)
-        ? get_vk_rect_from_normalized(p.mv->norm_scissor, p.fb->meta.dims)
-        : get_vk_rect(p.mv->scissor);
+                           ? get_vk_rect_from_normalized(p.mv->norm_scissor, p.fb->meta.dims)
+                           : get_vk_rect(p.mv->scissor);
     vkCmdSetScissor(cb, 0, 1, &scissor);
 
     // Bind pass vert/indice buffers
-    VkBuffer vbufs[MAX_VERT_BINDINGS*MAX_GEOMETRY_LAYOUT_COUNT]{};
-    VkDeviceSize offsets[MAX_VERT_BINDINGS*MAX_GEOMETRY_LAYOUT_COUNT]{};
+    VkBuffer vbufs[MAX_VERT_BINDINGS * MAX_GEOMETRY_LAYOUT_COUNT]{};
+    VkDeviceSize offsets[MAX_VERT_BINDINGS * MAX_GEOMETRY_LAYOUT_COUNT]{};
     u32 bi_count{0};
     for (u32 i = 0; i < p.geom_gp->layouts.size; ++i) {
         for (u32 j = 0; j < p.geom_gp->layouts[i].vert_streams.size; ++j, ++bi_count) {
@@ -72,14 +250,27 @@ void draw_geometry(const render_job_cb_params &p, void *)
     desc_sets[RDSET_LAYOUT_IMAGES] = p.desc_info->images;
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p.desc_info->pline_layout, 0, RDSET_LAYOUT_COUNT, desc_sets, 0, nullptr);
 
-    for (u32 dci = 0; dci < p.dcs->size; ++dci) {
-        const mdraw_call &dc = p.dcs->data[dci];
-        const rgeom_info *geom = &p.geometry->slots[dc.geom].item;
-        const rmaterial_info *mat = &p.materials->slots[dc.mat].item;
-        const rpipeline_entry *pl = &p.plines->items.slots[dc.pl].item;
-        
+    for (u32 dci = 0; dci < p.sorted_dcs->size; ++dci) {
+        const mdraw_call *dc = &(*p.dcs)[(*p.sorted_dcs)[dci]];
+        const rgeom_info *geom = &p.geometry->slots[dc->geom].item;
+        const rmaterial_info *mat = &p.materials->slots[dc->mat].item;
+        const rpipeline_entry *pl = &p.plines->items.slots[dc->pl].item;
+
         asrt(geom && mat && pl);
-    }    
+
+        if (p.dyn_state->last_pline != dc->pl) {
+            setup_pline_dynamic_state(cb, *dc, p.dyn_state);
+            vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)pl->gpu_d);
+            p.dyn_state->last_pline = dc->pl;
+        }
+
+        for (u32 subi = 0; subi < geom->subgeom_vert_ind_counts.size; ++subi) {
+            const rsubgeom_range *cur_r = &geom->subgeom_vert_ind_counts[subi];
+            u32 voffset = geom->vert_offset + cur_r->offset;
+            u32 ioffset = geom->ind_offset + cur_r->offset;
+            vkCmdDrawIndexed(cb, cur_r->count, 1, ioffset, voffset, 0);
+        }
+    }
 }
 
 #if defined USE_IMGUI
@@ -436,23 +627,24 @@ intern void update_global_target_state(rmanifest *m, u32 fif)
     }
 }
 
-intern void sort_draw_list(mrender_job *rjob) {
+intern void sort_draw_list(mrender_job *rjob)
+{
     sizet n = rjob->dcs.size;
     if (n <= 1) return;
 
-    mdraw_call *src = rjob->dcs.data;
-    mdraw_call *tmp = mem_alloc<mdraw_call>(rjob->dcs.arena, n);
+    // Initialize index arrays
+    u32 *src = mem_alloc<u32>(rjob->sorted_dcs.arena, n);
+    u32 *tmp = mem_alloc<u32>(rjob->sorted_dcs.arena, n);
+    for (u32 i = 0; i < n; ++i)
+        src[i] = i;
 
-    // LSD radix sort: 8 passes over 8-bit digits of the 64-bit sort_key.
-    // After 8 swaps (even), src is back to rjob->dcs.data — no copy-back needed.
     for (u32 byte = 0; byte < 8; ++byte) {
         u32 shift = byte * 8;
 
         u32 counts[256]{};
         for (sizet i = 0; i < n; ++i)
-            ++counts[(u8)(src[i].sort_key >> shift)];
+            ++counts[(u8)(rjob->dcs.data[src[i]].sort_key >> shift)];
 
-        // Exclusive prefix sum
         u32 total = 0;
         for (u32 b = 0; b < 256; ++b) {
             u32 c = counts[b];
@@ -460,14 +652,18 @@ intern void sort_draw_list(mrender_job *rjob) {
             total += c;
         }
 
-        // Scatter
         for (sizet i = 0; i < n; ++i)
-            tmp[counts[(u8)(src[i].sort_key >> shift)]++] = src[i];
+            tmp[counts[(u8)(rjob->dcs.data[src[i]].sort_key >> shift)]++] = src[i];
 
-        mdraw_call *swap_ptr = src;
+        u32 *swap = src;
         src = tmp;
-        tmp = swap_ptr;
+        tmp = swap;
     }
+
+    // src is the final sorted index array (8 swaps = even, so src == original alloc)
+    rjob->sorted_dcs.data = src;
+    rjob->sorted_dcs.size = n;
+    rjob->sorted_dcs.capacity = n;
 }
 
 intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
@@ -477,6 +673,10 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
         return false;
     }
 
+    rpline_dyn_state dyn_state{};
+
+    // We place all draw call data for all jobs in a single SSBO, so this is the base offset for the current job's draw call data
+    sizet job_ssbo_base = 0;
     for (u32 rji = 0; rji < m->jobs.size; ++rji) {
         auto rbp = get_render_blueprint(m->rndr, m->rbp);
         auto cur_rj = &m->jobs[rji];
@@ -491,12 +691,25 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
         // Sort it baby boo
         sort_draw_list(cur_rj);
 
+        sizet blocksz = m->rndr->desc_info.draw_ssbo.block_size;
+        for (u32 i = 0; i < cur_rj->dcs.size; ++i) {
+            const mdraw_call &dc = cur_rj->dcs[cur_rj->sorted_dcs[i]];
+            sizet buf_offset = blocksz * (fif * m->rndr->desc_info.draw_ssbo.fif_block_count + job_ssbo_base + i);
+            void *dst = (void *)((sizet)m->rndr->desc_info.draw_ssbo.buffer.mem_info.pMappedData + buf_offset);
+            if (dc.draw_sdata)
+                memcpy(dst, dc.draw_sdata, blocksz);
+            else
+                memset(dst, 0, blocksz);
+        }
+        job_ssbo_base += cur_rj->dcs.size;
+
         // Create all needed barriers for the current pass resources (according to what we have for the current state)
         emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->mp, buf, fif);
 
         // Setup framebuffer and clear vals by looping over slots
         static_array<VkClearValue, MAX_BP_PASS_SLOT_COUNT> att_clear_vals{};
-        const vkr_framebuffer*fb = get_or_create_framebuffer(m->rndr, att_clear_vals.data, &att_clear_vals.size, vk_rpass, *mp, *rbp_pass, *m, fif);
+        const vkr_framebuffer *fb =
+            get_or_create_framebuffer(m->rndr, att_clear_vals.data, &att_clear_vals.size, vk_rpass, *mp, *rbp_pass, *m, fif);
 
         // RENDER AREA
         VkRect2D ra = (mp->ra_size_mode == rect_size_mode::NORMALIZED) ? get_vk_rect_from_normalized(mp->norm_render_area, fb->meta.dims)
@@ -505,17 +718,20 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
 
         if (cur_rj->cb) {
             auto gsg = find_geometry_stream_group(m->rndr, rbp_pass->geom_streams_group);
-            asrt(is_valid(gsg));
             render_job_cb_params p{};
             p.cmd_buf = (u64)buf;
-            p.dcs = &cur_rj->dcs;
             p.mp = mp;
             p.mv = mv;
+            p.fb = fb;
             p.geometry = &m->rndr->geometry;
             p.materials = &m->rndr->materials;
             p.plines = &m->rndr->pline_cache;
-            p.geom_gp = &m->rndr->geom_groups[gsg];
+            p.geom_gp = is_valid(gsg) ? &m->rndr->geom_groups[gsg] : nullptr;
+            p.desc_info = &m->rndr->desc_info;
             p.fif = fif;
+            p.dyn_state = &dyn_state;
+            p.dcs = &cur_rj->dcs;
+            p.sorted_dcs = &cur_rj->sorted_dcs;
             cur_rj->cb(p, cur_rj->cb_user);
         }
         else {
@@ -552,9 +768,14 @@ idx_t push_pass(rmanifest *m, const mpass_params &p)
     }
     // SSBO per pass data update
     sizet blocksz = m->rndr->desc_info.pass_ssbo.block_size;
-    sizet buf_offset = pind * blocksz;
-    void *dst = (void*)((sizet)m->rndr->desc_info.pass_ssbo.buffer.mem_info.pMappedData + buf_offset);
-    memcpy(dst, p.pass_sdata, blocksz);
+    sizet buf_offset = pind * blocksz * m->rndr->desc_info.pass_ssbo.fif_block_count;
+    void *dst = (void *)((sizet)m->rndr->desc_info.pass_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    if (p.pass_sdata) {
+        memcpy(dst, p.pass_sdata, blocksz);
+    }
+    else {
+        memset(dst, 0, blocksz);
+    }
     return pind;
 }
 
@@ -576,23 +797,31 @@ idx_t push_view(rmanifest *m, const mview_params &p)
 
     // SSBO per pass data update
     sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
-    sizet buf_offset = ind * blocksz;
-    void *dst = (void*)((sizet)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset);
-    memcpy(dst, p.view_sdata, blocksz);
+    sizet buf_offset = ind * blocksz * m->rndr->desc_info.view_ssbo.fif_block_count;
+    void *dst = (void *)((sizet)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    if (p.view_sdata) {
+        memcpy(dst, p.view_sdata, blocksz);
+    }
+    else {
+        memset(dst, 0, blocksz);
+    }
     return ind;
 }
 
 idx_t push_render_job(rmanifest *m, const mrender_job_params &p)
 {
     idx_t ind = (idx_t)m->jobs.size;
-    auto rj = arr_emplace_back(&m->jobs, p.pass, p.view, array<mdraw_call>{}, p.cb, p.cb_user);
-    arr_init(&rj->dcs, m->jobs.arena, DEFAULT_RJOB_DRAW_CALL_CAPACITY);
+    auto rj = arr_emplace_back(&m->jobs, p.pass, p.view, mem_arena{}, array<mdraw_call>{}, array<idx_t>{}, p.cb, p.cb_user);
+    init_fl_arena(&rj->arena, p.mem_arena_size, &m->rndr->frame_linear, "rjob_arena");
+    arr_init(&rj->dcs, &rj->arena, DEFAULT_RJOB_DRAW_CALL_CAPACITY);
+    arr_init(&rj->sorted_dcs, &rj->arena, 0);
     return ind;
 }
 
 u32 push_draw(rmanifest *m, const mdraw_params &dp)
 {
     u32 push_cnt{0};
+    idx_t fif = get_fif_ind(m->rndr);
     rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.tech);
     for (u32 i = 0; i < tptr->rpass_plines.size; ++i) {
         auto cur_pl = &tptr->rpass_plines[i];
@@ -608,6 +837,16 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 cur_d->pl = cur_pl->pline.si;
                 cur_d->sort_key = ((u64)cur_d->pl << 32) | (u64)cur_d->mat;
                 cur_d->dstate = cur_pl->dstate;
+
+                // Allocate mem to store ssbo data and copy it
+                sizet blocksz = m->rndr->desc_info.draw_ssbo.block_size;
+                void *sdata = mem_alloc(blocksz, &cur_rj->arena);
+                if (dp.draw_sdata) {
+                    memcpy(sdata, dp.draw_sdata, blocksz);
+                }
+                else {
+                    memset(sdata, 0, blocksz);
+                }
                 ++push_cnt;
             }
         }
@@ -693,13 +932,18 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
     rmanifest *m = create_manifest(rndr, fif);
     m->rndr = rndr;
     m->rbp = p.rbp;
-    
+
     // UBO per pass frame update - the block size was already aligned to UBO min offset so no need to do any alignment
     // funny business here
-    sizet blocksz;
-    sizet buf_offset = fif * m->rndr->desc_info.frame_ubo.block_size;
-    void *dst = (void*)((sizet)m->rndr->desc_info.frame_ubo.buffer.mem_info.pMappedData + buf_offset);
-    memcpy(dst, p.frame_sdata, blocksz);
+    sizet blocksz = m->rndr->desc_info.frame_ubo.block_size;
+    sizet buf_offset = fif * blocksz * m->rndr->desc_info.frame_ubo.fif_block_count;
+    void *dst = (void *)((sizet)m->rndr->desc_info.frame_ubo.buffer.mem_info.pMappedData + buf_offset);
+    if (p.frame_sdata) {
+        memcpy(dst, p.frame_sdata, blocksz);
+    }
+    else {
+        memset(dst, 0, blocksz);
+    }
     return m;
 }
 

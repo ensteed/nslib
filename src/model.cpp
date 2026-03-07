@@ -273,6 +273,16 @@ void make_cube(geometry *geom)
     strncpy(geom->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
+idx_t find_subgeom_by_mat_slot(const geometry *geom, u32 mat_slot_ind)
+{
+    for (u32 i = 0; i < geom->sm_info.size; ++i) {
+        if (geom->sm_info[i].mat_slot_ind == mat_slot_ind) {
+            return i;
+        }
+    }
+    return INVALID_IDX;
+}
+
 void init_asset(geometry *geom)
 {
     asrt(geom->sm_info.size == 0);
