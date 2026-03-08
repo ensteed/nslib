@@ -434,7 +434,7 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     auto view_id = push_view(m, vp);
     auto imgui_view_id = push_view(m, {});
 
-    push_render_job(m, {.pass = mp_id, .view = view_id, .cb = draw_geometry, .cb_user = nullptr});
+    push_render_job(m, {.pass = mp_id, .view = view_id, .mem_arena_size = 2*MB_SIZE,.cb = draw_geometry, .cb_user = nullptr});
     push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
 
     update_and_draw_region(m, &app->rgn, &app->cg);
