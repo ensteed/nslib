@@ -64,14 +64,20 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
     for (u32 i = 0; i < sr->ents.size; ++i) {
         transform* tf = get_comp<transform>(sr->ents[i].id, tftb);
         static_mesh* sm = get_comp<static_mesh>(sr->ents[i].id, smtbl);
-        if (test_flags(tf->flags, TRANSFORM_FLAG_DIRTY)) {
+        if (test_flags(tf->flags, COMP_FLAG_DIRTY)) {
+            tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
+            tf->flags &= ~COMP_FLAG_DIRTY;
+        }
+        
+        if (tf->rfif_dirty > 0) {
             tf->cached_prev = tf->cached;
             tf->cached = math::model_tform(tf->world_pos, tf->orientation, tf->scale);
-            tf->flags &= ~TRANSFORM_FLAG_DIRTY;
+            --tf->rfif_dirty;
             
             instance_ssbo_data update_d{};
             update_d.model = tf->cached;
             update_d.prev_model = tf->cached_prev;
+            update_instance_data(m, get_comp_ind(tf, tftb), &update_d);
 
             if (sm) {
                 geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);

@@ -42,7 +42,7 @@ const rtexture_pool_cfg TPOOL_CFGS[] = {
             .flags = RTEXTURE_FLAG_NONE,
         },
         .pool_name = "dport_pool",
-        .slot_count = 10,
+        .slot_count = 1,
     },
     {
         .tmeta{
@@ -52,7 +52,7 @@ const rtexture_pool_cfg TPOOL_CFGS[] = {
             .flags = RTEXTURE_FLAG_NONE,
         },
         .pool_name = "mport_pool",
-        .slot_count = 4,
+        .slot_count = 1,
     },
 };
 
@@ -412,7 +412,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
                 curtf->orientation *= math::orientation(vec4{0.0, 0.0, 1.0, (f32)dt});
             }
             curtf->cached = math::model_tform(curtf->world_pos, curtf->orientation, curtf->scale);
-            curtf->flags |= TRANSFORM_FLAG_DIRTY;
+            curtf->flags |= COMP_FLAG_DIRTY;
         }
     }
 }

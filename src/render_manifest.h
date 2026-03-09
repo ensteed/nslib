@@ -311,6 +311,7 @@ struct mframe_params
 struct rmanifest
 {
     renderer *rndr;
+    idx_t fif;
     render_blueprint_ref rbp;
     array<rbuffer_target_fif> buffers;
     array<rtexture_target_fif> textures;

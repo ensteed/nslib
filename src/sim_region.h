@@ -15,13 +15,13 @@ enum comp_type
 
 enum comp_flag : u32
 {
-    COMP_FLAG_USER_BASE = make_flag(0),
+    COMP_FLAG_DIRTY = make_flag(0),
+    COMP_FLAG_USER_BASE = make_flag(1),
 };
 using comp_flags = u64;
 
 enum transform_flag : u32
 {
-    TRANSFORM_FLAG_DIRTY = make_flag_base(COMP_FLAG_USER_BASE, 0),
 };
 
 
@@ -43,6 +43,7 @@ struct transform
     vec3 world_pos;
     quat orientation;
     vec3 scale{1};
+    u32 rfif_dirty;
 };
 
 struct material_subgeom_mapping

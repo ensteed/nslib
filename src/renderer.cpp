@@ -60,91 +60,6 @@ intern void check_vk_result(VkResult result)
     asrt(result == VK_SUCCESS);
 }
 
-#ifdef USE_IMGUI
-bool sdl_event_func(void *sdl_event, void *)
-{
-    auto *ev = (SDL_Event *)sdl_event;
-
-    auto io = ImGui::GetIO();
-    ImGui_ImplSDL3_ProcessEvent(ev);
-
-    if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP || ev->type == SDL_EVENT_MOUSE_WHEEL) {
-        return io.WantCaptureMouse;
-    }
-    // NOTE: We might uncomment this in the future but for now we don't need to capture keyboard..
-    if (ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP) {
-        return io.WantCaptureKeyboard;
-    }
-    return false;
-}
-
-void init_imgui(renderer *rndr, const rbp_pass &pass)
-{
-    auto dev = &rndr->vk.inst.device;
-    // 263 KB seems to be about the min required - we'll give it a MB
-    init_fl_arena(&rndr->imgui.fl, MB_SIZE, &rndr->persist_fl, "imgui");
-
-    // Use the main forward pass for imgui.. this might only change if we use deferred shading.. but i think the imgui
-    // created pipeling only requires a color attachment
-    rndr->imgui.rpass = (VkRenderPass)pass.vk_handle;
-
-    ImGui::SetAllocatorFunctions(imgui_mem_alloc, imgui_mem_free, &rndr->imgui.fl);
-    rndr->imgui.ctxt = ImGui::CreateContext();
-    ImGui::StyleColorsDark();
-    auto &io = ImGui::GetIO();
-    io.FontGlobalScale = get_window_display_scale(rndr->vk.cfg.window);
-
-    vkr_desc_cfg cfg{};
-    cfg.max_sets = 1;
-    cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER] = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE;
-    cfg.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    if (vkr_init_desc_pool(&rndr->imgui.pool, cfg, &rndr->vk) != err_code::VKR_NO_ERROR) {
-        wlog("Could not create imgui descriptor pool");
-    }
-
-    ImGui_ImplSDL3_InitForVulkan((SDL_Window *)rndr->vk.cfg.window);
-
-    ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.ApiVersion = VKR_API_VERSION;
-    init_info.Instance = rndr->vk.inst.hndl;
-    init_info.PhysicalDevice = rndr->vk.inst.pdev_info.hndl;
-    init_info.Device = rndr->vk.inst.device.hndl;
-    init_info.QueueFamily = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind;
-    init_info.Queue = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
-    init_info.PipelineCache = VK_NULL_HANDLE;
-    init_info.DescriptorPool = rndr->imgui.pool;
-    init_info.Allocator = &rndr->vk.alloc_cbs;
-    init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
-    init_info.ImageCount = rndr->vk.inst.device.swapchain.images.size;
-    init_info.RenderPass = rndr->imgui.rpass;
-    init_info.Subpass = 0;
-    init_info.CheckVkResultFn = check_vk_result;
-    // init_info.MSAASamples
-    ImGui_ImplVulkan_Init(&init_info);
-
-    if (!ImGui_ImplVulkan_CreateFontsTexture()) {
-        wlog("Could not create imgui vulkan font texture");
-    }
-
-    set_platform_sdl_event_hook(rndr->vk.cfg.window, {.cb = sdl_event_func});
-}
-
-void terminate_imgui(renderer *rndr)
-{
-    if (rndr->imgui.fl.start) {
-        ilog("Shutting down imgui");
-        ImGui_ImplVulkan_Shutdown();
-        vkr_terminate_desc_pool(rndr->imgui.pool, &rndr->vk);
-        ImGui_ImplSDL3_Shutdown();
-        ImGui::DestroyContext(rndr->imgui.ctxt);
-        terminate_arena(&rndr->imgui.fl);
-    }
-    else {
-        ilog("Skipping imgui shutdown as already shut down");
-    }
-}
-#endif
-
 intern void terminate_geometry(renderer *rndr, rgeom_info *gref)
 {
     ilog("Terminating geometry %s", gref->name);
@@ -374,13 +289,14 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     ilog("Terminating global desc info");
     vkr_terminate_desc_pool(rndr->desc_info.pool, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.material_ssbo, &rndr->vk);
-    vkr_terminate_chunked_buffer(&rndr->desc_info.instance_ssbo, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.instance_ssbo.buffer, &rndr->vk);
     vkr_terminate_buffer(&rndr->desc_info.frame_ubo.buffer, &rndr->vk);
     vkr_terminate_buffer(&rndr->desc_info.pass_ssbo.buffer, &rndr->vk);
     vkr_terminate_buffer(&rndr->desc_info.view_ssbo.buffer, &rndr->vk);
     vkr_terminate_buffer(&rndr->desc_info.draw_ssbo.buffer, &rndr->vk);
     vkr_terminate_desc_set_layouts(rndr->desc_info.dset_layouts, RDSET_LAYOUT_COUNT, &rndr->vk);
     vkr_terminate_pipeline_layout(rndr->desc_info.pline_layout, &rndr->vk);
+    rndr->desc_info = {};
 }
 
 intern b32 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
@@ -564,6 +480,22 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         return result;
     }
 
+    //////////////////////////
+    // Create Instance SSBO //
+    //////////////////////////
+    // We allocate a buffer big enough to have a slot for each frame in flight so we can avoid needing to sync stuff..
+    // or create a slot in the buffer for every update and retire the old
+    sizet instance_buf_fif_sz = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count;
+    rndr->desc_info.instance_ssbo.block_size = dip.instance_ssbo.block_size;
+    rndr->desc_info.instance_ssbo.fif_block_count = dip.instance_ssbo.block_count;
+    b_cfg.buffer_size = instance_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
+    b_cfg.vma_alloc_name = "instance_ssbo";
+    result = vkr_init_buffer(&rndr->desc_info.instance_ssbo.buffer, b_cfg);
+    if (result != err_code::VKR_NO_ERROR) {
+        terminate_global_descriptor_info(rndr);
+        return false;
+    }
+
     //////////////////////
     // Create Frame UBO //
     //////////////////////
@@ -581,6 +513,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         terminate_global_descriptor_info(rndr);
         return result;
     }
+    
 
     // Set up shared chunked buffer config
     vkr_chunked_buffer_cfg cb_cfg{};
@@ -589,21 +522,6 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     cb_cfg.buffer_cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     cb_cfg.buffer_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
     cb_cfg.chunk_tracking_arena = &rndr->persist_fl;
-
-    
-    //////////////////////////
-    // Create Instance SSBO //
-    //////////////////////////
-    // We allocate a buffer big enough to have a slot for each frame in flight so we can avoid needing to sync stuff..
-    // or create a slot in the buffer for every update and retire the old
-    sizet instance_buf_fif_sz = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count;
-    cb_cfg.buffer_cfg.buffer_size = instance_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
-    cb_cfg.chunk_size = dip.instance_ssbo.block_size;
-    cb_cfg.buffer_cfg.vma_alloc_name = "instance_ssbo";
-    if (!vkr_init_chunked_buffer(&rndr->desc_info.instance_ssbo, cb_cfg)) {
-        terminate_global_descriptor_info(rndr);
-        return false;
-    }
 
     //////////////////////////
     // Create material SSBO //
@@ -798,7 +716,7 @@ intern void terminate_shader(renderer *rndr, rshader_info *shdr)
 }
 
 template<typename T>
-void init_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, u32 elements)
+intern void init_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, u32 elements)
 {
     init_slot_pool(&cache->items, elements, &rndr->persist_fl);
     hmap_init(&cache->key_lut, hash_type, &rndr->persist_fl, elements * 2);
@@ -891,6 +809,11 @@ intern void terminate_render_resources(renderer *rndr)
         terminate_shader(rndr, iter.item);
     }
     terminate_slot_pool(&rndr->shaders);
+}
+
+idx_t get_fif_ind(renderer *rndr)
+{
+    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
 }
 
 void handle_window_resize(renderer *rndr)
@@ -1450,6 +1373,98 @@ rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
     auto fiter = hmap_find(&rndr->rtargets.buffer_id_map, id);
     return fiter ? fiter->val : rbuffer_target_handle{};
 }
+
+void update_instance_data(rmanifest* m, idx_t inst, const void* instance_data)
+{
+    sizet blocksz = m->rndr->desc_info.instance_ssbo.block_size;
+    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.instance_ssbo.fif_block_count + inst);
+    void *dst = (void*)((sizet)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    memcpy(dst, instance_data, blocksz);
+}
+        
+#ifdef USE_IMGUI
+void init_imgui(renderer *rndr, const rbp_pass &pass)
+{
+    auto dev = &rndr->vk.inst.device;
+    // 263 KB seems to be about the min required - we'll give it a MB
+    init_fl_arena(&rndr->imgui.fl, MB_SIZE, &rndr->persist_fl, "imgui");
+
+    // Use the main forward pass for imgui.. this might only change if we use deferred shading.. but i think the imgui
+    // created pipeling only requires a color attachment
+    rndr->imgui.rpass = (VkRenderPass)pass.vk_handle;
+
+    ImGui::SetAllocatorFunctions(imgui_mem_alloc, imgui_mem_free, &rndr->imgui.fl);
+    rndr->imgui.ctxt = ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+    auto &io = ImGui::GetIO();
+    io.FontGlobalScale = get_window_display_scale(rndr->vk.cfg.window);
+
+    vkr_desc_cfg cfg{};
+    cfg.max_sets = 1;
+    cfg.max_desc_per_type[VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER] = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE;
+    cfg.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    if (vkr_init_desc_pool(&rndr->imgui.pool, cfg, &rndr->vk) != err_code::VKR_NO_ERROR) {
+        wlog("Could not create imgui descriptor pool");
+    }
+
+    ImGui_ImplSDL3_InitForVulkan((SDL_Window *)rndr->vk.cfg.window);
+
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.ApiVersion = VKR_API_VERSION;
+    init_info.Instance = rndr->vk.inst.hndl;
+    init_info.PhysicalDevice = rndr->vk.inst.pdev_info.hndl;
+    init_info.Device = rndr->vk.inst.device.hndl;
+    init_info.QueueFamily = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind;
+    init_info.Queue = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
+    init_info.PipelineCache = VK_NULL_HANDLE;
+    init_info.DescriptorPool = rndr->imgui.pool;
+    init_info.Allocator = &rndr->vk.alloc_cbs;
+    init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
+    init_info.ImageCount = rndr->vk.inst.device.swapchain.images.size;
+    init_info.RenderPass = rndr->imgui.rpass;
+    init_info.Subpass = 0;
+    init_info.CheckVkResultFn = check_vk_result;
+    // init_info.MSAASamples
+    ImGui_ImplVulkan_Init(&init_info);
+
+    if (!ImGui_ImplVulkan_CreateFontsTexture()) {
+        wlog("Could not create imgui vulkan font texture");
+    }
+
+    auto sdl_event_func = [](void *sdl_event, void *) -> bool {
+        auto *ev = (SDL_Event *)sdl_event;
+
+        auto io = ImGui::GetIO();
+        ImGui_ImplSDL3_ProcessEvent(ev);
+
+        if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP || ev->type == SDL_EVENT_MOUSE_WHEEL) {
+            return io.WantCaptureMouse;
+        }
+        // NOTE: We might uncomment this in the future but for now we don't need to capture keyboard..
+        if (ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP) {
+            return io.WantCaptureKeyboard;
+        }
+        return false;
+    };
+    
+    set_platform_sdl_event_hook(rndr->vk.cfg.window, {.cb = sdl_event_func});
+}
+
+void terminate_imgui(renderer *rndr)
+{
+    if (rndr->imgui.fl.start) {
+        ilog("Shutting down imgui");
+        ImGui_ImplVulkan_Shutdown();
+        vkr_terminate_desc_pool(rndr->imgui.pool, &rndr->vk);
+        ImGui_ImplSDL3_Shutdown();
+        ImGui::DestroyContext(rndr->imgui.ctxt);
+        terminate_arena(&rndr->imgui.fl);
+    }
+    else {
+        ilog("Skipping imgui shutdown as already shut down");
+    }
+}
+#endif
 
 bool init_renderer(renderer *rndr, const renderer_cfg &p)
 {

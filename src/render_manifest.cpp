@@ -280,11 +280,6 @@ void draw_imgui(const render_job_cb_params &p, void *)
 }
 #endif
 
-intern idx_t get_fif_ind(renderer *rndr)
-{
-    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
-}
-
 intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
 {
     if (window_resized_this_frame(rndr->vk.cfg.window)) {
@@ -303,9 +298,10 @@ intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
 }
 
 // We can let this "leak" as it doesn't leak due to using frame linear allocator
-intern rmanifest *create_manifest(renderer *rndr, u32 fif)
+intern rmanifest *create_manifest(renderer *rndr, idx_t fif)
 {
     rmanifest *m = mem_calloc<rmanifest>(1, &rndr->frame_linear);
+    m->fif = fif;
     arr_init(&m->jobs, &rndr->frame_linear, 24);
     arr_init(&m->passes, &rndr->frame_linear, 12);
     arr_init(&m->views, &rndr->frame_linear, 12);
@@ -664,6 +660,19 @@ intern void sort_draw_list(mrender_job *rjob)
     rjob->sorted_dcs.size = n;
 }
 
+intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, sizet job_ssbo_base) {
+    sizet blocksz = m->rndr->desc_info.draw_ssbo.block_size;
+    for (u32 i = 0; i < cur_rj->sorted_dcs.size; ++i) {
+        const mdraw_call &dc = cur_rj->dcs[cur_rj->sorted_dcs[i]];
+        sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.draw_ssbo.fif_block_count + job_ssbo_base + i);
+        void *dst = (void *)((sizet)m->rndr->desc_info.draw_ssbo.buffer.mem_info.pMappedData + buf_offset);
+        if (dc.draw_sdata)
+            memcpy(dst, dc.draw_sdata, blocksz);
+        else
+            memset(dst, 0, blocksz);
+    }
+}
+
 intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
 {
     int err = vkr_begin_cmd_buf(buf, {});
@@ -688,18 +697,9 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
         // Sort it baby boo
         sort_draw_list(cur_rj);
 
-        sizet blocksz = m->rndr->desc_info.draw_ssbo.block_size;
-        for (u32 i = 0; i < cur_rj->dcs.size; ++i) {
-            const mdraw_call &dc = cur_rj->dcs[cur_rj->sorted_dcs[i]];
-            sizet buf_offset = blocksz * (fif * m->rndr->desc_info.draw_ssbo.fif_block_count + job_ssbo_base + i);
-            void *dst = (void *)((sizet)m->rndr->desc_info.draw_ssbo.buffer.mem_info.pMappedData + buf_offset);
-            if (dc.draw_sdata)
-                memcpy(dst, dc.draw_sdata, blocksz);
-            else
-                memset(dst, 0, blocksz);
-        }
+        update_draw_ssbo(m, cur_rj, job_ssbo_base);
         job_ssbo_base += cur_rj->dcs.size;
-
+        
         // Create all needed barriers for the current pass resources (according to what we have for the current state)
         emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->mp, buf, fif);
 
@@ -764,7 +764,7 @@ idx_t push_pass(rmanifest *m, const mpass_params &p)
     }
     // SSBO per pass data update
     sizet blocksz = m->rndr->desc_info.pass_ssbo.block_size;
-    sizet buf_offset = pind * blocksz * m->rndr->desc_info.pass_ssbo.fif_block_count;
+    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.pass_ssbo.fif_block_count + pind);
     void *dst = (void *)((sizet)m->rndr->desc_info.pass_ssbo.buffer.mem_info.pMappedData + buf_offset);
     if (p.pass_sdata) {
         memcpy(dst, p.pass_sdata, blocksz);
@@ -792,7 +792,7 @@ idx_t push_view(rmanifest *m, const mview_params &p)
 
     // SSBO per pass data update
     sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
-    sizet buf_offset = ind * blocksz * m->rndr->desc_info.view_ssbo.fif_block_count;
+    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.view_ssbo.fif_block_count + ind);
     void *dst = (void *)((sizet)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset);
     if (p.view_sdata) {
         memcpy(dst, p.view_sdata, blocksz);
@@ -846,6 +846,7 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 else {
                     memset(sdata, 0, blocksz);
                 }
+                cur_d->draw_sdata = sdata;
                 ++push_cnt;
             }
         }

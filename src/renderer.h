@@ -487,7 +487,7 @@ struct global_descriptor_info
     // Per frame data
     desc_block_buffer frame_ubo;
     // All instance data
-    vkr_chunked_buffer instance_ssbo;
+    desc_block_buffer instance_ssbo;
     // All material data
     vkr_chunked_buffer material_ssbo;
 };
@@ -613,8 +613,9 @@ constexpr sizet calculate_manifest_approximate_needed_capacity(const manifest_ma
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
-
 void handle_window_resize(renderer *rndr);
+rformat get_swapchain_format(renderer *rnd);
+idx_t get_fif_ind(renderer *rndr);
 
 idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 idx_t find_geometry_stream_group(renderer *rndr, rres_id group_id);
@@ -636,15 +637,13 @@ void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool
     push_geometry_attribute(stream, {.shader_location = shader_location, .fmt = get_rformat_for_type<T>(normalize_in_shader)});
 }
 
-rformat get_swapchain_format(renderer *rnd);
-
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
-void post_instance_update(renderer* rndr, u32 idx_t, const void* instance_data);
+void update_instance_data(rmanifest* m, idx_t inst, const void* instance_data);
 void post_material_update(renderer* rndr, u32 material_idx, const void* material_data);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
