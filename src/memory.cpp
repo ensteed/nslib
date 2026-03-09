@@ -546,7 +546,13 @@ void reset_arena(mem_arena *arena)
     }
 }
 
-void init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_arena(mem_arena *arena,
+                sizet total_size,
+                mem_alloc_type mtype,
+                mem_arena *upstream,
+                const char *name,
+                bool skip_log,
+                const pf_alloc_funcs &pf_funcs)
 {
     arena->pf_funcs.alloc = pf_funcs.alloc ? pf_funcs.alloc : default_upstream_alloc_func;
     arena->pf_funcs.free = pf_funcs.free ? pf_funcs.free : default_upstream_free_func;
@@ -556,7 +562,10 @@ void init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_ar
     arena->alloc_type = mtype;
     arena->upstream_allocator = upstream;
     arena->name = name;
-    ilog("Initializing %s (%s) arena with %lu available", name, arena_type_str(arena->alloc_type), arena->total_size);
+
+    if (!skip_log) {
+        ilog("Initializing %s (%s) arena with %lu available", name, arena_type_str(arena->alloc_type), arena->total_size);
+    }
 
     // Make sure user filled out a size before passsing in
     asrt(arena->total_size != 0);
@@ -575,36 +584,44 @@ void init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_ar
     reset_arena(arena);
 }
 
-void init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
 {
-    init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name, skip_log, pf_funcs);
 }
 
-void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
 {
-    init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name, skip_log, pf_funcs);
 }
 
-void init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
 {
-    init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name, skip_log, pf_funcs);
 }
 
-void init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
+void init_pool_arena(mem_arena *arena,
+                     sizet chunk_size,
+                     sizet chunk_count,
+                     mem_arena *upstream,
+                     const char *name,
+                     bool skip_log,
+                     const pf_alloc_funcs &pf_funcs)
 {
     auto min_sz = sizeof(mem_node);
     arena->mpool.chunk_size = chunk_size >= min_sz ? chunk_size : min_sz;
-    init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, pf_funcs);
+    init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, skip_log, pf_funcs);
 }
 
-void terminate_arena(mem_arena *arena)
+void terminate_arena(mem_arena *arena, bool skip_log)
 {
-    ilog("Terminating %s (%s) arena with %lu used of %lu allocated and %lu peak",
-         arena->name,
-         arena_type_str(arena->alloc_type),
-         arena->used,
-         arena->total_size,
-         arena->peak);
+    if (!skip_log) {
+        ilog("Terminating %s (%s) arena with %lu used of %lu allocated and %lu peak",
+             arena->name,
+             arena_type_str(arena->alloc_type),
+             arena->used,
+             arena->total_size,
+             arena->peak);
+    }
     reset_arena(arena);
     if (arena->upstream_allocator) {
         mem_free(arena->start, arena->upstream_allocator);

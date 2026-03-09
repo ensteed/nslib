@@ -30,6 +30,8 @@ intern const rres_id MAIN_PASS_ID = hash_type(MAIN_PASS_NAME);
 intern constexpr const char *IMGUI_PASS_NAME = "imgui-pass";
 intern const rres_id IMGUI_PASS_ID = hash_type(IMGUI_PASS_NAME);
 
+intern constexpr const char *DIFFUSE_TECH = "fwd-diffuse";
+
 // Default texture pool configs
 const rtexture_pool_cfg TPOOL_CFGS[] = {
     {
@@ -54,22 +56,35 @@ const rtexture_pool_cfg TPOOL_CFGS[] = {
     },
 };
 
-rpipeline_layout_cfg PL_LAYOUT_CFG{
-    .draw_ssbo{1000, sizeof(draw_ssbo_data)},
-    .view_ssbo{10, sizeof(view_ssbo_data)},
-    .pass_ssbo{10, sizeof(pass_ssbo_data)},
-    .frame_ubo{1, sizeof(frame_ubo_data)},
+constexpr u32 MAX_DRAW_CALLS_PER_JOB = 10000;
+
+
+const rpipeline_layout_cfg PL_LAYOUT_CFG{
+    .draw_ssbo_block_sz = sizeof(draw_ssbo_data),
+    .view_ssbo_block_sz = sizeof(view_ssbo_data),
+    .pass_ssbo_block_sz = sizeof(pass_ssbo_data),
+    .frame_ubo_block_sz = sizeof(frame_ubo_data),
     .instance_ssbo{1000, sizeof(instance_ssbo_data)},
     .material_ssbo{256, sizeof(material_ssbo_data)},
     .push_const_range_count = 0,
     .push_const_ranges = nullptr,
 };
 
+const manifest_max_counts MANIFEST_MAX_COUNTS{
+    .passes = 10,
+    .views = 10,
+    .render_jobs = 10,
+    .draw_calls_per_job = 10000,
+    .texture_targets = 10,
+    .buffer_targets = 10,
+};
+
 const renderer_cfg RNDR_CFG{
     .persist_fl_size = 200 * MB_SIZE,
     .scratch_stack_size = 10 * MB_SIZE,
-    .frame_linear_size = 10 * MB_SIZE,
-    .desc = PL_LAYOUT_CFG,
+    .frame_linear_size = 5 * MB_SIZE + calculate_manifest_approximate_needed_capacity(MANIFEST_MAX_COUNTS, PL_LAYOUT_CFG.draw_ssbo_block_sz),
+    .desc{PL_LAYOUT_CFG},
+    .mcounts{MANIFEST_MAX_COUNTS},
     .texture_pool_count = ARR_SIZE(TPOOL_CFGS),
     .texture_pool_cfgs = TPOOL_CFGS,
 };
@@ -167,10 +182,10 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     app->movement_km.mbutton_mask = MBUTTON_MASK_NONE;
 }
 
-intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom)
+intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom, const material &mat)
 {
     // Create a grid of entities with odd ones being cubes and even being rectangles
-    int len = 10, width = 10, height = 10;
+    int len = 5, width = 5, height = 1;
     auto ent_offset = add_entities(len * width * height, region);
 
     auto tf_tbl = get_comp_tbl<transform>(&region->cdb);
@@ -183,10 +198,12 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
                 auto sc = add_comp<static_mesh>(ent);
                 if (xind % 2) {
                     sc->geom_id = cube_geom.id;
+                    arr_emplace_back(&sc->mat_mapping, mat.id, 0);
                     ent->name = to_str("cube-%d", ent_ind);
                 }
                 else {
                     sc->geom_id = rect_geom.id;
+                    arr_emplace_back(&sc->mat_mapping, mat.id, 0);
                     ent->name = to_str("rect-%d", ent_ind);
                 }
                 tfcomp->world_pos = vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f};
@@ -281,7 +298,7 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     return rbp;
 }
 
-intern void create_diffuse_technique(shader_pool *spool, technique_pool *tpool)
+intern technique_item_ref create_diffuse_technique(shader_pool *spool, technique_pool *tpool)
 {
     auto shdr = create_asset(spool, "fwd-diffuse");
     const char *path = "data/shaders/fwd-diffuse";
@@ -290,7 +307,7 @@ intern void create_diffuse_technique(shader_pool *spool, technique_pool *tpool)
         wlog("Failed to load shader at %s: %s", path, err);
     }
 
-    auto tech = create_asset(tpool, "fwd-diffuse");
+    auto tech = create_asset(tpool, DIFFUSE_TECH);
     tech.item->bpid = FWD_PBR_RBP_ID;
 
     // All default states are good here
@@ -300,6 +317,7 @@ intern void create_diffuse_technique(shader_pool *spool, technique_pool *tpool)
     p.bp_subpass = 0;
     p.gsg_layout = 0;
     arr_push_back(&tech.item->passes, p);
+    return tech;
 }
 
 intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
@@ -313,14 +331,19 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     auto tex_pool = get_asset_pool<texture>(&app->cg);
     auto shdr_pool = get_asset_pool<shader>(&app->cg);
     auto tech_pool = get_asset_pool<technique>(&app->cg);
+    auto mat_pool = get_asset_pool<material>(&app->cg);
 
     geometry *rect, *cube;
     create_geometry(geom_pool, &rect, &cube);
     create_textures(tex_pool);
-    create_diffuse_technique(shdr_pool, tech_pool);
+    technique_item_ref diff_tech = create_diffuse_technique(shdr_pool, tech_pool);
+
+    material_item_ref default_mat = create_asset(mat_pool, "default");
+    arr_emplace_back(&default_mat.item->bp_techniques, FWD_PBR_RBP_ID, diff_tech.item->id);
 
     renderer_cfg p{RNDR_CFG};
     p.win_hndl = ctxt->win_hndl;
+    
     p.upsream = &ctxt->arenas.free_list;
     if (!init_renderer(&app->rndr, p)) return false;
 
@@ -354,7 +377,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     // Create and setup input for camera
     setup_camera_controller(ctxt, app);
-    create_entity_grid(&app->rgn, *cube, *rect);
+    create_entity_grid(&app->rgn, *cube, *rect, *default_mat.item);
     return true;
 }
 
@@ -396,9 +419,8 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 
 intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
 {
-    auto bp = get_render_blueprint(m->rndr, m->rbp);
-    auto bp_main_pass = find_rbp_pass(bp, MAIN_PASS_ID);
-    auto imgui_pass = find_rbp_pass(bp, IMGUI_PASS_ID);
+    auto bp_main_pass = find_rbp_pass(m->rbp.item, MAIN_PASS_ID);
+    auto imgui_pass = find_rbp_pass(m->rbp.item, IMGUI_PASS_ID);
 
     pass_ssbo_data pdata{};
 
@@ -434,7 +456,7 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     auto view_id = push_view(m, vp);
     auto imgui_view_id = push_view(m, {});
 
-    push_render_job(m, {.pass = mp_id, .view = view_id, .mem_arena_size = 2*MB_SIZE,.cb = draw_geometry, .cb_user = nullptr});
+    push_render_job(m, {.pass = mp_id, .view = view_id, .max_draw_calls = 1000, .cb = draw_geometry, .cb_user = nullptr});
     push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
 
     update_and_draw_region(m, &app->rgn, &app->cg);
@@ -462,7 +484,7 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     fdata.elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
 
     auto bp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
-    rmanifest *m = begin_render_frame(&app->rndr, {.rbp = bp.hndl, .frame_sdata = &fdata});
+    rmanifest *m = begin_render_frame(&app->rndr, {.rbp = bp, .frame_sdata = &fdata});
     if (!m) return true;
 
     build_manifest(m, app);

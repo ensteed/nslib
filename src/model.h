@@ -168,6 +168,11 @@ struct technique
     rtechnique_handle rhndl;
 };
 
+struct mat_blueprint_mapping {
+    rres_id bpid;
+    asset_id tech_id;
+};
+
 // Material references textures and pipelines, which both must be uploaded to GPUa
 struct material
 {
@@ -175,7 +180,7 @@ struct material
     vec4 col;
 
     // Render blueprint to technique mapping
-    array<asset_id> bp_techniques;
+    array<mat_blueprint_mapping> bp_techniques;
 
     // Techniuqe overrides (if override_mask contains bit for thing to override)
     // NOTE: The bits set in rmask here that don't pertain to bits in override_mask do nothing if set. For example,

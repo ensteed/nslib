@@ -82,20 +82,22 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
                     asrt(is_valid(mref));
                     
                     for (u32 bpi = 0; bpi < mref.item->bp_techniques.size; ++bpi) {
-                        technique_item_ref tref = find_asset<technique>(techpool, mref.item->bp_techniques[bpi]);
-                        asrt(is_valid(tref));
+                        if (mref.item->bp_techniques[bpi].bpid == m->rbp.item->id) {
+                            technique_item_ref tref = find_asset<technique>(techpool, mref.item->bp_techniques[bpi].tech_id);
+                            asrt(is_valid(tref));
                     
-                        mdraw_params dp{};
-                        draw_ssbo_data dd{};
-                        dd.idx_t = tf - tftbs->entries.data;
-                        dd.material_idx = mref.item->rhndl.si;
-                        dp.draw_sdata = &dd;
-                        dp.geom = gref.item->rhndl;
-                        dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
-                        dp.mat = mref.item->rhndl;
-                        dp.tech = tref.item->rhndl;
+                            mdraw_params dp{};
+                            draw_ssbo_data dd{};
+                            dd.idx_t = tf - tftbs->entries.data;
+                            dd.material_idx = mref.item->rhndl.si;
+                            dp.draw_sdata = &dd;
+                            dp.geom = gref.item->rhndl;
+                            dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
+                            dp.mat = mref.item->rhndl;
+                            dp.tech = tref.item->rhndl;
                         
-                        push_draw(m, dp);
+                            push_draw(m, dp);
+                        }
                     }
                 }
             }

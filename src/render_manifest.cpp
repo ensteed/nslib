@@ -13,7 +13,6 @@ namespace nslib
 {
 
 intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
-intern constexpr sizet DEFAULT_RJOB_DRAW_CALL_CAPACITY = 64;
 
 struct render_job_cb_params
 {
@@ -68,7 +67,7 @@ enum pline_dstate_update_flag
 struct vk_stencil_op_info
 {};
 
-void setup_pline_dynamic_state(VkCommandBuffer cb, const mdraw_call &dc, rpline_dyn_state *state)
+intern void setup_pline_dynamic_state(VkCommandBuffer cb, const mdraw_call &dc, rpline_dyn_state *state)
 {
     bool state_valid = is_valid(state->last_pline);
     u32 state_update_mask = state_valid ? PLINE_DSTATE_UPDATE_NONE : PLINE_DSTATE_UPDATE_ALL;
@@ -633,7 +632,7 @@ intern void sort_draw_list(mrender_job *rjob)
     if (n <= 1) return;
 
     // Initialize index arrays
-    u32 *src = mem_alloc<u32>(rjob->sorted_dcs.arena, n);
+    u32 *src = rjob->sorted_dcs.data;
     u32 *tmp = mem_alloc<u32>(rjob->sorted_dcs.arena, n);
     for (u32 i = 0; i < n; ++i)
         src[i] = i;
@@ -663,7 +662,6 @@ intern void sort_draw_list(mrender_job *rjob)
     // src is the final sorted index array (8 swaps = even, so src == original alloc)
     rjob->sorted_dcs.data = src;
     rjob->sorted_dcs.size = n;
-    rjob->sorted_dcs.capacity = n;
 }
 
 intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
@@ -678,11 +676,10 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
     // We place all draw call data for all jobs in a single SSBO, so this is the base offset for the current job's draw call data
     sizet job_ssbo_base = 0;
     for (u32 rji = 0; rji < m->jobs.size; ++rji) {
-        auto rbp = get_render_blueprint(m->rndr, m->rbp);
         auto cur_rj = &m->jobs[rji];
         auto mp = &m->passes[cur_rj->mp];
         auto mv = &m->views[cur_rj->mv];
-        auto rbp_pass = &rbp->passes[mp->rbpp];
+        auto rbp_pass = &m->rbp.item->passes[mp->rbpp];
         auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
 
         // Must have all slots assigned
@@ -741,7 +738,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
                  cur_rj->mv,
                  rbp_pass->name,
                  rbp_pass->vk_handle,
-                 rbp->name);
+                 m->rbp.item->name);
         }
         vkr_cmd_end_rpass(buf);
 
@@ -759,8 +756,7 @@ idx_t push_pass(rmanifest *m, const mpass_params &p)
     arr_resize(&m->passes, pind + 1);
     m->passes[pind].rbpp = p.rbpp;
     if (p.assignments && p.assignment_count != 0) {
-        auto bp = get_render_blueprint(m->rndr, m->rbp);
-        asrt(p.assignment_count == bp->passes[p.rbpp].slots.size);
+        asrt(p.assignment_count == m->rbp.item->passes[p.rbpp].slots.size);
         arr_resize(&m->passes[pind].slot_assignments, p.assignment_count);
         for (sizet i = 0; i < m->passes[pind].slot_assignments.size; ++i) {
             m->passes[pind].slot_assignments[i] = p.assignments[i];
@@ -782,8 +778,7 @@ idx_t push_pass(rmanifest *m, const mpass_params &p)
 u32 push_slot_assignment(rmanifest *m, idx_t pid, const mpass_slot_assignment &sa)
 {
     // We cannot add more assignments than slots!
-    auto bp = get_render_blueprint(m->rndr, m->rbp);
-    asrt(m->passes[pid].slot_assignments.size < bp->passes[m->passes[pid].rbpp].slots.size);
+    asrt(m->passes[pid].slot_assignments.size < m->rbp.item->passes[m->passes[pid].rbpp].slots.size);
 
     u32 sa_ind = m->passes[pid].slot_assignments.size++;
     m->passes[pid].slot_assignments[sa_ind] = sa;
@@ -812,9 +807,13 @@ idx_t push_render_job(rmanifest *m, const mrender_job_params &p)
 {
     idx_t ind = (idx_t)m->jobs.size;
     auto rj = arr_emplace_back(&m->jobs, p.pass, p.view, mem_arena{}, array<mdraw_call>{}, array<idx_t>{}, p.cb, p.cb_user);
-    init_fl_arena(&rj->arena, p.mem_arena_size, &m->rndr->frame_linear, "rjob_arena");
-    arr_init(&rj->dcs, &rj->arena, DEFAULT_RJOB_DRAW_CALL_CAPACITY);
-    arr_init(&rj->sorted_dcs, &rj->arena, 0);
+    if (p.max_draw_calls > 0) {
+        sizet ssbo_block_alloc_sz = sizeof(alloc_header) + m->rndr->desc_info.draw_ssbo.block_size;
+        sizet memsz = calculate_render_job_needed_capacity(p.max_draw_calls, m->rndr->desc_info.draw_ssbo.block_size);
+        init_fl_arena(&rj->arena, memsz, &m->rndr->frame_linear, "rjob_arena", true);
+        arr_init(&rj->dcs, &rj->arena, p.max_draw_calls);
+        arr_init(&rj->sorted_dcs, &rj->arena, p.max_draw_calls);
+    }
     return ind;
 }
 

@@ -298,7 +298,7 @@ struct mrender_job_params
 {
     idx_t pass;
     idx_t view;
-    sizet mem_arena_size{10 * KB_SIZE};
+    u32 max_draw_calls;
     render_job_cb *cb;
     void *cb_user;
 };
@@ -311,7 +311,7 @@ struct mframe_params
 struct rmanifest
 {
     renderer *rndr;
-    render_blueprint_handle rbp;
+    render_blueprint_ref rbp;
     array<rbuffer_target_fif> buffers;
     array<rtexture_target_fif> textures;
 
@@ -324,9 +324,19 @@ struct rmanifest
 struct rframe_begin_params
 {
     // Blueprint handle for this frame
-    render_blueprint_handle rbp;
+    render_blueprint_ref rbp;
     // Frame SSBO data
     const void *frame_sdata;
+};
+
+struct manifest_max_counts
+{
+    u32 passes;
+    u32 views;
+    u32 render_jobs;
+    u32 draw_calls_per_job;
+    u32 texture_targets;
+    u32 buffer_targets;
 };
 
 // Draw funcs

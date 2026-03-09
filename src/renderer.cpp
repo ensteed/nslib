@@ -472,18 +472,18 @@ intern b32 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
     return true;
 }
 
-intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg &dip)
+intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg &dip, const manifest_max_counts &mc)
 {
     ilog("Initializing global descriptor info");
 
     // Not exactly needed for SSBO but its best to align to 16 bytes anyways
-    asrt(dip.draw_ssbo.block_size % 16 == 0);
-    asrt(dip.view_ssbo.block_size % 16 == 0);
-    asrt(dip.pass_ssbo.block_size % 16 == 0);
+    asrt(dip.draw_ssbo_block_sz % 16 == 0);
+    asrt(dip.view_ssbo_block_sz % 16 == 0);
+    asrt(dip.pass_ssbo_block_sz % 16 == 0);
     asrt(dip.instance_ssbo.block_size % 16 == 0);
     asrt(dip.material_ssbo.block_size % 16 == 0);
     // Absolute requirement for uniform buffers
-    asrt(dip.frame_ubo.block_size % 16 == 0);
+    asrt(dip.frame_ubo_block_sz % 16 == 0);
     // Limit our ranges - we can always increase this number if we needed but right now it's unnecessary
     asrt(dip.push_const_range_count <= MAX_PUSH_CONSTANT_RANGES);
 
@@ -519,12 +519,15 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     b_cfg.alloc_flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     b_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
 
+
     //////////////////////
     // Create Draw SSBO //
     //////////////////////
-    sizet draw_buf_fif_sz = dip.draw_ssbo.block_size * dip.draw_ssbo.block_count;
-    rndr->desc_info.draw_ssbo.block_size = dip.draw_ssbo.block_size;
-    rndr->desc_info.draw_ssbo.fif_block_count = dip.draw_ssbo.block_count;
+    // Max draw calls among all render jobs
+    u32 total_max_dcs = mc.render_jobs * mc.draw_calls_per_job;    
+    sizet draw_buf_fif_sz = dip.draw_ssbo_block_sz * total_max_dcs;
+    rndr->desc_info.draw_ssbo.block_size = dip.draw_ssbo_block_sz;
+    rndr->desc_info.draw_ssbo.fif_block_count = total_max_dcs;
     b_cfg.buffer_size = draw_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "draw_ssbo";
     result = vkr_init_buffer(&rndr->desc_info.draw_ssbo.buffer, b_cfg);
@@ -536,9 +539,9 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////
     // Create View SSBO //
     //////////////////////
-    sizet view_buf_fif_sz = dip.view_ssbo.block_size * dip.view_ssbo.block_count;
-    rndr->desc_info.view_ssbo.block_size = dip.view_ssbo.block_size;
-    rndr->desc_info.view_ssbo.fif_block_count = dip.view_ssbo.block_count;
+    sizet view_buf_fif_sz = dip.view_ssbo_block_sz * mc.views;
+    rndr->desc_info.view_ssbo.block_size = dip.view_ssbo_block_sz;
+    rndr->desc_info.view_ssbo.fif_block_count = mc.views;
     b_cfg.buffer_size = view_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "view_ssbo";
     result = vkr_init_buffer(&rndr->desc_info.view_ssbo.buffer, b_cfg);
@@ -550,9 +553,9 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////
     // Create Pass SSBO //
     //////////////////////
-    sizet pass_buf_fif_sz = dip.pass_ssbo.block_size * dip.pass_ssbo.block_count;
-    rndr->desc_info.pass_ssbo.block_size = dip.pass_ssbo.block_size;
-    rndr->desc_info.pass_ssbo.fif_block_count = dip.pass_ssbo.block_count;
+    sizet pass_buf_fif_sz = dip.pass_ssbo_block_sz * mc.passes;
+    rndr->desc_info.pass_ssbo.block_size = dip.pass_ssbo_block_sz;
+    rndr->desc_info.pass_ssbo.fif_block_count = mc.passes;
     b_cfg.buffer_size = pass_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "pass_ssbo";
     result = vkr_init_buffer(&rndr->desc_info.pass_ssbo.buffer, b_cfg);
@@ -567,9 +570,9 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     // Need to align to UBO min offset alignment because we will have a single buffer for all FIFs with later
     // ones offset by FIF_SIZE * fif_i
     sizet ubo_min_offset = rndr->vk.inst.pdev_info.props.limits.minUniformBufferOffsetAlignment;
-    sizet frame_buf_fif_sz = align_up(dip.frame_ubo.block_size * dip.frame_ubo.block_count, ubo_min_offset);
-    rndr->desc_info.frame_ubo.block_size = dip.frame_ubo.block_size;
-    rndr->desc_info.frame_ubo.fif_block_count = dip.frame_ubo.block_count;
+    sizet frame_buf_fif_sz = align_up(dip.frame_ubo_block_sz, ubo_min_offset);
+    rndr->desc_info.frame_ubo.block_size = dip.frame_ubo_block_sz;
+    rndr->desc_info.frame_ubo.fif_block_count = 1;
     b_cfg.buffer_size = frame_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "frame_ubo";
     b_cfg.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
@@ -1509,7 +1512,7 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
     if (!init_global_samplers(rndr)) return false;
 
     // Descriptor set layouts
-    if (!init_global_descriptor_info(rndr, p.desc)) return false;
+    if (!init_global_descriptor_info(rndr, p.desc, p.mcounts)) return false;
 
     // Start timeer
     ptimer_restart(&rndr->pt);

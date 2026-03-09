@@ -568,10 +568,10 @@ struct push_constant_range {
 
 struct rpipeline_layout_cfg
 {
-    sbuffer_cfg draw_ssbo;
-    sbuffer_cfg view_ssbo;
-    sbuffer_cfg pass_ssbo;
-    sbuffer_cfg frame_ubo;
+    sizet draw_ssbo_block_sz;
+    sizet view_ssbo_block_sz;
+    sizet pass_ssbo_block_sz;
+    sizet frame_ubo_block_sz;
     sbuffer_cfg instance_ssbo;
     sbuffer_cfg material_ssbo;
     u32 push_const_range_count;
@@ -587,9 +587,29 @@ struct renderer_cfg
     sizet scratch_stack_size;
     sizet frame_linear_size;
     rpipeline_layout_cfg desc;
+    manifest_max_counts mcounts;
     u32 texture_pool_count;
     const rtexture_pool_cfg *texture_pool_cfgs;
 };
+
+constexpr sizet calculate_render_job_needed_capacity(u32 draw_call_count, sizet draw_ssbo_block_size)
+{
+    // draw call data + sorted index + tmp sorted index, alloc headers for these 3 allocations plus the actual SSBO data and allocation
+    // header for each draw call
+    sizet ssbo_block_alloc_sz = sizeof(alloc_header) + draw_ssbo_block_size;
+    return draw_call_count * (sizeof(mdraw_call) + sizeof(u32)*2 + ssbo_block_alloc_sz) + sizeof(alloc_header) * 3;
+}
+
+constexpr sizet calculate_manifest_approximate_needed_capacity(const manifest_max_counts &max_counts, sizet draw_ssbo_block_sz)
+{
+    sizet pass_sz = max_counts.passes * sizeof(mpass);
+    sizet view_sz = max_counts.views * sizeof(mview);
+    sizet job_sz = max_counts.render_jobs * calculate_render_job_needed_capacity(max_counts.draw_calls_per_job, draw_ssbo_block_sz);
+    sizet buffer_targets = max_counts.buffer_targets * sizeof(rbuffer_target);
+    sizet texture_targets = max_counts.texture_targets * sizeof(rtexture_target);
+    return sizeof(rmanifest) + pass_sz + view_sz + job_sz + buffer_targets + texture_targets;
+}
+
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);

@@ -92,7 +92,7 @@ struct mem_arena
 
     // If upstream isn't set, and any of these functinos are not null, they will be used to do the allocation
     pf_alloc_funcs pf_funcs{};
-    
+
     // Name to use in debug/etc applications
     const char *name{"default"};
 
@@ -161,22 +161,53 @@ void mem_delete(T *item, mem_arena *arena)
 
 // Reset the store without actually freeing the memory so it can be reused
 void reset_arena(mem_arena *arena);
-void init_arena(mem_arena *arena, sizet total_size, mem_alloc_type atype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {});
+void init_arena(mem_arena *arena,
+                sizet total_size,
+                mem_alloc_type atype,
+                mem_arena *upstream,
+                const char *name,
+                bool skip_log = false,
+                const pf_alloc_funcs &pf_funcs = {});
 
-void init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
+void init_pool_arena(mem_arena *arena,
+                     sizet chunk_size,
+                     sizet chunk_count,
+                     mem_arena *upstream,
+                     const char *name,
+                     bool skip_log = false,
+                     const pf_alloc_funcs &pf_funcs = {});
 
 template<class T>
-void init_pool_arena(mem_arena *arena, sizet chunk_count, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {})
+void init_pool_arena(mem_arena *arena,
+                     sizet chunk_count,
+                     mem_arena *upstream,
+                     const char *name,
+                     bool skip_log = false,
+                     const pf_alloc_funcs &pf_funcs = {})
 {
-    init_pool_arena(arena, sizeof(T), chunk_count, upstream, name, pf_funcs);
+    init_pool_arena(arena, sizeof(T), chunk_count, upstream, name, skip_log, pf_funcs);
 }
 
+void init_fl_arena(mem_arena *arena,
+                   sizet total_size,
+                   mem_arena *upstream,
+                   const char *name,
+                   bool skip_log = false,
+                   const pf_alloc_funcs &pf_funcs = {});
+void init_stack_arena(mem_arena *arena,
+                      sizet total_size,
+                      mem_arena *upstream,
+                      const char *name,
+                      bool skip_log = false,
+                      const pf_alloc_funcs &pf_funcs = {});
+void init_lin_arena(mem_arena *arena,
+                    sizet total_size,
+                    mem_arena *upstream,
+                    const char *name,
+                    bool skip_log = false,
+                    const pf_alloc_funcs &pf_funcs = {});
 
-void init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
-void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
-void init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name,const pf_alloc_funcs &pf_funcs = {});
-
-void terminate_arena(mem_arena *arena);
+void terminate_arena(mem_arena *arena, bool skip_log = false);
 const char *arena_type_str(mem_alloc_type atype);
 
 mem_arena *get_global_arena();
