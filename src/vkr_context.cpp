@@ -576,15 +576,8 @@ int vkr_init_device(vkr_device *dev,
     VkPhysicalDeviceFeatures features{};
     features.samplerAnisotropy = vk->inst.pdev_info.features.samplerAnisotropy;
 
-    VkPhysicalDeviceDescriptorIndexingFeatures added_feats{};
-    added_feats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-    added_feats.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-    added_feats.runtimeDescriptorArray = VK_TRUE;
-    added_feats.descriptorBindingPartiallyBound = VK_TRUE;
-
     ilog("Creating device with %d queues", create_size);
     VkDeviceCreateInfo create_inf{};
-    create_inf.pNext = &added_feats;
     create_inf.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create_inf.queueCreateInfoCount = create_size;
     create_inf.pQueueCreateInfos = qinfo;
