@@ -1,8 +1,9 @@
 #version 450
 layout(set = 0, binding = 0) readonly buffer draw_ssbo_data {
+    uint inst_idx;
     uint material_idx;
-    uint idx_t;
-    ivec2 suser;
+    uint view_idx;
+    uint pass_idx;
     vec4 fuser;
 } draw_ssbo;
 

@@ -426,7 +426,6 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         return false;
     }
 
-
     // Setup up shared buffer config
     vkr_buffer_cfg b_cfg{};
     b_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
@@ -435,12 +434,11 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     b_cfg.alloc_flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     b_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
 
-
     //////////////////////
     // Create Draw SSBO //
     //////////////////////
     // Max draw calls among all render jobs
-    u32 total_max_dcs = mc.render_jobs * mc.draw_calls_per_job;    
+    u32 total_max_dcs = mc.render_jobs * mc.draw_calls_per_job;
     sizet draw_buf_fif_sz = dip.draw_ssbo_block_sz * total_max_dcs;
     rndr->desc_info.draw_ssbo.block_size = dip.draw_ssbo_block_sz;
     rndr->desc_info.draw_ssbo.fif_block_count = total_max_dcs;
@@ -513,7 +511,6 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
         terminate_global_descriptor_info(rndr);
         return result;
     }
-    
 
     // Set up shared chunked buffer config
     vkr_chunked_buffer_cfg cb_cfg{};
@@ -861,7 +858,6 @@ void handle_window_resize(renderer *rndr)
     }
 }
 
-
 idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
@@ -1023,14 +1019,26 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     }
     VkQueue tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
 
+    array<vkr_buffer> staging_buffers;
+    arr_init(&staging_buffers, &rndr->scratch_stack);
+    arr_resize(&staging_buffers, layout->vert_streams.size + 1);
+
+    asrt(vkr_begin_cmd_buf(tmp_cmd_buf, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == err_code::VKR_NO_ERROR);
+    
     // Copy data for the vert buffers
     for (u32 streami = 0; streami < layout->vert_streams.size; ++streami) {
         VkBufferCopy region{};
         region.size = ci.vert_count * layout->vert_layout.bindings[streami].stride;
         region.dstOffset = geom_ref.item->vert_offset * layout->vert_layout.bindings[streami].stride;
         result = vkr_stage_and_upload_buffer_data(
-            &layout->vert_streams[streami].buffer, ci.vert_data[streami], &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
+            &layout->vert_streams[streami].buffer, &staging_buffers[streami], ci.vert_data[streami], &region, 1, tmp_cmd_buf, &rndr->vk);
+        
         if (result != err_code::VKR_NO_ERROR) {
+            for (u32 i = 0; i <= streami; ++i) {
+                vkr_terminate_buffer(&staging_buffers[i], &rndr->vk);
+            }
+            arr_terminate(&staging_buffers);
+            
             terminate_geometry(rndr, geom_ref.item);
             asrt(release_slot(&rndr->geometry, geom_ref.hndl));
             vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
@@ -1041,13 +1049,23 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     VkBufferCopy region{};
     region.size = ci.ind_count * sizeof(ind_t);
     region.dstOffset = geom_ref.item->ind_offset * sizeof(ind_t);
-    result = vkr_stage_and_upload_buffer_data(&gp->indice_stream.buffer, ci.ind_data, &region, 1, tmp_cmd_buf, tmp_q, &rndr->vk);
+    result = vkr_stage_and_upload_buffer_data(&gp->indice_stream.buffer, arr_back(&staging_buffers), ci.ind_data, &region, 1, tmp_cmd_buf, &rndr->vk);
+    
     if (result != err_code::VKR_NO_ERROR) {
         terminate_geometry(rndr, geom_ref.item);
         asrt(release_slot(&rndr->geometry, geom_ref.hndl));
         vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
         geom_ref = {};
     }
+
+    asrt(vkr_end_cmd_buf(tmp_cmd_buf) == err_code::VKR_NO_ERROR);
+    asrt(vkr_blocking_queue_submit(tmp_q, &tmp_cmd_buf, 1, &rndr->vk) == err_code::VKR_NO_ERROR);
+
+    for (u32 i = 0; i < staging_buffers.size; ++i) {
+        vkr_terminate_buffer(&staging_buffers[i], &rndr->vk);
+    }
+    arr_terminate(&staging_buffers);
+    
     return geom_ref.hndl;
 }
 
@@ -1246,11 +1264,11 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         /////////////////////
         // Create pipeline //
         /////////////////////
-        key_t key = ((u64)rtech.hndl.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;        
+        key_t key = ((u64)rtech.hndl.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;
         ilog("Creating new pipeline for key %lu", key);
         auto new_slot = acquire_slot(&rndr->pline_cache.items);
         asrt(is_valid(new_slot) && "Out of pipeline slots");
-        int result = vkr_init_pipeline((VkPipeline*)&new_slot.item->gpu_d, cfg, &rndr->vk);
+        int result = vkr_init_pipeline((VkPipeline *)&new_slot.item->gpu_d, cfg, &rndr->vk);
         asrt(result == err_code::VKR_NO_ERROR);
         asrt(hmap_insert(&rndr->pline_cache.key_lut, key, new_slot.hndl));
 
@@ -1258,7 +1276,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         rtech.item->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
         rtech.item->rpass_plines[i].subpass = cur_desc->bp_info.spi;
         rtech.item->rpass_plines[i].pline = new_slot.hndl;
-        
+
         ++rtech.item->rpass_plines.size;
     }
     return rtech.hndl;
@@ -1374,14 +1392,14 @@ rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
     return fiter ? fiter->val : rbuffer_target_handle{};
 }
 
-void update_instance_data(rmanifest* m, idx_t inst, const void* instance_data)
+void update_instance_data(rmanifest *m, idx_t inst, const void *instance_data)
 {
     sizet blocksz = m->rndr->desc_info.instance_ssbo.block_size;
     sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.instance_ssbo.fif_block_count + inst);
-    void *dst = (void*)((sizet)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    void *dst = (void *)((sizet)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset);
     memcpy(dst, instance_data, blocksz);
 }
-        
+
 #ifdef USE_IMGUI
 void init_imgui(renderer *rndr, const rbp_pass &pass)
 {
@@ -1446,7 +1464,7 @@ void init_imgui(renderer *rndr, const rbp_pass &pass)
         }
         return false;
     };
-    
+
     set_platform_sdl_event_hook(rndr->vk.cfg.window, {.cb = sdl_event_func});
 }
 

@@ -1,4 +1,5 @@
 #include <cstring>
+#include <climits>
 
 #include "vkr_context.h"
 #include "platform.h"
@@ -1339,11 +1340,11 @@ void vkr_unmap_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma)
 }
 
 int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
+                                     vkr_buffer *staging_buffer,
                                      const void *src_data,
                                      const VkBufferCopy *regions,
                                      u32 region_count,
                                      VkCommandBuffer cmd_buf,
-                                     VkQueue queue,
                                      const vkr_context *vk)
 {
     sizet tot_region_size{};
@@ -1351,7 +1352,6 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
         tot_region_size += regions[i].size;
     }
 
-    vkr_buffer staging_buf{};
     vkr_buffer_cfg buf_cfg{};
     buf_cfg.buffer_size = tot_region_size;
     buf_cfg.alloc_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
@@ -1359,7 +1359,7 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
     buf_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     buf_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
     buf_cfg.vma_alloc = &vk->inst.device.vma_alloc;
-    int err = vkr_init_buffer(&staging_buf, buf_cfg);
+    int err = vkr_init_buffer(staging_buffer, buf_cfg);
     if (err != err_code::VKR_NO_ERROR) {
         return err;
     }
@@ -1372,8 +1372,8 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
     sizet cur_offset{};
     for (int i = 0; i < region_count; ++i) {
         auto src_addr = (void *)((sizet)src_data + regions[i].srcOffset);
-        auto dst_addr = (void *)((sizet)staging_buf.mem_info.pMappedData + cur_offset);
-        memcpy(src_addr, src_addr, regions[i].size);
+        auto dst_addr = (void *)((sizet)staging_buffer->mem_info.pMappedData + cur_offset);
+        memcpy(dst_addr, src_addr, regions[i].size);
 
         new_regions[i].size = regions[i].size;
         new_regions[i].srcOffset = cur_offset;
@@ -1381,23 +1381,21 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
         cur_offset += new_regions[i].size;
     }
 
-    err = vkr_copy_buffer(dest_buffer, &staging_buf, new_regions.data, (u32)new_regions.size, cmd_buf, queue, vk);
-    vkr_terminate_buffer(&staging_buf, vk);
-
+    vkCmdCopyBuffer(cmd_buf, staging_buffer->hndl, dest_buffer->hndl, region_count, regions);
     arr_terminate(&new_regions);
     return err;
 }
 
 int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
+                                     vkr_buffer *staging_buffer,
                                      const void *src_data,
                                      sizet src_data_size,
                                      VkCommandBuffer cmd_buf,
-                                     VkQueue queue,
                                      const vkr_context *vk)
 {
     VkBufferCopy region{};
     region.size = src_data_size;
-    return vkr_stage_and_upload_buffer_data(dest_buffer, src_data, &region, 1, cmd_buf, queue, vk);
+    return vkr_stage_and_upload_buffer_data(dest_buffer, staging_buffer, src_data, &region, 1, cmd_buf, vk);
 }
 
 int vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg)
@@ -1572,73 +1570,6 @@ int vkr_init_sampler(VkSampler *hndl, const vkr_sampler_cfg &cfg, const vkr_cont
 void vkr_terminate_sampler(VkSampler hndl, const vkr_context *vk)
 {
     vkDestroySampler(vk->inst.device.hndl, hndl, &vk->alloc_cbs);
-}
-
-int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
-                                    const void *src_data,
-                                    sizet src_data_size,
-                                    VkCommandBuffer cmd_buf,
-                                    VkQueue queue,
-                                    const vkr_context *vk)
-{
-    VkBufferImageCopy region{};
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.layerCount = 1;
-    region.imageExtent = {dest_buffer->dims.x, dest_buffer->dims.y, dest_buffer->dims.z};
-    return vkr_stage_and_upload_image_data(dest_buffer, src_data, src_data_size, &region, cmd_buf, queue, vk);
-}
-
-// TODO Switch this API - we shouldn't be passing src_data_size - should be calculated from region
-int vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
-                                    const void *src_data,
-                                    sizet src_data_size,
-                                    const VkBufferImageCopy *region,
-                                    VkCommandBuffer cmd_buf,
-                                    VkQueue queue,
-                                    const vkr_context *vk)
-{
-    vkr_buffer staging_buf{};
-    vkr_buffer_cfg buf_cfg{};
-    buf_cfg.buffer_size = src_data_size;
-    buf_cfg.alloc_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    buf_cfg.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    buf_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-    buf_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
-    buf_cfg.vma_alloc = &vk->inst.device.vma_alloc;
-    int err = vkr_init_buffer(&staging_buf, buf_cfg);
-    if (err != err_code::VKR_NO_ERROR) {
-        return err;
-    }
-
-    void *mem = vkr_map_buffer(&staging_buf, &vk->inst.device.vma_alloc);
-    memcpy(mem, src_data, src_data_size);
-    vkr_unmap_buffer(&staging_buf, &vk->inst.device.vma_alloc);
-
-    // Tranition image to correct layout
-    vkr_image_transition_cfg trans_cfg{};
-    trans_cfg.old_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    trans_cfg.new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    trans_cfg.srange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    trans_cfg.srange.layerCount = 1;
-    trans_cfg.srange.levelCount = 1;
-
-    err = vkr_transition_image_layout(dest_buffer, trans_cfg, cmd_buf, queue, vk);
-    if (err != err_code::VKR_NO_ERROR) {
-        vkr_terminate_buffer(&staging_buf, vk);
-        return err;
-    }
-
-    err = vkr_copy_buffer_to_image(dest_buffer, &staging_buf, region, cmd_buf, queue, vk);
-    if (err != err_code::VKR_NO_ERROR) {
-        vkr_terminate_buffer(&staging_buf, vk);
-        return err;
-    }
-
-    trans_cfg.old_layout = trans_cfg.new_layout;
-    trans_cfg.new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    err = vkr_transition_image_layout(dest_buffer, trans_cfg, cmd_buf, queue, vk);
-    vkr_terminate_buffer(&staging_buf, vk);
-    return err;
 }
 
 int vkr_init_fence(VkFence *hndl, VkFenceCreateFlags flags, const vkr_context *vk)
@@ -1898,12 +1829,12 @@ void vkr_cmd_end_rpass(VkCommandBuffer cmd_buf)
     vkCmdEndRenderPass(cmd_buf);
 }
 
-s32 vkr_blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const vkr_context *vk)
+s32 vkr_blocking_queue_submit(VkQueue queue, const VkCommandBuffer *cmd_bufs, u32 cmd_buf_count, const vkr_context *vk)
 {
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &cmd_buf;
+    submit_info.commandBufferCount = cmd_buf_count;
+    submit_info.pCommandBuffers = cmd_bufs;
 
     VkFence submit_fence;
     vkr_init_fence(&submit_fence, 0, vk);
@@ -1920,95 +1851,6 @@ s32 vkr_blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const vk
         return err_code::VKR_COPY_BUFFER_WAIT_FENCE_FAIL;
     }
     return err_code::VKR_NO_ERROR;
-}
-
-int vkr_copy_buffer(vkr_buffer *dest,
-                    const vkr_buffer *src,
-                    const VkBufferCopy *regions,
-                    u32 region_count,
-                    VkCommandBuffer cmd_buffer,
-                    VkQueue queue,
-                    const vkr_context *vk)
-{
-    int ret = vkr_begin_cmd_buf(cmd_buffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    if (ret != err_code::VKR_NO_ERROR) {
-        return ret;
-    }
-    vkCmdCopyBuffer(cmd_buffer, src->hndl, dest->hndl, region_count, regions);
-    ret = vkr_end_cmd_buf(cmd_buffer);
-    if (ret != err_code::VKR_NO_ERROR) {
-        return ret;
-    }
-    return vkr_blocking_submit_cmd_buf(cmd_buffer, queue, vk);
-}
-
-int vkr_copy_buffer_to_image(vkr_image *dest,
-                             const vkr_buffer *src,
-                             const VkBufferImageCopy *region,
-                             VkCommandBuffer cmd_buf,
-                             VkQueue queue,
-                             const vkr_context *vk)
-{
-    int ret = vkr_begin_cmd_buf(cmd_buf, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    if (ret != err_code::VKR_NO_ERROR) {
-        return ret;
-    }
-    vkCmdCopyBufferToImage(cmd_buf, src->hndl, dest->hndl, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, region);
-    ret = vkr_end_cmd_buf(cmd_buf);
-    if (ret != err_code::VKR_NO_ERROR) {
-        return ret;
-    }
-    return vkr_blocking_submit_cmd_buf(cmd_buf, queue, vk);
-}
-
-int vkr_transition_image_layout(const vkr_image *image,
-                                const vkr_image_transition_cfg &cfg,
-                                VkCommandBuffer cmd_buf,
-                                VkQueue queue,
-                                const vkr_context *vk)
-{
-    int ret = vkr_begin_cmd_buf(cmd_buf, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    if (ret != err_code::VKR_NO_ERROR) {
-        return ret;
-    }
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = cfg.old_layout;
-    barrier.newLayout = cfg.new_layout;
-    barrier.srcQueueFamilyIndex = cfg.src_fam_index;
-    barrier.dstQueueFamilyIndex = cfg.dest_fam_index;
-    barrier.image = image->hndl;
-    barrier.subresourceRange = cfg.srange;
-
-    VkPipelineStageFlags source_stage;
-    VkPipelineStageFlags dest_stage;
-    if (cfg.old_layout == VK_IMAGE_LAYOUT_UNDEFINED && cfg.new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        source_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        dest_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    }
-    else if (cfg.old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && cfg.new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        source_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        dest_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    }
-    else if (cfg.old_layout == VK_IMAGE_LAYOUT_UNDEFINED && cfg.new_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    }
-    else {
-        return err_code::VKR_TRANSITION_IMAGE_UNSUPPORTED_LAYOUT;
-    }
-
-    vkCmdPipelineBarrier(cmd_buf, source_stage, dest_stage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    ret = vkr_end_cmd_buf(cmd_buf);
-    if (ret != err_code::VKR_NO_ERROR) {
-        return ret;
-    }
-    return vkr_blocking_submit_cmd_buf(cmd_buf, queue, vk);
 }
 
 } // namespace nslib

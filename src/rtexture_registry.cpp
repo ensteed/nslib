@@ -92,7 +92,7 @@ rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tde
     result = vkr_end_cmd_buf(tmp_cmd_buf);
     asrt(result == err_code::VKR_NO_ERROR);
                 
-    result = vkr_blocking_submit_cmd_buf(tmp_cmd_buf, tmp_q, pool->vk);
+    result = vkr_blocking_queue_submit(tmp_q, &tmp_cmd_buf, 1, pool->vk);
     asrt(result == err_code::VKR_NO_ERROR);
     
     ret.pool_idx = pool_fiter->val;

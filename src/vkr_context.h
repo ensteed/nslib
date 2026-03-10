@@ -528,6 +528,10 @@ struct vkr_context
     VkAllocationCallbacks alloc_cbs;
 };
 
+// Utility to create a fence, submit the command buf to queue, and wait for the fence to signal before destroying the
+// fence and returning
+s32 vkr_blocking_queue_submit(VkQueue queue, const VkCommandBuffer *cmd_bufs, u32 cmd_buf_count, const vkr_context *vk);
+
 // Get the best depth format for the current device
 VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, b32 need_stencil = true);
 
@@ -605,43 +609,29 @@ void vkr_terminate_shader_module(VkShaderModule module, const vkr_context *vk);
 s32 vkr_init_framebuffer(vkr_framebuffer *framebuffer, const vkr_framebuffer_cfg &cfg, const vkr_context *vk);
 void vkr_terminate_framebuffer(vkr_framebuffer *fb, const vkr_context *vk);
 
-s32 vkr_blocking_submit_cmd_buf(VkCommandBuffer cmd_buf, VkQueue queue, const vkr_context *vk);
-
 // Buffers
 s32 vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg);
 void vkr_terminate_buffer(vkr_buffer *buffer, const vkr_context *vk);
 void *vkr_map_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
 void vkr_unmap_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
-s32 vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
+
+int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
+                                     vkr_buffer *staging_buffer,
                                      const void *src_data,
                                      const VkBufferCopy *regions,
                                      u32 region_count,
                                      VkCommandBuffer cmd_buf,
-                                     VkQueue queue,
                                      const vkr_context *vk);
 s32 vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
+                                     vkr_buffer *staging_buffer,
                                      const void *src_data,
                                      sizet src_data_size,
                                      VkCommandBuffer cmd_buf,
-                                     VkQueue queue,
                                      const vkr_context *vk);
 
 // Images
 s32 vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg);
 void vkr_terminate_image(vkr_image *image, const vkr_context *vk);
-s32 vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
-                                    const void *src_data,
-                                    sizet src_data_size,
-                                    VkCommandBuffer cmd_buf,
-                                    VkQueue queue,
-                                    const vkr_context *vk);
-s32 vkr_stage_and_upload_image_data(vkr_image *dest_buffer,
-                                    const void *src_data,
-                                    sizet src_data_size,
-                                    const VkBufferImageCopy *region,
-                                    VkCommandBuffer cmd_buf,
-                                    VkQueue queue,
-                                    const vkr_context *vk);
 
 // Image views
 s32 vkr_init_image_view(VkImageView *hndl, const vkr_image_view_cfg &cfg, const vkr_context *vk);
@@ -699,25 +689,5 @@ sizet vkr_uniform_buffer_offset_alignment(vkr_context *vk, sizet uniform_block_s
 
 void vkr_device_wait_idle(vkr_device *dev);
 
-s32 vkr_copy_buffer(vkr_buffer *dest,
-                    const vkr_buffer *src,
-                    const VkBufferCopy *region,
-                    u32 region_count,
-                    VkCommandBuffer cmd_buffer,
-                    VkQueue queue,
-                    const vkr_context *vk);
-
-s32 vkr_copy_buffer_to_image(vkr_image *dest,
-                             const vkr_buffer *src,
-                             const VkBufferImageCopy *region,
-                             VkCommandBuffer cmd_buf,
-                             VkQueue queue,
-                             const vkr_context *vk);
-
-s32 vkr_transition_image_layout(const vkr_image *image,
-                                const vkr_image_transition_cfg &cfg,
-                                VkCommandBuffer cmd_buf,
-                                VkQueue queue,
-                                const vkr_context *vk);
 
 } // namespace nslib
