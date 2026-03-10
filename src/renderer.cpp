@@ -393,7 +393,8 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     ilog("Initializing global descriptor info");
 
     // Not exactly needed for SSBO but its best to align to 16 bytes anyways
-    asrt(dip.draw_ssbo_block_sz % 16 == 0);
+    sizet draw_ssbo_block_sz = sizeof(mdraw_ssbo_data);
+    asrt(draw_ssbo_block_sz % 16 == 0);
     asrt(dip.view_ssbo_block_sz % 16 == 0);
     asrt(dip.pass_ssbo_block_sz % 16 == 0);
     asrt(dip.instance_ssbo.block_size % 16 == 0);
@@ -439,8 +440,8 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////
     // Max draw calls among all render jobs
     u32 total_max_dcs = mc.render_jobs * mc.draw_calls_per_job;
-    sizet draw_buf_fif_sz = dip.draw_ssbo_block_sz * total_max_dcs;
-    rndr->desc_info.draw_ssbo.block_size = dip.draw_ssbo_block_sz;
+    sizet draw_buf_fif_sz = draw_ssbo_block_sz * total_max_dcs;
+    rndr->desc_info.draw_ssbo.block_size = draw_ssbo_block_sz;
     rndr->desc_info.draw_ssbo.fif_block_count = total_max_dcs;
     b_cfg.buffer_size = draw_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "draw_ssbo";
@@ -1024,7 +1025,7 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     arr_resize(&staging_buffers, layout->vert_streams.size + 1);
 
     asrt(vkr_begin_cmd_buf(tmp_cmd_buf, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == err_code::VKR_NO_ERROR);
-    
+
     // Copy data for the vert buffers
     for (u32 streami = 0; streami < layout->vert_streams.size; ++streami) {
         VkBufferCopy region{};
@@ -1032,13 +1033,13 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
         region.dstOffset = geom_ref.item->vert_offset * layout->vert_layout.bindings[streami].stride;
         result = vkr_stage_and_upload_buffer_data(
             &layout->vert_streams[streami].buffer, &staging_buffers[streami], ci.vert_data[streami], &region, 1, tmp_cmd_buf, &rndr->vk);
-        
+
         if (result != err_code::VKR_NO_ERROR) {
             for (u32 i = 0; i <= streami; ++i) {
                 vkr_terminate_buffer(&staging_buffers[i], &rndr->vk);
             }
             arr_terminate(&staging_buffers);
-            
+
             terminate_geometry(rndr, geom_ref.item);
             asrt(release_slot(&rndr->geometry, geom_ref.hndl));
             vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
@@ -1049,8 +1050,9 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     VkBufferCopy region{};
     region.size = ci.ind_count * sizeof(ind_t);
     region.dstOffset = geom_ref.item->ind_offset * sizeof(ind_t);
-    result = vkr_stage_and_upload_buffer_data(&gp->indice_stream.buffer, arr_back(&staging_buffers), ci.ind_data, &region, 1, tmp_cmd_buf, &rndr->vk);
-    
+    result = vkr_stage_and_upload_buffer_data(
+        &gp->indice_stream.buffer, arr_back(&staging_buffers), ci.ind_data, &region, 1, tmp_cmd_buf, &rndr->vk);
+
     if (result != err_code::VKR_NO_ERROR) {
         terminate_geometry(rndr, geom_ref.item);
         asrt(release_slot(&rndr->geometry, geom_ref.hndl));
@@ -1065,7 +1067,7 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
         vkr_terminate_buffer(&staging_buffers[i], &rndr->vk);
     }
     arr_terminate(&staging_buffers);
-    
+
     return geom_ref.hndl;
 }
 
@@ -1392,6 +1394,14 @@ rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
     return fiter ? fiter->val : rbuffer_target_handle{};
 }
 
+void update_view_data(rmanifest *m, idx_t view, const void *view_data)
+{
+    sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
+    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.view_ssbo.fif_block_count + view);
+    void *dst = (void *)((sizet)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    memcpy(dst, view_data, blocksz);
+}
+
 void update_instance_data(rmanifest *m, idx_t inst, const void *instance_data)
 {
     sizet blocksz = m->rndr->desc_info.instance_ssbo.block_size;
@@ -1489,7 +1499,10 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
     asrt(p.upsream->alloc_type != mem_alloc_type::POOL); // Cannot use pool arena here
     init_fl_arena(&rndr->persist_fl, p.persist_fl_size, p.upsream, "rndr-persist-fl");
     init_stack_arena(&rndr->scratch_stack, p.scratch_stack_size, p.upsream, "rndr-sratch-stack");
-    init_lin_arena(&rndr->frame_linear, p.frame_linear_size, p.upsream, "rndr-frame-linear");
+    init_lin_arena(&rndr->frame_linear,
+                   calculate_manifest_approximate_needed_capacity(p.mcounts, sizeof(mdraw_ssbo_data)) + p.extra_frame_linear_size,
+                   p.upsream,
+                   "rndr-frame-linear");
 
     init_fl_arena(&rndr->vk_free_list, 50 * MB_SIZE, &rndr->persist_fl, "rndr-vk-fl");
     init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, &rndr->persist_fl, "rndr-vk-frame");

@@ -57,6 +57,8 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
 {
     auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
     auto tftbs = get_comp_tbl<transform>(&sr->cdb);
+    auto cam_tbl = get_comp_tbl<camera>(&sr->cdb);
+    
     auto mpool = get_asset_pool<material>(cg);
     auto techpool = get_asset_pool<technique>(cg);
     auto geompool = get_asset_pool<geometry>(cg);
@@ -64,6 +66,8 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
     for (u32 i = 0; i < sr->ents.size; ++i) {
         transform* tf = get_comp<transform>(sr->ents[i].id, tftb);
         static_mesh* sm = get_comp<static_mesh>(sr->ents[i].id, smtbl);
+        camera *cam = get_comp<camera>(sr->ents[i].id, cam_tbl);
+        
         if (test_flags(tf->flags, COMP_FLAG_DIRTY)) {
             tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
             tf->flags &= ~COMP_FLAG_DIRTY;
@@ -74,10 +78,11 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
             tf->cached = math::model_tform(tf->world_pos, tf->orientation, tf->scale);
             --tf->rfif_dirty;
             
+            idx_t tfind = get_comp_ind(tf, tftb);
             instance_ssbo_data update_d{};
             update_d.model = tf->cached;
             update_d.prev_model = tf->cached_prev;
-            update_instance_data(m, get_comp_ind(tf, tftb), &update_d);
+            update_instance_data(m, tfind, &update_d);
 
             if (sm) {
                 geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
@@ -93,15 +98,11 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
                             asrt(is_valid(tref));
                     
                             mdraw_params dp{};
-                            draw_ssbo_data dd{};
-                            dd.idx_t = tf - tftbs->entries.data;
-                            dd.material_idx = mref.item->rhndl.si;
-                            dp.draw_sdata = &dd;
                             dp.geom = gref.item->rhndl;
                             dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
                             dp.mat = mref.item->rhndl;
                             dp.tech = tref.item->rhndl;
-                        
+                            dp.inst = tfind;
                             push_draw(m, dp);
                         }
                     }

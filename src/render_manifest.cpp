@@ -263,12 +263,10 @@ void draw_geometry(const render_job_cb_params &p, void *)
             p.dyn_state->last_pline = dc->pl;
         }
 
-        for (u32 subi = 0; subi < geom->subgeom_vert_ind_counts.size; ++subi) {
-            const rsubgeom_range *cur_r = &geom->subgeom_vert_ind_counts[subi];
-            u32 voffset = geom->vert_offset + cur_r->offset;
-            u32 ioffset = geom->ind_offset + cur_r->offset;
-            vkCmdDrawIndexed(cb, cur_r->count, 1, ioffset, voffset, 0);
-        }
+        const rsubgeom_range *cur_r = &geom->subgeom_vert_ind_counts[dc->subgeom];
+        u32 voffset = geom->vert_offset + cur_r->offset;
+        u32 ioffset = geom->ind_offset + cur_r->offset;
+        vkCmdDrawIndexed(cb, cur_r->count, 1, ioffset, voffset, dci);
     }
 }
 
@@ -666,10 +664,13 @@ intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, sizet job_ssbo_b
         const mdraw_call &dc = cur_rj->dcs[cur_rj->sorted_dcs[i]];
         sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.draw_ssbo.fif_block_count + job_ssbo_base + i);
         void *dst = (void *)((sizet)m->rndr->desc_info.draw_ssbo.buffer.mem_info.pMappedData + buf_offset);
-        if (dc.draw_sdata)
-            memcpy(dst, dc.draw_sdata, blocksz);
-        else
-            memset(dst, 0, blocksz);
+        mdraw_ssbo_data dd{
+            .inst = dc.inst,
+            .material = dc.mat,
+            .view = cur_rj->mv,
+            .pass = cur_rj->mp,
+        };
+        memcpy(dst, &dd, blocksz);
     }
 }
 
@@ -679,7 +680,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
     if (err != err_code::VKR_NO_ERROR) {
         return false;
     }
-
+    
     rpline_dyn_state dyn_state{};
 
     // We place all draw call data for all jobs in a single SSBO, so this is the base offset for the current job's draw call data
@@ -831,22 +832,14 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 u32 dc_ind = (u32)cur_rj->dcs.size;
                 arr_resize(&cur_rj->dcs, dc_ind + 1);
                 mdraw_call *cur_d = &cur_rj->dcs[dc_ind];
+                
+                cur_d->subgeom = dp.subgeom;
+                cur_d->inst = dp.inst;
                 cur_d->geom = dp.geom.si;
                 cur_d->mat = dp.mat.si;
                 cur_d->pl = cur_pl->pline.si;
                 cur_d->sort_key = ((u64)cur_d->pl << 32) | (u64)cur_d->mat;
                 cur_d->dstate = cur_pl->dstate;
-
-                // Allocate mem to store ssbo data and copy it
-                sizet blocksz = m->rndr->desc_info.draw_ssbo.block_size;
-                void *sdata = mem_alloc(blocksz, &cur_rj->arena);
-                if (dp.draw_sdata) {
-                    memcpy(sdata, dp.draw_sdata, blocksz);
-                }
-                else {
-                    memset(sdata, 0, blocksz);
-                }
-                cur_d->draw_sdata = sdata;
                 ++push_cnt;
             }
         }

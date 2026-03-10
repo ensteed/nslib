@@ -568,7 +568,6 @@ struct push_constant_range {
 
 struct rpipeline_layout_cfg
 {
-    sizet draw_ssbo_block_sz;
     sizet view_ssbo_block_sz;
     sizet pass_ssbo_block_sz;
     sizet frame_ubo_block_sz;
@@ -585,7 +584,7 @@ struct renderer_cfg
     sizet thread_count{4};
     sizet persist_fl_size;
     sizet scratch_stack_size;
-    sizet frame_linear_size;
+    sizet extra_frame_linear_size;
     rpipeline_layout_cfg desc;
     manifest_max_counts mcounts;
     u32 texture_pool_count;
@@ -643,6 +642,7 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
+void update_view_data(rmanifest *m, idx_t view, const void *view_data);
 void update_instance_data(rmanifest* m, idx_t inst, const void* instance_data);
 void post_material_update(renderer* rndr, u32 material_idx, const void* material_data);
 

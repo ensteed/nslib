@@ -60,7 +60,6 @@ constexpr u32 MAX_DRAW_CALLS_PER_JOB = 10000;
 
 
 const rpipeline_layout_cfg PL_LAYOUT_CFG{
-    .draw_ssbo_block_sz = sizeof(draw_ssbo_data),
     .view_ssbo_block_sz = sizeof(view_ssbo_data),
     .pass_ssbo_block_sz = sizeof(pass_ssbo_data),
     .frame_ubo_block_sz = sizeof(frame_ubo_data),
@@ -82,7 +81,7 @@ const manifest_max_counts MANIFEST_MAX_COUNTS{
 const renderer_cfg RNDR_CFG{
     .persist_fl_size = 200 * MB_SIZE,
     .scratch_stack_size = 10 * MB_SIZE,
-    .frame_linear_size = 5 * MB_SIZE + calculate_manifest_approximate_needed_capacity(MANIFEST_MAX_COUNTS, PL_LAYOUT_CFG.draw_ssbo_block_sz),
+    .extra_frame_linear_size = 5 * MB_SIZE,
     .desc{PL_LAYOUT_CFG},
     .mcounts{MANIFEST_MAX_COUNTS},
     .texture_pool_count = ARR_SIZE(TPOOL_CFGS),
@@ -119,6 +118,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     cam_comp->fov = 60.0f;
     cam_comp->near_far = {0.1f, 1000.0f};
     cam_comp->view = (math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
+    cam_comp->proj = math::perspective(cam_comp->fov, 1000.0f/800.0f, cam_comp->near_far.x, cam_comp->near_far.y);
 
     cam_tcomp->cached = math::inverse(cam_comp->view);
     cam_tcomp->orientation = math::orientation(cam_tcomp->cached);

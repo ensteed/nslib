@@ -66,7 +66,6 @@ struct camera
     vec2 near_far;
     mat4 proj;
     mat4 view;
-    svec2 vp_size;
 };
 
 pup_func(camera)
@@ -76,7 +75,6 @@ pup_func(camera)
     pup_member(near_far);
     pup_member(proj);
     pup_member(view);
-    pup_member(vp_size);
 }
 
 template<typename T>

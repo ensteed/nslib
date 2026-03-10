@@ -39,5 +39,6 @@ vec4 get_final_color(int texture_idx, int sampler_idx, vec3 uvw) {
 }
 
 void main() {
-    out_color = get_final_color(0, 0, vec3(frag_uv, 0));
+    //out_color = get_final_color(0, 0, vec3(frag_uv, 0));
+    out_color = frag_color;
 }

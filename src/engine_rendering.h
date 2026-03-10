@@ -49,13 +49,6 @@ struct material_ssbo_data {
     vec4 col;
 };
 
-struct draw_ssbo_data {
-    u32 material_idx;
-    u32 idx_t;
-    svec2 suser;
-    vec4 fuser;
-};
-
 struct view_ssbo_data {
     mat4 view;
     mat4 proj;

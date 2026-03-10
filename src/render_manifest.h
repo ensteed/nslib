@@ -130,18 +130,25 @@ struct rpline_dyn_state
     rfront_face_winding ffw{DEFAULT_FRONT_FACE_WINDING};
 };
 
+struct mdraw_ssbo_data {
+    idx_t inst;
+    idx_t material;
+    idx_t view;
+    idx_t pass;
+};
+
 struct mdraw_params
 {
+    idx_t inst;
     rgeom_handle geom;
     idx_t subgeom;
     rmaterial_handle mat;
     rtechnique_handle tech;
-    // Draw ssbo data - copied to draw call - the original pointer is not stored
-    const void* draw_sdata;
 };
 
 struct mdraw_call
 {
+    idx_t inst;
     idx_t geom;
     idx_t subgeom;    
     idx_t mat;
@@ -152,8 +159,6 @@ struct mdraw_call
     // Computed sort key for the draw call - used to sort the draw calls in a render job before submission.
     // Feel free to override for custom sorting
     u64 sort_key;
-    // Copy of the passed in draw_sdata allocated from the frame linear allocator
-    const void *draw_sdata;    
 };
 
 enum struct mslot_target_type
