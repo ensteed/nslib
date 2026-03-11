@@ -901,6 +901,32 @@ void test_hset_string_keys()
     ilog("Hashset string key test succeeded");
 }
 
+void test_hash_tail_lengths()
+{
+    ilog("Starting hash tail length test");
+
+    const char *keys[] = {
+        "",
+        "a",
+        "1234567",
+        "12345678",
+        "123456789",
+        "swapchain",
+        "main-pass",
+        "main-pass-depth",
+    };
+
+    for (sizet i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+        u64 hashed = hash_type(keys[i]);
+        asrt(hashed != 0 || keys[i][0] == '\0');
+    }
+
+    asrt(hash_type("swapchain") == hash_type("swapchain"));
+    asrt(hash_type("main-pass") == hash_type("main-pass"));
+    asrt(hash_type("main-pass-depth") == hash_type("main-pass-depth"));
+    ilog("Hash tail length test succeeded");
+}
+
 void run_container_tests()
 {
     test_strings();
@@ -910,6 +936,7 @@ void run_container_tests()
     test_hmap_pack_unpack();
     test_hashmaps();
     test_hashmaps_string_keys();
+    test_hash_tail_lengths();
     test_hset_basic_api();
     test_hashsets();
     test_hset_string_keys();
