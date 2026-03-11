@@ -6,7 +6,7 @@ namespace nslib
 {
 
 // Colors are ARGB - msb gets alpha
-intern const mvert RECT_VERTS[] = {
+intern const gvert RECT_VERTS[] = {
     {
         {-0.5f, -0.5f, 0.0f},
         {},
@@ -46,79 +46,55 @@ intern const u32 RECT_INDS_TRI_LIST[] = {
     0,
 };
 
-// Colors are ARGB - msb gets alpha
-intern mvert CUBE_VERTS[] = {
-    {
-        {-0.5f, 0.5f, 0.5f},
-        {},
-        {},
-        {0.0f, 1.0f},
-        0xff000000,
-    },
-    {
-        {0.5f, 0.5f, 0.5f},
-        {},
-        {},
-        {1.0f, 1.0f},
-        0xff0000ff,
-    },
-    {
-        {-0.5f, -0.5f, 0.5f},
-        {},
-        {},
-        {0.0f, 0.0f},
-        0xff00ff00,
-    },
-    {
-        {0.5f, -0.5f, 0.5f},
-        {},
-        {},
-        {1.0f, 0.0f},
-        0xff00ffff,
-    },
-    {
-        {-0.5f, 0.5f, -0.5f},
-        {},
-        {},
-        {0.0f, 1.0f},
-        0xffff0000,
-    },
-    {
-        {0.5f, 0.5f, -0.5f},
-        {},
-        {},
-        {1.0f, 1.0f},
-        0xffff00ff,
-    },
-    {
-        {-0.5f, -0.5f, -0.5f},
-        {},
-        {},
-        {0.0f, 0.0f},
-        0xffffff00,
-    },
-    {
-        {0.5f, -0.5f, -0.5f},
-        {},
-        {},
-        {1.0f, 0.0f},
-        0xffffffff,
-    },
+// 24 verts (4 per face). UVs are (0,0) bottom-left, (1,1) top-right per face.
+intern gvert CUBE_VERTS[] =
+{
+    // +Z (front)
+    {{-0.5f, -0.5f,  0.5f}, {0,0,1}, {1,0,0}, {0,0}, 0xffffffff},
+    {{ 0.5f, -0.5f,  0.5f}, {0,0,1}, {1,0,0}, {1,0}, 0xffffffff},
+    {{-0.5f,  0.5f,  0.5f}, {0,0,1}, {1,0,0}, {0,1}, 0xffffffff},
+    {{ 0.5f,  0.5f,  0.5f}, {0,0,1}, {1,0,0}, {1,1}, 0xffffffff},
+
+    // -Z (back)
+    {{ 0.5f, -0.5f, -0.5f}, {0,0,-1}, {-1,0,0}, {0,0}, 0xffffffff},
+    {{-0.5f, -0.5f, -0.5f}, {0,0,-1}, {-1,0,0}, {1,0}, 0xffffffff},
+    {{ 0.5f,  0.5f, -0.5f}, {0,0,-1}, {-1,0,0}, {0,1}, 0xffffffff},
+    {{-0.5f,  0.5f, -0.5f}, {0,0,-1}, {-1,0,0}, {1,1}, 0xffffffff},
+
+    // +X (right)
+    {{ 0.5f, -0.5f,  0.5f}, {1,0,0}, {0,0,-1}, {0,0}, 0xffffffff},
+    {{ 0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0,-1}, {1,0}, 0xffffffff},
+    {{ 0.5f,  0.5f,  0.5f}, {1,0,0}, {0,0,-1}, {0,1}, 0xffffffff},
+    {{ 0.5f,  0.5f, -0.5f}, {1,0,0}, {0,0,-1}, {1,1}, 0xffffffff},
+
+    // -X (left)
+    {{-0.5f, -0.5f, -0.5f}, {-1,0,0}, {0,0,1}, {0,0}, 0xffffffff},
+    {{-0.5f, -0.5f,  0.5f}, {-1,0,0}, {0,0,1}, {1,0}, 0xffffffff},
+    {{-0.5f,  0.5f, -0.5f}, {-1,0,0}, {0,0,1}, {0,1}, 0xffffffff},
+    {{-0.5f,  0.5f,  0.5f}, {-1,0,0}, {0,0,1}, {1,1}, 0xffffffff},
+
+    // +Y (top)
+    {{-0.5f,  0.5f,  0.5f}, {0,1,0}, {1,0,0}, {0,0}, 0xffffffff},
+    {{ 0.5f,  0.5f,  0.5f}, {0,1,0}, {1,0,0}, {1,0}, 0xffffffff},
+    {{-0.5f,  0.5f, -0.5f}, {0,1,0}, {1,0,0}, {0,1}, 0xffffffff},
+    {{ 0.5f,  0.5f, -0.5f}, {0,1,0}, {1,0,0}, {1,1}, 0xffffffff},
+
+    // -Y (bottom)
+    {{-0.5f, -0.5f, -0.5f}, {0,-1,0}, {1,0,0}, {0,0}, 0xffffffff},
+    {{ 0.5f, -0.5f, -0.5f}, {0,-1,0}, {1,0,0}, {1,0}, 0xffffffff},
+    {{-0.5f, -0.5f,  0.5f}, {0,-1,0}, {1,0,0}, {0,1}, 0xffffffff},
+    {{ 0.5f, -0.5f,  0.5f}, {0,-1,0}, {1,0,0}, {1,1}, 0xffffffff},
 };
 
-intern const u32 CUBE_INDS_TRI_LIST[] = {
-    0, 1, 2, // 0
-    1, 3, 2, // 1
-    4, 6, 5, // 2
-    5, 6, 7, // 3
-    0, 2, 4, // 4
-    4, 2, 6, // 5
-    1, 5, 3, // 6
-    5, 7, 3, // 7
-    0, 4, 1, // 8
-    4, 5, 1, // 9
-    2, 3, 6, // 10
-    6, 3, 7, // 11
+// 36 indices (2 tris per face)
+intern u32 CUBE_INDS_TRI_LIST[] =
+{
+     0,  1,  2,   2,  1,  3,   // +Z
+     4,  5,  6,   6,  5,  7,   // -Z
+     8,  9, 10,  10,  9, 11,   // +X
+    12, 13, 14,  14, 13, 15,   // -X
+    16, 17, 18,  18, 17, 19,   // +Y
+    20, 21, 22,  22, 21, 23,   // -Y
 };
 
 void init_asset(texture *tex)
@@ -257,7 +233,7 @@ void terminate_asset(material *mat)
 
 void make_rect(geometry *geom)
 {
-    arr_copy(&geom->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(mvert));
+    arr_copy(&geom->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(gvert));
     arr_copy(&geom->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(u32));
     arr_resize(&geom->sm_info, 1);
     geom->sm_info[0].count = geom->inds.size;
@@ -266,8 +242,8 @@ void make_rect(geometry *geom)
 
 void make_cube(geometry *geom)
 {
-    arr_copy(&geom->verts, CUBE_VERTS, sizeof(CUBE_VERTS) / sizeof(mvert));
-    arr_copy(&geom->inds, CUBE_INDS_TRI_LIST, sizeof(CUBE_INDS_TRI_LIST) / sizeof(u32));
+    arr_copy(&geom->verts, CUBE_VERTS, ARR_SIZE(CUBE_VERTS));
+    arr_copy(&geom->inds, CUBE_INDS_TRI_LIST, ARR_SIZE(CUBE_INDS_TRI_LIST));
     arr_resize(&geom->sm_info, 1);
     geom->sm_info[0].count = geom->inds.size;
     strncpy(geom->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);

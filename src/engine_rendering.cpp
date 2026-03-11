@@ -194,6 +194,7 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *s
         }
     }
 
+    // Copy indices
     for (u32 i = 0; i < cinf.ind_count; ++i) {
         tmp_inds[i] = geom->inds[i];
     }

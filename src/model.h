@@ -204,7 +204,7 @@ pup_func(material)
     pup_member(textures);
 }
 
-struct mvert
+struct gvert
 {
     vec3 pos;
     vec3 norm;
@@ -213,7 +213,7 @@ struct mvert
     u32 col;
 };
 
-pup_func(mvert)
+pup_func(gvert)
 {
     pup_member(pos);
     pup_member(norm);
@@ -222,13 +222,13 @@ pup_func(mvert)
     pup_member(col);
 }
 
-struct mskinned_vert_info
+struct gskinned_vert_info
 {
     uvec4 bone_ids;
     vec4 bone_weights;
 };
 
-pup_func(mskinned_vert_info)
+pup_func(gskinned_vert_info)
 {
     pup_member(bone_ids);
     pup_member(bone_weights);
@@ -256,8 +256,8 @@ struct geometry
 {
     ASSET(GEOMETRY, geom);
     array<u32> inds;
-    array<mvert> verts;
-    array<mskinned_vert_info> skinned_verts_info;
+    array<gvert> verts;
+    array<gskinned_vert_info> skinned_verts_info;
     array<subgeom_range> sm_info;
     geometry_topology topology;
 
