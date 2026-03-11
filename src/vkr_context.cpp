@@ -551,7 +551,8 @@ int vkr_init_device(vkr_device *dev,
     VkDeviceQueueCreateInfo qinfo[VKR_QUEUE_FAM_TYPE_COUNT]{};
     float qinfo_f[VKR_QUEUE_FAM_TYPE_COUNT][MAX_QUEUE_REQUEST_COUNT]{};
 
-    int offsets[VKR_QUEUE_FAM_TYPE_COUNT]{};
+    u32 base_inds[VKR_QUEUE_FAM_TYPE_COUNT]{};
+    u32 created_counts[VKR_QUEUE_FAM_TYPE_COUNT]{};
 
     // Here we gather how many queues we want for each queue fam type and populate the queue create infos.
     // Its highly likely that the different queue_fam_types will actually have the same vulkan queue family index -
@@ -561,12 +562,18 @@ int vkr_init_device(vkr_device *dev,
         u32 ind = cq->create_ind;
         qinfo[ind].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 
-        // This handles the case when the present and graphics must be in the same queue in the same family which can
-        // happen if a gfx card has only 1 queue family with 1 available queue
-        int req_offset = std::min((int)cq->available_count - (int)(qinfo[ind].queueCount + cq->requested_count), 0);
-        offsets[i] += req_offset;
+        u32 remaining_count = 0;
+        if (cq->available_count > qinfo[ind].queueCount) {
+            remaining_count = cq->available_count - qinfo[ind].queueCount;
+        }
 
-        qinfo[ind].queueCount += (cq->requested_count + req_offset);
+        base_inds[i] = qinfo[ind].queueCount;
+        created_counts[i] = cq->requested_count;
+        if (created_counts[i] > remaining_count) {
+            created_counts[i] = remaining_count;
+        }
+
+        qinfo[ind].queueCount += created_counts[i];
         qinfo[ind].queueFamilyIndex = cq->index;
         qinfo[ind].pQueuePriorities = qinfo_f[cq->create_ind];
         ilog("Setting qind:%d to queue family index:%d with %d queues requested", ind, qinfo[ind].queueFamilyIndex, qinfo[ind].queueCount);
@@ -619,7 +626,16 @@ int vkr_init_device(vkr_device *dev,
         arr_resize(&dev->qfams[i].qs, qfams->qinfo[i].requested_count);
         dev->qfams[i].fam_ind = qfams->qinfo[i].index;
         for (u32 qind = 0; qind < qfams->qinfo[i].requested_count; ++qind) {
-            u32 adjusted_ind = qind + offsets[i];
+            u32 adjusted_ind = 0;
+            if (created_counts[i] != 0) {
+                adjusted_ind = base_inds[i];
+                if (qind < created_counts[i]) {
+                    adjusted_ind += qind;
+                }
+                else {
+                    adjusted_ind += created_counts[i] - 1;
+                }
+            }
             vkGetDeviceQueue(dev->hndl, qfams->qinfo[i].index, adjusted_ind, &dev->qfams[i].qs[qind]);
             ilog("Getting queue %d from queue family %d: %p", adjusted_ind, qfams->qinfo[i].index, dev->qfams[i].qs[qind]);
         }
