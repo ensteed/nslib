@@ -1,8 +1,8 @@
 #include "profiling.h"
 
 #if defined(PROFILING_ENABLED)
-#include <stdio.h>
-#include "hashfuncs.h"
+    #include <stdio.h>
+    #include "hashfuncs.h"
 #endif
 
 namespace nslib
@@ -216,12 +216,12 @@ intern void profiling_report_line(const profiling_context *ctxt, const profiling
 {
     char prefix[32]{};
     for (int i = 0; i < entry->depth && i < 31; ++i) {
-        strcat(prefix,"-");
+        strcat(prefix, "-");
     }
     if (entry->depth > 0 && entry->depth < 30) {
-        strcat(prefix,">");
+        strcat(prefix, ">");
     }
-    
+
     f64 frame_percent = 0.0;
     if (ctxt->frame_total_ns > 0) {
         frame_percent = ((f64)entry->total_ns / (f64)ctxt->frame_total_ns) * 100.0;
@@ -242,10 +242,23 @@ intern void profiling_report_line(const profiling_context *ctxt, const profiling
             avg_ms = avg_item->val.avg_ns / 1000000.0;
             avg_hits = avg_item->val.avg_hits;
         }
-        ilog("%s%s: avg_frame=%.2f%% avg_ms=%.4f avg_hits=%.2f", prefix, entry->name ? entry->name : "", avg_frame_percent, avg_ms, avg_hits);
+        ilog("%s%s: avg_frame=%.2f%%  avg_fps: %d (avg_ms=%.4f)  avg_hits=%.2f",
+             prefix,
+             entry->name ? entry->name : "",
+             avg_frame_percent,
+             (s32)1000.0f / ms,
+             avg_ms,
+             avg_hits);
     }
     else {
-        ilog("%s%s: ticks=%ld frame=%.2f%% ms=%.4f hits=%u", prefix, entry->name ? entry->name : "", entry->total_ns, frame_percent, ms, entry->hits);
+        ilog("%s%s:  ticks=%ld  frame=%.2f%%  fps:%d (ms=%.4f)  hits=%u",
+             prefix,
+             entry->name ? entry->name : "",
+             entry->total_ns,
+             frame_percent,
+             (s32)1000.0f / ms,
+             ms,
+             entry->hits);
     }
 }
 
@@ -268,10 +281,10 @@ void profiling_report(const profiling_context *ctxt)
     f64 frame_ms = NSEC_TO_MSEC(ctxt->frame_total_ns);
     if (ctxt->avg_window > 0) {
         f64 avg_frame_ms = ctxt->avg_frame_total_ns / 1000000.0;
-        ilog("avg_frame_ms=%.3f avg_window=%u", avg_frame_ms, ctxt->avg_window);
+        ilog("avg fps: %d (avg_frame_ms=%.3f) avg_window=%u", (s32)(1000.0f / avg_frame_ms), avg_frame_ms, ctxt->avg_window);
     }
     else {
-        ilog("frame_ticks=%ld frame_ms=%.3f", ctxt->frame_total_ns, frame_ms);
+        ilog("frame_ticks=%ld  fps:%s (frame_ms=%.3f)", ctxt->frame_total_ns, (s32)(1000.0f/frame_ms), frame_ms);
     }
     profiling_report_children(ctxt, -1);
 }
