@@ -280,7 +280,7 @@ void profiling_report(const profiling_context *ctxt)
     }
     f64 frame_ms = NSEC_TO_MSEC(ctxt->frame_total_ns);
     if (ctxt->avg_window > 0) {
-        f64 avg_frame_ms = ctxt->avg_frame_total_ns / 1000000.0;
+        f64 avg_frame_ms = NSEC_TO_MSEC(ctxt->avg_frame_total_ns);
         ilog("avg fps: %d (avg_frame_ms=%.3f) avg_window=%u", (s32)(1000.0f / avg_frame_ms), avg_frame_ms, ctxt->avg_window);
     }
     else {
