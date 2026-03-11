@@ -449,9 +449,19 @@ u64 xxh3(const char *input, sizet len)
 
     // Handle tail bytes
     if (remaining > 0) {
-        u64 tail = 0;
-        memcpy(&tail, ptr, remaining);
-        acc ^= xxh3_mul128_fold64(tail ^ XXH3_SECRET[2], XXH3_PRIME64_3);
+        u64 tail_lo = 0;
+        u64 tail_hi = 0;
+        sizet tail_lo_size = remaining;
+        if (tail_lo_size > sizeof(u64)) {
+            tail_lo_size = sizeof(u64);
+        }
+        memcpy(&tail_lo, ptr, tail_lo_size);
+        if (remaining > sizeof(u64)) {
+            sizet tail_hi_size = remaining - sizeof(u64);
+            memcpy(&tail_hi, ptr + sizeof(u64), tail_hi_size);
+        }
+        acc ^= xxh3_mul128_fold64(tail_lo ^ XXH3_SECRET[2], tail_hi ^ XXH3_SECRET[3]);
+        acc *= XXH3_PRIME64_3;
     }
 
     // Final avalanche

@@ -99,6 +99,7 @@ using small_str = char[SMALL_STR_LEN];
 inline constexpr const u64 INVALID_ID = ~(0UL);
 inline constexpr const sizet INVALID_IND = ~(0UL);
 inline constexpr const idx_t INVALID_IDX = ~(0U);
+
 #if defined(PLATFORM_APPLE_MACOS)
 inline bool is_valid(u64 v)
 {
