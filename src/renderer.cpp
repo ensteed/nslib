@@ -38,8 +38,7 @@ intern constexpr VkInstanceCreateFlags INST_CREATE_FLAGS = {};
 intern constexpr const char *ADDITIONAL_INST_EXTENSIONS[] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
 intern constexpr const char *DEVICE_EXTENSIONS[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
                                                     VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
-                                                    VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,
-                                                    VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME};
+                                                    VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME};
 #endif
 
 intern VkPipelineLayout G_FRAME_PL_LAYOUT{};
