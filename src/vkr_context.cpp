@@ -551,7 +551,7 @@ int vkr_init_device(vkr_device *dev,
     VkDeviceQueueCreateInfo qinfo[VKR_QUEUE_FAM_TYPE_COUNT]{};
     float qinfo_f[VKR_QUEUE_FAM_TYPE_COUNT][MAX_QUEUE_REQUEST_COUNT]{};
 
-    u32 offsets[VKR_QUEUE_FAM_TYPE_COUNT]{};
+    int offsets[VKR_QUEUE_FAM_TYPE_COUNT]{};
 
     // Here we gather how many queues we want for each queue fam type and populate the queue create infos.
     // Its highly likely that the different queue_fam_types will actually have the same vulkan queue family index -
@@ -613,7 +613,7 @@ int vkr_init_device(vkr_device *dev,
         return err_code::VKR_CREATE_VMA_ALLOCATOR_FAIL;
     }
 
-    // Create command pools for each family
+    // Get queues for each queue family
     for (int i = 0; i < VKR_QUEUE_FAM_TYPE_COUNT; ++i) {
         arr_init(&dev->qfams[i].qs, vk->cfg.arenas.persistent_arena);
         arr_resize(&dev->qfams[i].qs, qfams->qinfo[i].requested_count);
