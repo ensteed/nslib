@@ -66,7 +66,9 @@ layout(location = 1) out vec2 frag_uv;
 void main() {
     // Because GLSL stores matrices in column major, we reverse our multiplication order
     draw_block draw = draw_ssbo.draws[gl_InstanceIndex];
-    gl_Position = vec4(in_pos, 1.0) * inst_ssbo.instances[draw.inst_idx].model * view_ssbo.views[draw.view_idx].view_proj;
+    mat4 viewp = transpose(view_ssbo.views[draw.view_idx].view_proj);
+    mat4 model = transpose(inst_ssbo.instances[draw.inst_idx].model);
+    gl_Position =  viewp * model * vec4(in_pos, 1.0);
     frag_color = in_color;
     frag_uv = in_uv;
 }

@@ -1398,7 +1398,7 @@ void update_view_data(rmanifest *m, idx_t view, const void *view_data)
 {
     sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
     sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.view_ssbo.fif_block_count + view);
-    void *dst = (void *)((sizet)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    void *dst = (void *)((sizet)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset);
     memcpy(dst, view_data, blocksz);
 }
 

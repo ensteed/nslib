@@ -66,6 +66,7 @@ struct camera
     vec2 near_far;
     mat4 proj;
     mat4 view;
+    mat4 proj_view;
 };
 
 pup_func(camera)

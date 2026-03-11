@@ -658,7 +658,8 @@ intern void sort_draw_list(mrender_job *rjob)
     rjob->sorted_dcs.size = n;
 }
 
-intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, sizet job_ssbo_base) {
+intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, sizet job_ssbo_base)
+{
     sizet blocksz = m->rndr->desc_info.draw_ssbo.block_size;
     for (u32 i = 0; i < cur_rj->sorted_dcs.size; ++i) {
         const mdraw_call &dc = cur_rj->dcs[cur_rj->sorted_dcs[i]];
@@ -680,7 +681,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
     if (err != err_code::VKR_NO_ERROR) {
         return false;
     }
-    
+
     rpline_dyn_state dyn_state{};
 
     // We place all draw call data for all jobs in a single SSBO, so this is the base offset for the current job's draw call data
@@ -700,7 +701,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
 
         update_draw_ssbo(m, cur_rj, job_ssbo_base);
         job_ssbo_base += cur_rj->dcs.size;
-        
+
         // Create all needed barriers for the current pass resources (according to what we have for the current state)
         emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->mp, buf, fif);
 
@@ -809,9 +810,8 @@ idx_t push_render_job(rmanifest *m, const mrender_job_params &p)
     idx_t ind = (idx_t)m->jobs.size;
     auto rj = arr_emplace_back(&m->jobs, p.pass, p.view, mem_arena{}, array<mdraw_call>{}, array<idx_t>{}, p.cb, p.cb_user);
     if (p.max_draw_calls > 0) {
-        sizet ssbo_block_alloc_sz = sizeof(alloc_header) + m->rndr->desc_info.draw_ssbo.block_size;
         sizet memsz = calculate_render_job_needed_capacity(p.max_draw_calls, m->rndr->desc_info.draw_ssbo.block_size);
-        init_fl_arena(&rj->arena, memsz, &m->rndr->frame_linear, "rjob_arena", true);
+        init_lin_arena(&rj->arena, memsz, &m->rndr->frame_linear, "rjob_arena", true);
         arr_init(&rj->dcs, &rj->arena, p.max_draw_calls);
         arr_init(&rj->sorted_dcs, &rj->arena, p.max_draw_calls);
     }
@@ -832,7 +832,7 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 u32 dc_ind = (u32)cur_rj->dcs.size;
                 arr_resize(&cur_rj->dcs, dc_ind + 1);
                 mdraw_call *cur_d = &cur_rj->dcs[dc_ind];
-                
+
                 cur_d->subgeom = dp.subgeom;
                 cur_d->inst = dp.inst;
                 cur_d->geom = dp.geom.si;

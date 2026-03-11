@@ -67,6 +67,7 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
         transform* tf = get_comp<transform>(sr->ents[i].id, tftb);
         static_mesh* sm = get_comp<static_mesh>(sr->ents[i].id, smtbl);
         camera *cam = get_comp<camera>(sr->ents[i].id, cam_tbl);
+        idx_t tfind = get_comp_ind(tf, tftb);
         
         if (test_flags(tf->flags, COMP_FLAG_DIRTY)) {
             tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
@@ -76,35 +77,38 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
         if (tf->rfif_dirty > 0) {
             tf->cached_prev = tf->cached;
             tf->cached = math::model_tform(tf->world_pos, tf->orientation, tf->scale);
-            --tf->rfif_dirty;
+            if (cam) {
+                cam->view = math::inverse(tf->cached);
+                cam->proj_view = cam->proj * cam->view;
+            }
             
-            idx_t tfind = get_comp_ind(tf, tftb);
             instance_ssbo_data update_d{};
             update_d.model = tf->cached;
             update_d.prev_model = tf->cached_prev;
             update_instance_data(m, tfind, &update_d);
+            --tf->rfif_dirty;            
+        }
 
-            if (sm) {
-                geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
-                asrt(is_valid(gref));
+        if (sm) {
+            geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
+            asrt(is_valid(gref));
                 
-                for (u32 mi = 0; mi < sm->mat_mapping.size; ++mi) {
-                    material_item_ref mref = find_asset<material>(mpool, sm->mat_mapping[mi].mat_id);
-                    asrt(is_valid(mref));
+            for (u32 mi = 0; mi < sm->mat_mapping.size; ++mi) {
+                material_item_ref mref = find_asset<material>(mpool, sm->mat_mapping[mi].mat_id);
+                asrt(is_valid(mref));
                     
-                    for (u32 bpi = 0; bpi < mref.item->bp_techniques.size; ++bpi) {
-                        if (mref.item->bp_techniques[bpi].bpid == m->rbp.item->id) {
-                            technique_item_ref tref = find_asset<technique>(techpool, mref.item->bp_techniques[bpi].tech_id);
-                            asrt(is_valid(tref));
+                for (u32 bpi = 0; bpi < mref.item->bp_techniques.size; ++bpi) {
+                    if (mref.item->bp_techniques[bpi].bpid == m->rbp.item->id) {
+                        technique_item_ref tref = find_asset<technique>(techpool, mref.item->bp_techniques[bpi].tech_id);
+                        asrt(is_valid(tref));
                     
-                            mdraw_params dp{};
-                            dp.geom = gref.item->rhndl;
-                            dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
-                            dp.mat = mref.item->rhndl;
-                            dp.tech = tref.item->rhndl;
-                            dp.inst = tfind;
-                            push_draw(m, dp);
-                        }
+                        mdraw_params dp{};
+                        dp.geom = gref.item->rhndl;
+                        dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
+                        dp.mat = mref.item->rhndl;
+                        dp.tech = tref.item->rhndl;
+                        dp.inst = tfind;
+                        push_draw(m, dp);
                     }
                 }
             }

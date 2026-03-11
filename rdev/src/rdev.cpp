@@ -56,14 +56,13 @@ const rtexture_pool_cfg TPOOL_CFGS[] = {
     },
 };
 
-constexpr u32 MAX_DRAW_CALLS_PER_JOB = 10000;
-
+constexpr u32 MAX_INSTANCES = 5000;
 
 const rpipeline_layout_cfg PL_LAYOUT_CFG{
     .view_ssbo_block_sz = sizeof(view_ssbo_data),
     .pass_ssbo_block_sz = sizeof(pass_ssbo_data),
     .frame_ubo_block_sz = sizeof(frame_ubo_data),
-    .instance_ssbo{1000, sizeof(instance_ssbo_data)},
+    .instance_ssbo{MAX_INSTANCES, sizeof(instance_ssbo_data)},
     .material_ssbo{256, sizeof(material_ssbo_data)},
     .push_const_range_count = 0,
     .push_const_ranges = nullptr,
@@ -73,7 +72,7 @@ const manifest_max_counts MANIFEST_MAX_COUNTS{
     .passes = 10,
     .views = 10,
     .render_jobs = 10,
-    .draw_calls_per_job = 10000,
+    .draw_calls_per_job = MAX_INSTANCES,
     .texture_targets = 10,
     .buffer_targets = 10,
 };
@@ -145,6 +144,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         camt->orientation = math::orientation(vertical) * math::orientation(horizontal) * camt->orientation;
         camt->cached = math::model_tform(camt->world_pos, camt->orientation, camt->scale);
         camc->view = math::inverse(camt->cached);
+        camt->flags |= COMP_FLAG_DIRTY;
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
@@ -185,7 +185,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom, const material &mat)
 {
     // Create a grid of entities with odd ones being cubes and even being rectangles
-    int len = 5, width = 5, height = 1;
+    int len = 20, width = 20, height = 5;
     auto ent_offset = add_entities(len * width * height, region);
 
     auto tf_tbl = get_comp_tbl<transform>(&region->cdb);
@@ -390,8 +390,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
         auto right = math::right_vec(cam_tform->orientation);
         auto target = math::target_vec(cam_tform->orientation);
         cam_tform->world_pos += (right * app->movement.x + target * app->movement.y) * dt * 10;
-        cam_tform->cached = math::model_tform(cam_tform->world_pos, cam_tform->orientation, cam_tform->scale);
-        cam->view = math::inverse(cam_tform->cached);
+        cam_tform->flags |= COMP_FLAG_DIRTY;
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
@@ -411,7 +410,6 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
             else {
                 curtf->orientation *= math::orientation(vec4{0.0, 0.0, 1.0, (f32)dt});
             }
-            curtf->cached = math::model_tform(curtf->world_pos, curtf->orientation, curtf->scale);
             curtf->flags |= COMP_FLAG_DIRTY;
         }
     }
@@ -446,17 +444,17 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     view_ssbo_data vdata{};
     vdata.view = cam->view;
     vdata.proj = cam->proj;
-    vdata.view_proj = cam->view * cam->proj;
+    vdata.view_proj = cam->proj * cam->view;
     vdata.inv_view_proj = math::inverse(vdata.view_proj);
 
     mview_params vp{};
     vp.view_sdata = &vdata;
-    vp.vdata.norm_scissor = {0.25, 0.25, 0.5, 0.5};
+    vp.vdata.norm_scissor = {0.0, 0.0, 1, 1};
 
     auto view_id = push_view(m, vp);
     auto imgui_view_id = push_view(m, {});
 
-    push_render_job(m, {.pass = mp_id, .view = view_id, .max_draw_calls = 1000, .cb = draw_geometry, .cb_user = nullptr});
+    push_render_job(m, {.pass = mp_id, .view = view_id, .max_draw_calls = MAX_INSTANCES, .cb = draw_geometry, .cb_user = nullptr});
     push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
 
     update_and_draw_region(m, &app->rgn, &app->cg);
