@@ -868,7 +868,9 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk)
          swap_support.capabilities.maxImageExtent.height);
 
     // Create this baby boo
-    if (vkCreateSwapchainKHR(vk->inst.device.hndl, &swap_create, &vk->alloc_cbs, &sw_info->swapchain) != VK_SUCCESS) {
+    VkResult res = vkCreateSwapchainKHR(vk->inst.device.hndl, &swap_create, &vk->alloc_cbs, &sw_info->swapchain);
+    if (res != VK_SUCCESS) {
+        elog("Failed to create swapchain with err code: %d", res);
         arr_terminate(&sw_info->image_views);
         arr_terminate(&sw_info->images);
         arr_terminate(&sw_info->renders_finished);
@@ -877,7 +879,7 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk)
     sw_info->extent = swap_create.imageExtent;
     sw_info->format = swap_create.imageFormat;
     u32 image_count{};
-    VkResult res = vkGetSwapchainImagesKHR(vk->inst.device.hndl, sw_info->swapchain, &image_count, nullptr);
+    res = vkGetSwapchainImagesKHR(vk->inst.device.hndl, sw_info->swapchain, &image_count, nullptr);
     if (res != VK_SUCCESS) {
         elog("Failed to get swapchain images count with code %d", res);
         arr_terminate(&sw_info->image_views);
