@@ -30,17 +30,16 @@ intern const char *VALIDATION_LAYERS[VALIDATION_LAYER_COUNT] = {"VK_LAYER_KHRONO
 
 #if __APPLE__
 intern const VkInstanceCreateFlags INST_CREATE_FLAGS = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-intern const u32 ADDITIONAL_INST_EXTENSION_COUNT = 2;
 intern const char *ADDITIONAL_INST_EXTENSIONS[ADDITIONAL_INST_EXTENSION_COUNT] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
                                                                                   VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME};
-intern const u32 DEVICE_EXTENSION_COUNT = 2;
 intern const char *DEVICE_EXTENSIONS[DEVICE_EXTENSION_COUNT] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_portability_subset"};
 #else
 intern constexpr VkInstanceCreateFlags INST_CREATE_FLAGS = {};
-intern constexpr u32 ADDITIONAL_INST_EXTENSION_COUNT = 1;
-intern constexpr const char *ADDITIONAL_INST_EXTENSIONS[ADDITIONAL_INST_EXTENSION_COUNT] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
-intern constexpr u32 DEVICE_EXTENSION_COUNT = 1;
-intern constexpr const char *DEVICE_EXTENSIONS[DEVICE_EXTENSION_COUNT] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+intern constexpr const char *ADDITIONAL_INST_EXTENSIONS[] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
+intern constexpr const char *DEVICE_EXTENSIONS[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                                                    VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
+                                                    VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,
+                                                    VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME};
 #endif
 
 intern VkPipelineLayout G_FRAME_PL_LAYOUT{};
@@ -1516,9 +1515,9 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
                  .inst_create_flags = INST_CREATE_FLAGS,
                  .li_flags = VKR_LOG_INFO_NONE,
                  .extra_instance_extension_names = ADDITIONAL_INST_EXTENSIONS,
-                 .extra_instance_extension_count = ADDITIONAL_INST_EXTENSION_COUNT,
+                 .extra_instance_extension_count = ARR_SIZE(ADDITIONAL_INST_EXTENSIONS),
                  .device_extension_names = DEVICE_EXTENSIONS,
-                 .device_extension_count = DEVICE_EXTENSION_COUNT,
+                 .device_extension_count = ARR_SIZE(DEVICE_EXTENSIONS),
                  .validation_layer_names = VALIDATION_LAYERS,
                  .validation_layer_count = VALIDATION_LAYER_COUNT};
     s32 result = vkr_init(&vkii, &rndr->vk);
