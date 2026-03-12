@@ -159,6 +159,7 @@ struct mdraw_call
     // Computed sort key for the draw call - used to sort the draw calls in a render job before submission.
     // Feel free to override for custom sorting
     u64 sort_key;
+    u32 inst_count;
 };
 
 enum struct mslot_target_type
@@ -291,8 +292,11 @@ struct mrender_job
     mem_arena arena;
     // Job draw calls
     array<mdraw_call> dcs;
-    // Sorted draw calls
+    // Sorted draw calls - this is used to fill the instance SSBO
     array<idx_t> sorted_dcs;
+    // Instanced draw calls - this is the pared down sorted_dcs with only unique draw calls. Will match sorted draw
+    // calls exactly if there is nothing that can be instanced
+    array<idx_t> instanced_dcs;
     // Callback draw function
     render_job_cb *cb;
     // Draw function param

@@ -36,7 +36,7 @@ struct render_job_cb_params
 
     // Job draw calls
     const array<mdraw_call> *dcs;
-    const array<idx_t> *sorted_dcs;
+    const array<idx_t> *instanced_dcs;
     u64 cmd_buf;
 };
 
@@ -66,6 +66,33 @@ enum pline_dstate_update_flag
 
 struct vk_stencil_op_info
 {};
+
+enum mdraw_sort_key_shift : u32
+{
+    MDRAW_SORT_KEY_SHIFT_SUBGEOM = 0,
+    MDRAW_SORT_KEY_SHIFT_GEOM = 8,
+    MDRAW_SORT_KEY_SHIFT_MAT = 32,
+    MDRAW_SORT_KEY_SHIFT_PL = 48,
+};
+
+enum mdraw_sort_key_mask : u64
+{
+    MDRAW_SORT_KEY_MASK_SUBGEOM = 0xffull,
+    MDRAW_SORT_KEY_MASK_GEOM = 0xffffffull,
+    MDRAW_SORT_KEY_MASK_MAT = 0xffffull,
+    MDRAW_SORT_KEY_MASK_PL = 0xffffull,
+};
+
+intern u64 pack_mdraw_sort_key(const mdraw_call &dc)
+{
+    asrt(((u64)dc.subgeom & ~MDRAW_SORT_KEY_MASK_SUBGEOM) == 0);
+    asrt(((u64)dc.geom & ~MDRAW_SORT_KEY_MASK_GEOM) == 0);
+    asrt(((u64)dc.mat & ~MDRAW_SORT_KEY_MASK_MAT) == 0);
+    asrt(((u64)dc.pl & ~MDRAW_SORT_KEY_MASK_PL) == 0);
+
+    return ((u64)dc.pl << MDRAW_SORT_KEY_SHIFT_PL) | ((u64)dc.mat << MDRAW_SORT_KEY_SHIFT_MAT) |
+           ((u64)dc.geom << MDRAW_SORT_KEY_SHIFT_GEOM) | ((u64)dc.subgeom << MDRAW_SORT_KEY_SHIFT_SUBGEOM);
+}
 
 intern void setup_pline_dynamic_state(VkCommandBuffer cb, const mdraw_call &dc, rpline_dyn_state *state)
 {
@@ -215,7 +242,7 @@ void draw_geometry(const render_job_cb_params &p, void *)
     asrt(p.desc_info);
     asrt(p.dyn_state);
     asrt(p.dcs);
-    asrt(p.sorted_dcs);
+    asrt(p.instanced_dcs);
 
     VkCommandBuffer cb = (VkCommandBuffer)p.cmd_buf;
     // VIEWPORT
@@ -249,8 +276,9 @@ void draw_geometry(const render_job_cb_params &p, void *)
     desc_sets[RDSET_LAYOUT_IMAGES] = p.desc_info->images;
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p.desc_info->pline_layout, 0, RDSET_LAYOUT_COUNT, desc_sets, 0, nullptr);
 
-    for (u32 dci = 0; dci < p.sorted_dcs->size; ++dci) {
-        const mdraw_call *dc = &(*p.dcs)[(*p.sorted_dcs)[dci]];
+    u32 inst_draw_id = 0;
+    for (u32 dci = 0; dci < p.instanced_dcs->size; ++dci) {
+        const mdraw_call *dc = &(*p.dcs)[(*p.instanced_dcs)[dci]];
         const rgeom_info *geom = &p.geometry->slots[dc->geom].item;
         const rmaterial_info *mat = &p.materials->slots[dc->mat].item;
         const rpipeline_entry *pl = &p.plines->items.slots[dc->pl].item;
@@ -266,7 +294,8 @@ void draw_geometry(const render_job_cb_params &p, void *)
         const rsubgeom_range *cur_r = &geom->subgeom_vert_ind_counts[dc->subgeom];
         u32 voffset = geom->vert_offset + cur_r->offset;
         u32 ioffset = geom->ind_offset + cur_r->offset;
-        vkCmdDrawIndexed(cb, cur_r->count, 1, ioffset, voffset, dci);
+        vkCmdDrawIndexed(cb, cur_r->count, dc->inst_count, ioffset, voffset, inst_draw_id);
+        inst_draw_id += dc->inst_count;
     }
 }
 
@@ -627,7 +656,7 @@ intern void sort_draw_list(mrender_job *rjob)
 
     // Initialize index arrays
     u32 *src = rjob->sorted_dcs.data;
-    u32 *tmp = mem_alloc<u32>(rjob->sorted_dcs.arena, n);
+    u32 *tmp = rjob->instanced_dcs.data;
     for (u32 i = 0; i < n; ++i)
         src[i] = i;
 
@@ -656,6 +685,30 @@ intern void sort_draw_list(mrender_job *rjob)
     // src is the final sorted index array (8 swaps = even, so src == original alloc)
     rjob->sorted_dcs.data = src;
     rjob->sorted_dcs.size = n;
+
+    rjob->instanced_dcs.size = 1;
+    rjob->instanced_dcs[0] = rjob->sorted_dcs[0];
+    
+    for (u32 i = 1; i < n; ++i) {
+        if (rjob->dcs[rjob->sorted_dcs[i]].sort_key != rjob->dcs[rjob->sorted_dcs[i - 1]].sort_key) {
+            rjob->instanced_dcs[rjob->instanced_dcs.size] = rjob->sorted_dcs[i];
+            ++rjob->instanced_dcs.size;
+        }
+        else {
+            ++rjob->dcs[*arr_back(&rjob->instanced_dcs)].inst_count;
+        }
+    }
+
+    // for (u32 i = 1; i < n; ++i) {
+    //     if (rjob->dcs[rjob->sorted_dcs[i]].sort_key != rjob->dcs[rjob->sorted_dcs[last_match]].sort_key) {
+    //         rjob->sorted_dcs[last_match+1] = rjob->sorted_dcs[i];
+    //         last_match = i;
+    //         ++rjob->sorted_dcs.size;
+    //     }
+    //     else {
+    //         ++rjob->dcs[rjob->sorted_dcs[last_match]].inst_count;
+    //     }
+    // }
 }
 
 intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, sizet job_ssbo_base)
@@ -730,7 +783,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
             p.fif = fif;
             p.dyn_state = &dyn_state;
             p.dcs = &cur_rj->dcs;
-            p.sorted_dcs = &cur_rj->sorted_dcs;
+            p.instanced_dcs = &cur_rj->instanced_dcs;
             cur_rj->cb(p, cur_rj->cb_user);
         }
         else {
@@ -808,12 +861,13 @@ idx_t push_view(rmanifest *m, const mview_params &p)
 idx_t push_render_job(rmanifest *m, const mrender_job_params &p)
 {
     idx_t ind = (idx_t)m->jobs.size;
-    auto rj = arr_emplace_back(&m->jobs, p.pass, p.view, mem_arena{}, array<mdraw_call>{}, array<idx_t>{}, p.cb, p.cb_user);
+    auto rj = arr_emplace_back(&m->jobs, p.pass, p.view, mem_arena{}, array<mdraw_call>{}, array<idx_t>{}, array<idx_t>{}, p.cb, p.cb_user);
     if (p.max_draw_calls > 0) {
         sizet memsz = calculate_render_job_needed_capacity(p.max_draw_calls, m->rndr->desc_info.draw_ssbo.block_size);
         init_lin_arena(&rj->arena, memsz, &m->rndr->frame_linear, "rjob_arena", true);
         arr_init(&rj->dcs, &rj->arena, p.max_draw_calls);
         arr_init(&rj->sorted_dcs, &rj->arena, p.max_draw_calls);
+        arr_init(&rj->instanced_dcs, &rj->arena, p.max_draw_calls);
     }
     return ind;
 }
@@ -838,8 +892,9 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 cur_d->geom = dp.geom.si;
                 cur_d->mat = dp.mat.si;
                 cur_d->pl = cur_pl->pline.si;
-                cur_d->sort_key = ((u64)cur_d->pl << 32) | (u64)cur_d->mat;
+                cur_d->sort_key = pack_mdraw_sort_key(*cur_d);
                 cur_d->dstate = cur_pl->dstate;
+                cur_d->inst_count = 1;
                 ++push_cnt;
             }
         }
