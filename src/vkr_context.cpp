@@ -579,13 +579,9 @@ int vkr_init_device(vkr_device *dev,
         ilog("Setting qind:%d to queue family index:%d with %d queues requested", ind, qinfo[ind].queueFamilyIndex, qinfo[ind].queueCount);
     }
 
-    // For now we will leave this blank - but probably enable geometry shaders later
-    // VkPhysicalDeviceFeatures features{};
-    // features.samplerAnisotropy = vk->inst.pdev_info.features.samplerAnisotropy;
-
+    
     VkPhysicalDeviceExtendedDynamicStateFeaturesEXT ext_dyn = {.sType =
                                                                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT};
-
     VkPhysicalDeviceFeatures2 features_2{};
     features_2.features = vk->inst.pdev_info.features;
     features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -611,6 +607,9 @@ int vkr_init_device(vkr_device *dev,
         elog("Device creation failed - vk err:%d", result);
         return err_code::VKR_CREATE_DEVICE_FAIL;
     }
+
+    
+    vkr_init_eds1_fptrs(vk->inst.pdev_info.props, dev->hndl, &dev->eds1_fns);
 
     VmaDeviceMemoryCallbacks cb{};
     cb.pUserData = dev;
@@ -1747,9 +1746,9 @@ void vkr_terminate_device(vkr_device *dev, const vkr_context *vk)
         auto cur_fam = &dev->qfams[qfam_i];
         arr_terminate(&cur_fam->qs);
     }
-
     vmaDestroyAllocator(dev->vma_alloc.hndl);
     vkDestroyDevice(dev->hndl, &vk->alloc_cbs);
+    vkr_terminate_eds1_fptrs(&dev->eds1_fns);
 }
 
 intern void log_mem_stats(const char *type, const vk_mem_alloc_stats *stats)

@@ -1,0 +1,503 @@
+:PROPERTIES:
+:GPTEL_MODEL: gpt-5.2
+:GPTEL_BACKEND: OpenAI
+:GPTEL_SYSTEM: You are a large language model living in Emacs and a helpful assistant. Respond concisely.
+:GPTEL_TOOLS:
+:GPTEL_BOUNDS: ((response (620 1934) (2171 3506) (3626 4535) (4620 5984) (6079 7940) (7965 9985) (10135 11308) (11446 13147) (13212 16730) (16833 19635) (19666 20493) (20570 21622) (21756 21785) (21789 21958) (21972 26595)))
+:END:
+
+*** In vulkan, if I enable device extensions in one device, but another device does not need them, should I just use the EXT function for both? Or do I need to have some kind of logic to decide which to use?
+
+You need logic per /VkDevice/.
+
+In Vulkan, an extension’s commands are only valid on a device if you *enabled that extension when creating that VkDevice*. If you call an =VK_EXT_*= function (or any extension command) on a device where the extension wasn’t enabled, behavior is invalid (typically you’ll just crash because the function pointer is =NULL=, or you’ll hit validation errors).
+
+Practical approach:
+
+- *When you create each VkDevice*:
+  1. Query supported device extensions for that physical device.
+  2. Decide which extensions you will enable for /that device/.
+  3. Create the device with that extension list.
+
+- *When you use extension functionality*:
+  - Either branch on “is extension enabled for this device?” (store a boolean in your per-device struct), *or*
+  - Load function pointers per device and only call them if non-null.
+
+Notes:
+- =vkGetDeviceProcAddr(device, ...)= is *device-specific*. Don’t assume a function pointer you got from one device is usable with another.
+- If an extension is supported and you don’t mind requiring it everywhere, you /can/ just enable it on all devices you create (where supported). But you still must handle the case where a device doesn’t support it at all.
+
+Rule of thumb: keep a per-device capability/extension table and branch (or fallback) accordingly.
+
+*** Okay, what if a device does support the extension, but its also core. Can I just enable the extension and use the EXT functions to satisfy both? (rather than using the non ext version on the device that also supports it as core)?
+
+Yes, you can do that, as long as you follow two rules:
+
+1) *The extension must be enabled on that VkDevice* (even if the functionality is core on that Vulkan version).  
+   In Vulkan, /extension commands are only valid to call if the extension is enabled/, regardless of whether an equivalent core command exists.
+
+2) *You must load the =...EXT= entrypoints for that device* (via =vkGetDeviceProcAddr=) and check they’re non-NULL.
+
+So a common portability strategy is:
+
+- If a device only has the feature via *=VK_EXT_*=*, enable the extension and call =vkCmdSomethingEXT=.
+- If a device has it in *core* (e.g., Vulkan 1.2/1.3), you have two options:
+  - Prefer calling the *core* command (no extension enabling required).
+  - Or *also enable the extension* (if supported) and always call the *EXT* command for uniform code paths.
+
+Caveats / best practice:
+- Sometimes the core and extension variants are “the same” but not always perfectly identical in wording/flags/struct chains. Check the spec for that specific feature.
+- If you want “one code path,” many engines do:
+  - Use core if available,
+  - Else fall back to extension,
+  because it avoids needing to enable extra extensions on newer devices.
+
+But technically: *using the EXT functions everywhere is fine if you also enable the extension everywhere you plan to call them.*
+
+*** So I still have to load the EXT functions manually? They are not loaded automatically by enabling the extension?
+
+Yes. Enabling an extension does *not* automatically give you callable C function symbols/addresses.
+
+In Vulkan you must obtain function pointers:
+
+- *Instance-level commands*: via =vkGetInstanceProcAddr(instance, "vkFooEXT")=
+- *Device-level commands*: via =vkGetDeviceProcAddr(device, "vkCmdFooEXT")=
+
+What enabling the extension does is make those commands *valid to use* for that instance/device. It does not “link” or auto-populate pointers for you.
+
+Notes:
+- Many loaders/headers make /core/ functions look like normal linked symbols, but *extension functions are typically =NULL= unless you fetch them* (unless you use a helper loader).
+- You can use a library to avoid manual work (e.g. *volk*, *glad*, *Vulkan-Hpp’s dispatcher*), but under the hood they still call =vkGet*ProcAddr=.
+
+So: enable extension + load its function pointers (per instance/device as appropriate) + only call them when enabled.
+
+*** If the function is not core, will the function (ie vkCmdSetCullMode) be null?
+
+No: that specific example is backwards.
+
+- =vkCmdSetCullMode= is a *core* command in Vulkan *1.3* (and also available via =VK_EXT_extended_dynamic_state= as =vkCmdSetCullModeEXT=).
+- If a command is *not core* (i.e., it exists only as an extension command like =vkCmdSetCullModeEXT=), then there is *no* =vkCmdSetCullMode= symbol to be “NULL”. The core-name function simply doesn’t exist.
+
+What can be NULL is the *function pointer you load for an extension command*, e.g.:
+
+#+begin_src c
+PFN_vkCmdSetCullModeEXT pfn = (PFN_vkCmdSetCullModeEXT)
+    vkGetDeviceProcAddr(device, "vkCmdSetCullModeEXT");
+#+end_src
+
+That pointer can be NULL if:
+- the extension wasn’t enabled on that =VkDevice=, or
+- the extension isn’t supported by that device/driver.
+
+For *core commands* (like =vkCmdSetCullMode= on a Vulkan 1.3 device), you normally call them directly via the loader (or via whatever dispatch system you’re using). If you instead try to fetch them with =vkGetDeviceProcAddr=, you should generally get a valid pointer when the device supports that core version—but you don’t typically rely on “NULL vs non-NULL” to decide core availability. Use the device’s API version / feature structs for that.
+
+If you tell me which Vulkan version you target and whether you use volk/glad/vulkan-hpp, I can suggest the cleanest way to structure the checks and function loading.
+
+*** I ask because calling vkCmdSetCullMode compiles on the rpi 5, but it crashes on running
+
+That’s consistent with: you’re compiling against headers that declare =vkCmdSetCullMode= (Vulkan 1.3), but at runtime your Pi’s Vulkan loader/driver likely doesn’t actually provide Vulkan 1.3 (or doesn’t support that command for the created device). Then your call ends up going through a NULL/invalid dispatch pointer and you crash.
+
+Key points:
+
+- *Compilation only reflects the headers*, not what the runtime supports.
+- =vkCmdSetCullMode= is *core only in Vulkan 1.3*. On older runtimes you must use the *extension path* (=vkCmdSetCullModeEXT=) /and/ enable =VK_EXT_extended_dynamic_state= on the device.
+
+What to do:
+
+1) *Check the device’s Vulkan version* before using 1.3 core commands:
+#+begin_src c
+VkPhysicalDeviceProperties props;
+vkGetPhysicalDeviceProperties(phys, &props);
+uint32_t api = props.apiVersion; // VK_API_VERSION_*
+#+end_src
+If =VK_API_VERSION_MAJOR/MINOR(api) < 1.3=, you can’t assume =vkCmdSetCullMode= works.
+
+2) *Use the extension fallback*:
+- Query support for =VK_EXT_extended_dynamic_state=
+- Enable it in =VkDeviceCreateInfo::ppEnabledExtensionNames=
+- Load =vkCmdSetCullModeEXT= with =vkGetDeviceProcAddr=
+- Call =vkCmdSetCullModeEXT(...)=
+
+3) *Don’t call 1.3 commands unless you have 1.3* (or you’re using a loader like volk that lets you safely dispatch and you’ve gated it).
+
+Also make sure you created the pipeline with dynamic state enabled appropriately:
+- For =vkCmdSetCullMode*= you need =VK_DYNAMIC_STATE_CULL_MODE= (or =..._EXT=) in the pipeline’s =VkPipelineDynamicStateCreateInfo=. Otherwise it won’t necessarily crash, but it’s invalid and validation should complain.
+
+If you paste:
+- the output of =props.apiVersion= on the Pi,
+- whether you’re using volk/glfw loader/etc,
+- and how you load Vulkan functions,
+I can tell you exactly which branch (core vs EXT) you should take and how to wire it so it won’t crash.
+
+*** what is volk for?
+
+Volk is a small Vulkan “meta-loader” library that takes care of loading Vulkan function pointers for you.
+
+What it solves:
+
+- In Vulkan, many functions (especially extension functions, and sometimes even core ones depending on how you’re set up) must be obtained via:
+  - =vkGetInstanceProcAddr=
+  - =vkGetDeviceProcAddr=
+- Doing that manually for dozens/hundreds of entry points is tedious and error-prone.
+- Volk centralizes that: you call a couple init functions and then you can call Vulkan functions normally, including extension functions, without writing all the pointer-loading boilerplate.
+
+Typical usage:
+
+1) Initialize the global loader (loads =vkGetInstanceProcAddr= etc):
+#+begin_src c
+volkInitialize();
+#+end_src
+
+2) After creating a =VkInstance=:
+#+begin_src c
+volkLoadInstance(instance);
+#+end_src
+
+3) After creating a =VkDevice=:
+#+begin_src c
+volkLoadDevice(device);
+#+end_src
+
+After that, extension commands like =vkCmdSetCullModeEXT= are available as normal functions (as long as the extension is enabled). Volk essentially fills in the global function pointers for the “current” instance/device.
+
+Why it’s useful for your crash scenario:
+
+- It won’t magically make unsupported commands work, but it makes it much easier to:
+  - Load the right function pointers for the device you created
+  - Avoid calling a NULL extension pointer by accident (you can still check support/enabling)
+
+Caveats:
+
+- Volk uses global function pointers, so if you use /multiple VkDevice objects at the same time/, you must reload (=volkLoadDevice=) before issuing calls for a different device, or use volk’s per-device dispatch features/patterns. Most apps only use one device, so it’s fine.
+- You still must /check the Vulkan version / enabled extensions/ and only use commands that are actually supported.
+
+Alternatives: glad (Vulkan loader), Vulkan-Hpp’s dynamic dispatcher, or writing your own loader.
+
+If you want, I can show the minimal “core 1.3 vs EXT fallback” pattern for =vkCmdSetCullMode= with or without volk.
+
+*** so volk would make it so vkCmdSetCullMode points to the correct address so my actual could can use the extensionless versions of the function?
+
+Not quite.
+
+Volk doesn’t “upgrade” extension functionality into the core, extensionless name. It just loads whatever entrypoints exist for the instance/device into function pointers.
+
+For your specific case:
+
+- If the runtime/device really supports *Vulkan 1.3*, then the core entrypoint =vkCmdSetCullMode= exists and volk will load it, and calling =vkCmdSetCullMode= is fine.
+- If the runtime/device is *< 1.3*, then =vkCmdSetCullMode= is /not a valid command to call/. Volk can’t make it work. You must use the extension command:
+  - enable =VK_EXT_extended_dynamic_state=
+  - call =vkCmdSetCullModeEXT=
+
+So volk helps mainly by:
+- making =vkCmdSetCullModeEXT= callable without you manually doing =vkGetDeviceProcAddr(...)=, and
+- ensuring you’re not accidentally using an uninitialized function pointer.
+
+If you want “one name in your code”, you typically do your own wrapper:
+
+#+begin_src c
+void CmdSetCullMode(VkCommandBuffer cb, VkCullModeFlags mode) {
+  if (have_vk13) vkCmdSetCullMode(cb, mode);
+  else vkCmdSetCullModeEXT(cb, mode);
+}
+#+end_src
+
+(or similar), with =have_vk13= determined from =VkPhysicalDeviceProperties::apiVersion= and/or extension availability.
+
+*** Couldn't i have a global function pointer - CmdSetCullMode, and set it to either the ext function or the core function at startup?
+
+Yes, that’s a common and good pattern.
+
+You create your own function pointer type matching the signature, then at startup (per /VkDevice/, really) you set it to either the core or EXT entrypoint, and your code calls your pointer.
+
+Example:
+
+#+begin_src c
+typedef void (VKAPI_PTR *PFN_CmdSetCullMode)(
+    VkCommandBuffer, VkCullModeFlags);
+
+PFN_CmdSetCullMode CmdSetCullMode = NULL;
+
+void init_cmds(VkPhysicalDevice phys, VkDevice dev) {
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(phys, &props);
+
+            if (VK_API_VERSION_MAJOR(props.apiVersion) > 1 ||
+        (VK_API_VERSION_MAJOR(props.apiVersion) == 1 &&
+         VK_API_VERSION_MINOR(props.apiVersion) >= 3)) {
+
+        CmdSetCullMode = (PFN_CmdSetCullMode)
+            vkGetDeviceProcAddr(dev, "vkCmdSetCullMode");
+    } else {
+        CmdSetCullMode = (PFN_CmdSetCullMode)
+            vkGetDeviceProcAddr(dev, "vkCmdSetCullModeEXT");
+    }
+
+    // You should also assert CmdSetCullMode != NULL, and ensure the EXT is enabled if using EXT.
+}
+#+end_src
+
+Important caveats:
+
+- /If you pick the EXT path/, you must have enabled =VK_EXT_extended_dynamic_state= when creating that /VkDevice/, and the pipeline must include the corresponding dynamic state.
+- /Don’t make it truly “global” if you might have multiple VkDevice objects./ Function pointers returned by =vkGetDeviceProcAddr= are effectively tied to that device’s dispatch. Store it in your per-device context, or ensure you never mix devices.
+- Prefer checking both: core-1.3 available /or/ extension supported+enabled; don’t rely only on version.
+
+This wrapper-pointer approach is essentially what many engines do for “core vs extension alias” commands.
+
+*** Can you list all of the extended dynamic state functions?
+
+They’re split across three related extensions (and promoted to core across Vulkan 1.3 / later). Here are the command names.
+
+** VK_EXT_extended_dynamic_state (often called “EDS1”)
+- =vkCmdSetCullModeEXT=
+- =vkCmdSetFrontFaceEXT=
+- =vkCmdSetPrimitiveTopologyEXT=
+- =vkCmdSetViewportWithCountEXT=
+- =vkCmdSetScissorWithCountEXT=
+- =vkCmdBindVertexBuffers2EXT=
+- =vkCmdSetDepthTestEnableEXT=
+- =vkCmdSetDepthWriteEnableEXT=
+- =vkCmdSetDepthCompareOpEXT=
+- =vkCmdSetDepthBoundsTestEnableEXT=
+- =vkCmdSetStencilTestEnableEXT=
+- =vkCmdSetStencilOpEXT=
+
+** VK_EXT_extended_dynamic_state2 (“EDS2”)
+- =vkCmdSetPatchControlPointsEXT=
+- =vkCmdSetRasterizerDiscardEnableEXT=
+- =vkCmdSetDepthBiasEnableEXT=
+- =vkCmdSetLogicOpEXT=
+- =vkCmdSetPrimitiveRestartEnableEXT=
+
+…and if you enable the extra feature bits (from =VkPhysicalDeviceExtendedDynamicState2FeaturesEXT=):
+- =vkCmdSetTessellationDomainOriginEXT=  (requires =extendedDynamicState2TessellationDomainOrigin=)
+- =vkCmdSetDepthClampEnableEXT=          (requires =extendedDynamicState2DepthClampEnable=)
+- =vkCmdSetPolygonModeEXT=               (requires =extendedDynamicState2PolygonMode=)
+- =vkCmdSetRasterizationSamplesEXT=      (requires =extendedDynamicState2RasterizationSamples=)
+- =vkCmdSetSampleMaskEXT=                (requires =extendedDynamicState2SampleMask=)
+- =vkCmdSetAlphaToCoverageEnableEXT=     (requires =extendedDynamicState2AlphaToCoverageEnable=)
+- =vkCmdSetAlphaToOneEnableEXT=          (requires =extendedDynamicState2AlphaToOneEnable=)
+- =vkCmdSetLogicOpEnableEXT=             (requires =extendedDynamicState2LogicOpEnable=)
+- =vkCmdSetColorBlendEnableEXT=          (requires =extendedDynamicState2ColorBlendEnable=)
+- =vkCmdSetColorBlendEquationEXT=        (requires =extendedDynamicState2ColorBlendEquation=)
+- =vkCmdSetColorWriteMaskEXT=            (requires =extendedDynamicState2ColorWriteMask=)
+
+** VK_EXT_extended_dynamic_state3 (“EDS3”)
+This one is larger. Core command list includes:
+- =vkCmdSetDepthClampEnableEXT=
+- =vkCmdSetPolygonModeEXT=
+- =vkCmdSetRasterizationSamplesEXT=
+- =vkCmdSetSampleMaskEXT=
+- =vkCmdSetAlphaToCoverageEnableEXT=
+- =vkCmdSetAlphaToOneEnableEXT=
+- =vkCmdSetLogicOpEnableEXT=
+- =vkCmdSetColorBlendEnableEXT=
+- =vkCmdSetColorBlendEquationEXT=
+- =vkCmdSetColorWriteMaskEXT=
+- =vkCmdSetTessellationDomainOriginEXT=
+- =vkCmdSetRasterizationStreamEXT=
+- =vkCmdSetConservativeRasterizationModeEXT=
+- =vkCmdSetExtraPrimitiveOverestimationSizeEXT=
+- =vkCmdSetDepthClipEnableEXT=
+- =vkCmdSetSampleLocationsEnableEXT=
+- =vkCmdSetColorBlendAdvancedEXT=
+- =vkCmdSetProvokingVertexModeEXT=
+- =vkCmdSetLineRasterizationModeEXT=
+- =vkCmdSetLineStippleEnableEXT=
+- =vkCmdSetDepthClipNegativeOneToOneEXT=
+- =vkCmdSetViewportWScalingEnableNV=
+- =vkCmdSetViewportSwizzleNV=
+- =vkCmdSetCoverageToColorEnableNV=
+- =vkCmdSetCoverageToColorLocationNV=
+- =vkCmdSetCoverageModulationModeNV=
+- =vkCmdSetCoverageModulationTableEnableNV=
+- =vkCmdSetCoverageModulationTableNV=
+- =vkCmdSetShadingRateImageEnableNV=
+- =vkCmdSetRepresentativeFragmentTestEnableNV=
+- =vkCmdSetCoverageReductionModeNV=
+
+Notes:
+- Some EDS3-related commands use =NV= suffixes because they originate from NV extensions but are controlled via EDS3 feature bits.
+- Availability is gated by =VkPhysicalDeviceExtendedDynamicState3FeaturesEXT= (lots of individual booleans).
+
+If you tell me which Vulkan version/driver you’re targeting (e.g., Mesa on Raspberry Pi), I can tell you which subset is realistically available and how to query the exact feature bits you need.
+
+*** Can you give me the function pointer types for all esd1 functions, in the c++  "using " format?
+
+#+begin_src cpp
+// VK_EXT_extended_dynamic_state (EDS1) function pointer types (C++ "using" aliases)
+
+using PFN_vkCmdSetCullModeEXT               = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, VkCullModeFlags cullMode);
+using PFN_vkCmdSetFrontFaceEXT              = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, VkFrontFace frontFace);
+using PFN_vkCmdSetPrimitiveTopologyEXT      = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, VkPrimitiveTopology primitiveTopology);
+
+using PFN_vkCmdSetViewportWithCountEXT      = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, uint32_t viewportCount, const VkViewport* pViewports);
+using PFN_vkCmdSetScissorWithCountEXT       = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, uint32_t scissorCount, const VkRect2D* pScissors);
+
+using PFN_vkCmdBindVertexBuffers2EXT        = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer,
+                                                               uint32_t firstBinding,
+                                                               uint32_t bindingCount,
+                                                               const VkBuffer* pBuffers,
+                                                               const VkDeviceSize* pOffsets,
+                                                               const VkDeviceSize* pSizes,
+                                                               const VkDeviceSize* pStrides);
+
+using PFN_vkCmdSetDepthTestEnableEXT        = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, VkBool32 depthTestEnable);
+using PFN_vkCmdSetDepthWriteEnableEXT       = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, VkBool32 depthWriteEnable);
+using PFN_vkCmdSetDepthCompareOpEXT         = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, VkCompareOp depthCompareOp);
+using PFN_vkCmdSetDepthBoundsTestEnableEXT  = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, VkBool32 depthBoundsTestEnable);
+
+using PFN_vkCmdSetStencilTestEnableEXT      = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer, VkBool32 stencilTestEnable);
+using PFN_vkCmdSetStencilOpEXT              = void (VKAPI_PTR*)(VkCommandBuffer commandBuffer,
+                                                               VkStencilFaceFlags faceMask,
+                                                               VkStencilOp failOp,
+                                                               VkStencilOp passOp,
+                                                               VkStencilOp depthFailOp,
+                                                               VkCompareOp compareOp);
+#+end_src
+
+These match the Vulkan C prototypes for =VK_EXT_extended_dynamic_state= exactly. If you want, I can also show a tiny loader snippet that fills each one from =vkGetDeviceProcAddr= and asserts non-null when the extension is enabled.
+
+*** What is the VKAPI_PTRY?
+
+It’s =VKAPI_PTR= (not =VKAPI_PTRY=): a macro from the Vulkan headers that expands to the correct calling convention for function pointers on the current platform/compiler.
+
+Why it exists:
+- On Windows, Vulkan functions use a specific calling convention (historically similar to =__stdcall=).  
+- On most other platforms it typically expands to nothing.
+- If you omit it, your function pointer type can have the wrong ABI on some platforms, leading to crashes when you call through the pointer.
+
+So you should write function pointer types like:
+
+#+begin_src cpp
+using PFN_MyCmd = void (VKAPI_PTR*)(VkCommandBuffer, ...);
+#+end_src
+
+and not plain =void (*)(...)= if you want to be strictly correct/portable.
+
+(You’ll also see related macros like =VKAPI_ATTR= used on the function /declaration/ side rather than the pointer side.)
+
+*** Now create a struct to hold a copy of each of those function pointers
+
+#+begin_src cpp
+struct EDS1_Functions {
+  PFN_vkCmdSetCullModeEXT              vkCmdSetCullModeEXT              = nullptr;
+  PFN_vkCmdSetFrontFaceEXT             vkCmdSetFrontFaceEXT             = nullptr;
+  PFN_vkCmdSetPrimitiveTopologyEXT     vkCmdSetPrimitiveTopologyEXT     = nullptr;
+
+  PFN_vkCmdSetViewportWithCountEXT     vkCmdSetViewportWithCountEXT     = nullptr;
+  PFN_vkCmdSetScissorWithCountEXT      vkCmdSetScissorWithCountEXT      = nullptr;
+
+  PFN_vkCmdBindVertexBuffers2EXT       vkCmdBindVertexBuffers2EXT       = nullptr;
+
+  PFN_vkCmdSetDepthTestEnableEXT       vkCmdSetDepthTestEnableEXT       = nullptr;
+  PFN_vkCmdSetDepthWriteEnableEXT      vkCmdSetDepthWriteEnableEXT      = nullptr;
+  PFN_vkCmdSetDepthCompareOpEXT        vkCmdSetDepthCompareOpEXT        = nullptr;
+  PFN_vkCmdSetDepthBoundsTestEnableEXT vkCmdSetDepthBoundsTestEnableEXT = nullptr;
+
+  PFN_vkCmdSetStencilTestEnableEXT     vkCmdSetStencilTestEnableEXT     = nullptr;
+  PFN_vkCmdSetStencilOpEXT             vkCmdSetStencilOpEXT             = nullptr;
+};
+#+end_src
+
+*** Can you now fill out this function
+#+begin_src cpp
+void init_vkr_eds1_fptrs(const vkr_phys_device &phys, vkr_eds1_fptrs *fns)
+{
+    if (VK_API_VERSION_MAJOR(phys.props.apiVersion) > 1 ||
+        (VK_API_VERSION_MAJOR(phys.props.apiVersion) == 1 &&
+         VK_API_VERSION_MINOR(phys.props.apiVersion) >= 3)) {
+
+    } else {
+    }
+}
+#+end_src
+
+
+#+begin_src cpp
+void init_vkr_eds1_fptrs(const vkr_phys_device &phys, vkr_eds1_fptrs *fns)
+{
+    // Assumptions:
+    // - phys.props is VkPhysicalDeviceProperties
+    // - phys.dev is VkDevice (or change to whatever your VkDevice field is)
+    // - vkr_eds1_fptrs has the same members as the struct I showed earlier
+    // - you have enabled VK_EXT_extended_dynamic_state on the device if you plan to use the EXT path
+
+    const uint32_t api = phys.props.apiVersion;
+    const bool have_vk13 =
+        (VK_API_VERSION_MAJOR(api) > 1) ||
+        (VK_API_VERSION_MAJOR(api) == 1 && VK_API_VERSION_MINOR(api) >= 3);
+
+    auto load = [&](const char* name) -> PFN_vkVoidFunction {
+        return vkGetDeviceProcAddr(phys.dev, name);
+    };
+
+    if (have_vk13) {
+        // Prefer core 1.3 entrypoints (no EXT suffix)
+        fns->vkCmdSetCullModeEXT =
+            reinterpret_cast<PFN_vkCmdSetCullModeEXT>(load("vkCmdSetCullMode"));
+        fns->vkCmdSetFrontFaceEXT =
+            reinterpret_cast<PFN_vkCmdSetFrontFaceEXT>(load("vkCmdSetFrontFace"));
+        fns->vkCmdSetPrimitiveTopologyEXT =
+            reinterpret_cast<PFN_vkCmdSetPrimitiveTopologyEXT>(load("vkCmdSetPrimitiveTopology"));
+
+        fns->vkCmdSetViewportWithCountEXT =
+            reinterpret_cast<PFN_vkCmdSetViewportWithCountEXT>(load("vkCmdSetViewportWithCount"));
+        fns->vkCmdSetScissorWithCountEXT =
+            reinterpret_cast<PFN_vkCmdSetScissorWithCountEXT>(load("vkCmdSetScissorWithCount"));
+
+        fns->vkCmdBindVertexBuffers2EXT =
+            reinterpret_cast<PFN_vkCmdBindVertexBuffers2EXT>(load("vkCmdBindVertexBuffers2"));
+
+        fns->vkCmdSetDepthTestEnableEXT =
+            reinterpret_cast<PFN_vkCmdSetDepthTestEnableEXT>(load("vkCmdSetDepthTestEnable"));
+        fns->vkCmdSetDepthWriteEnableEXT =
+            reinterpret_cast<PFN_vkCmdSetDepthWriteEnableEXT>(load("vkCmdSetDepthWriteEnable"));
+        fns->vkCmdSetDepthCompareOpEXT =
+            reinterpret_cast<PFN_vkCmdSetDepthCompareOpEXT>(load("vkCmdSetDepthCompareOp"));
+        fns->vkCmdSetDepthBoundsTestEnableEXT =
+            reinterpret_cast<PFN_vkCmdSetDepthBoundsTestEnableEXT>(load("vkCmdSetDepthBoundsTestEnable"));
+
+        fns->vkCmdSetStencilTestEnableEXT =
+            reinterpret_cast<PFN_vkCmdSetStencilTestEnableEXT>(load("vkCmdSetStencilTestEnable"));
+        fns->vkCmdSetStencilOpEXT =
+            reinterpret_cast<PFN_vkCmdSetStencilOpEXT>(load("vkCmdSetStencilOp"));
+    } else {
+        // Fall back to VK_EXT_extended_dynamic_state entrypoints (EXT suffix)
+        fns->vkCmdSetCullModeEXT =
+            reinterpret_cast<PFN_vkCmdSetCullModeEXT>(load("vkCmdSetCullModeEXT"));
+        fns->vkCmdSetFrontFaceEXT =
+            reinterpret_cast<PFN_vkCmdSetFrontFaceEXT>(load("vkCmdSetFrontFaceEXT"));
+        fns->vkCmdSetPrimitiveTopologyEXT =
+            reinterpret_cast<PFN_vkCmdSetPrimitiveTopologyEXT>(load("vkCmdSetPrimitiveTopologyEXT"));
+
+        fns->vkCmdSetViewportWithCountEXT =
+            reinterpret_cast<PFN_vkCmdSetViewportWithCountEXT>(load("vkCmdSetViewportWithCountEXT"));
+        fns->vkCmdSetScissorWithCountEXT =
+            reinterpret_cast<PFN_vkCmdSetScissorWithCountEXT>(load("vkCmdSetScissorWithCountEXT"));
+
+        fns->vkCmdBindVertexBuffers2EXT =
+            reinterpret_cast<PFN_vkCmdBindVertexBuffers2EXT>(load("vkCmdBindVertexBuffers2EXT"));
+
+        fns->vkCmdSetDepthTestEnableEXT =
+            reinterpret_cast<PFN_vkCmdSetDepthTestEnableEXT>(load("vkCmdSetDepthTestEnableEXT"));
+        fns->vkCmdSetDepthWriteEnableEXT =
+            reinterpret_cast<PFN_vkCmdSetDepthWriteEnableEXT>(load("vkCmdSetDepthWriteEnableEXT"));
+        fns->vkCmdSetDepthCompareOpEXT =
+            reinterpret_cast<PFN_vkCmdSetDepthCompareOpEXT>(load("vkCmdSetDepthCompareOpEXT"));
+        fns->vkCmdSetDepthBoundsTestEnableEXT =
+            reinterpret_cast<PFN_vkCmdSetDepthBoundsTestEnableEXT>(load("vkCmdSetDepthBoundsTestEnableEXT"));
+
+        fns->vkCmdSetStencilTestEnableEXT =
+            reinterpret_cast<PFN_vkCmdSetStencilTestEnableEXT>(load("vkCmdSetStencilTestEnableEXT"));
+        fns->vkCmdSetStencilOpEXT =
+            reinterpret_cast<PFN_vkCmdSetStencilOpEXT>(load("vkCmdSetStencilOpEXT"));
+    }
+}
+#+end_src
+
+Two important notes:
+- This “stores core pointers into =...EXT=-named fields” on purpose so your call sites can always use =fns->vkCmdSetCullModeEXT(...)=. If you dislike that, rename the fields to suffixless names (recommended).
+- You should still guard usage: if you’re in the =else= path, ensure =VK_EXT_extended_dynamic_state= was enabled on the device; otherwise these will likely load as =nullptr=.
+
+*** 

@@ -3,6 +3,7 @@
 #include "containers/array.h"
 #include "util.h"
 #include "math/vector4.h"
+#include "vkr_dynamic_state.h"
 #include "math/primitives.h"
 #include "basic_types.h"
 
@@ -478,6 +479,7 @@ struct vkr_device
     vkr_device_queue_fam_info qfams[VKR_QUEUE_FAM_TYPE_COUNT];
     vkr_swapchain swapchain;
     vkr_gpu_allocator vma_alloc;
+    vkr_eds1_fptrs eds1_fns;
 };
 
 struct vkr_instance

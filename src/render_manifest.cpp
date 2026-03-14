@@ -33,6 +33,8 @@ struct render_job_cb_params
     idx_t fif;
     // Dynamic state tracked at the job level - each draw function should update this as it goes
     rpline_dyn_state *dyn_state;
+    // Draw functions for extended dynamic state (needed for rpi has to use extension)
+    const vkr_eds1_fptrs *fns;
 
     // Job draw calls
     const array<mdraw_call> *dcs;
@@ -91,7 +93,7 @@ intern u64 pack_mdraw_sort_key(const mdraw_call &dc)
            ((u64)dc.geom << MDRAW_SORT_KEY_SHIFT_GEOM) | ((u64)dc.subgeom << MDRAW_SORT_KEY_SHIFT_SUBGEOM);
 }
 
-intern void setup_pline_dynamic_state(VkCommandBuffer cb, const mdraw_call &dc, rpline_dyn_state *state)
+intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &fns, const mdraw_call &dc, rpline_dyn_state *state)
 {
     bool state_valid = is_valid(state->last_pline);
     u32 state_update_mask = state_valid ? PLINE_DSTATE_UPDATE_NONE : PLINE_DSTATE_UPDATE_ALL;
@@ -164,19 +166,20 @@ intern void setup_pline_dynamic_state(VkCommandBuffer cb, const mdraw_call &dc, 
     }
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_CULL_MODE)) {
-        vkCmdSetCullMode(cb, cur_cm);
+        fns.vkCmdSetCullMode(cb, cur_cm);
     }
 
+
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_FRONT_FACE)) {
-        vkCmdSetFrontFace(cb, cur_ff);
+        fns.vkCmdSetFrontFace(cb, cur_ff);
     }
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_TEST_ENABLE)) {
-        vkCmdSetStencilTestEnable(cb, cur_stest_enable);
+        fns.vkCmdSetStencilTestEnable(cb, cur_stest_enable);
     }
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_OP_FRONT)) {
-        vkCmdSetStencilOp(cb,
+        fns.vkCmdSetStencilOp(cb,
                           VK_STENCIL_FACE_FRONT_BIT,
                           cur_st_opstate_front.failOp,
                           cur_st_opstate_front.passOp,
@@ -185,7 +188,7 @@ intern void setup_pline_dynamic_state(VkCommandBuffer cb, const mdraw_call &dc, 
     }
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_OP_BACK)) {
-        vkCmdSetStencilOp(cb,
+        fns.vkCmdSetStencilOp(cb,
                           VK_STENCIL_FACE_BACK_BIT,
                           cur_st_opstate_back.failOp,
                           cur_st_opstate_back.passOp,
@@ -240,6 +243,7 @@ void draw_geometry(const render_job_cb_params &p, void *)
     asrt(p.dyn_state);
     asrt(p.dcs);
     asrt(p.instanced_dcs);
+    asrt(p.fns);
 
     VkCommandBuffer cb = (VkCommandBuffer)p.cmd_buf;
     // VIEWPORT
@@ -283,7 +287,7 @@ void draw_geometry(const render_job_cb_params &p, void *)
         asrt(geom && mat && pl);
 
         if (p.dyn_state->last_pline != dc->pl) {
-            setup_pline_dynamic_state(cb, *dc, p.dyn_state);
+            setup_pline_dynamic_state(cb, *p.fns, *dc, p.dyn_state);
             vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)pl->gpu_d);
             p.dyn_state->last_pline = dc->pl;
         }
@@ -781,6 +785,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
             p.dyn_state = &dyn_state;
             p.dcs = &cur_rj->dcs;
             p.instanced_dcs = &cur_rj->instanced_dcs;
+            p.fns = &m->rndr->vk.inst.device.eds1_fns;
             cur_rj->cb(p, cur_rj->cb_user);
         }
         else {
