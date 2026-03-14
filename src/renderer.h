@@ -581,7 +581,7 @@ struct renderer_cfg
 {
     void *win_hndl;
     mem_arena *upsream;
-    sizet thread_count{4};
+    sizet thread_count{1};
     sizet persist_fl_size;
     sizet scratch_stack_size;
     sizet extra_frame_linear_size;
