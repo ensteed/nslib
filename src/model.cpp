@@ -1,6 +1,7 @@
 #include "platform.h"
 #include "stb_image.h"
 #include "model.h"
+#include "math/algorithm.h"
 
 namespace nslib
 {
@@ -231,7 +232,7 @@ void init_asset(material *mat)
 void terminate_asset(material *mat)
 {}
 
-void make_rect(geometry *geom)
+void make_unit_rect(geometry *geom)
 {
     arr_copy(&geom->verts, RECT_VERTS, sizeof(RECT_VERTS) / sizeof(gvert));
     arr_copy(&geom->inds, RECT_INDS_TRI_LIST, sizeof(RECT_INDS_TRI_LIST) / sizeof(u32));
@@ -240,11 +241,93 @@ void make_rect(geometry *geom)
     strncpy(geom->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }
 
-void make_cube(geometry *geom)
+void make_unit_cube(geometry *geom)
 {
     arr_copy(&geom->verts, CUBE_VERTS, ARR_SIZE(CUBE_VERTS));
     arr_copy(&geom->inds, CUBE_INDS_TRI_LIST, ARR_SIZE(CUBE_INDS_TRI_LIST));
     arr_resize(&geom->sm_info, 1);
+    geom->sm_info[0].count = geom->inds.size;
+    strncpy(geom->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
+}
+
+void make_unit_sphere(geometry *geom, u32 precision)
+{
+    if (precision < 3) {
+        precision = 3;
+    }
+
+    u32 stack_count = precision;
+    u32 slice_count = precision * 2;
+    f32 radius = 0.5f;
+
+    u32 vert_count = (stack_count + 1) * (slice_count + 1);
+    u32 ind_count = stack_count * slice_count * 6;
+
+    arr_resize(&geom->verts, vert_count);
+    arr_resize(&geom->inds, ind_count);
+
+    u32 vert_ind = 0;
+    for (u32 stack = 0; stack <= stack_count; ++stack) {
+        f32 stack_frac = (f32)stack / (f32)stack_count;
+        f32 phi = stack_frac * math::PI;
+        f32 sin_phi = math::sin(phi);
+        f32 cos_phi = math::cos(phi);
+
+        for (u32 slice = 0; slice <= slice_count; ++slice) {
+            f32 slice_frac = (f32)slice / (f32)slice_count;
+            f32 theta = slice_frac * math::PI * 2.0f;
+            f32 sin_theta = math::sin(theta);
+            f32 cos_theta = math::cos(theta);
+
+            vec3 norm{
+                cos_theta * sin_phi,
+                sin_theta * sin_phi,
+                cos_phi,
+            };
+
+            vec3 tan{
+                -sin_theta,
+                cos_theta,
+                0.0f,
+            };
+
+            if (stack == 0 || stack == stack_count) {
+                tan = {1.0f, 0.0f, 0.0f};
+            }
+
+            geom->verts[vert_ind++] = {
+                norm * radius,
+                norm,
+                tan,
+                {slice_frac, 1.0f - stack_frac},
+                0xffffffff,
+            };
+        }
+    }
+
+    u32 ind_ind = 0;
+    for (u32 stack = 0; stack < stack_count; ++stack) {
+        u32 cur_row = stack * (slice_count + 1);
+        u32 next_row = cur_row + slice_count + 1;
+
+        for (u32 slice = 0; slice < slice_count; ++slice) {
+            u32 cur = cur_row + slice;
+            u32 next = cur + 1;
+            u32 below = next_row + slice;
+            u32 below_next = below + 1;
+
+            geom->inds[ind_ind++] = cur;
+            geom->inds[ind_ind++] = next;
+            geom->inds[ind_ind++] = below;
+
+            geom->inds[ind_ind++] = below;
+            geom->inds[ind_ind++] = next;
+            geom->inds[ind_ind++] = below_next;
+        }
+    }
+
+    arr_resize(&geom->sm_info, 1);
+    geom->sm_info[0].offset = 0;
     geom->sm_info[0].count = geom->inds.size;
     strncpy(geom->sm_info[0].mat_slot_name, "default", SMALL_STR_LEN);
 }

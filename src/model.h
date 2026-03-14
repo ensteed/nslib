@@ -300,8 +300,10 @@ void terminate_asset(material *mat);
 void init_asset(geometry *geom);
 void release_ram_data(geometry *geom);
 void terminate_asset(geometry *geom);
-void make_rect(geometry *geom);
-void make_cube(geometry *geom);
+void make_unit_rect(geometry *geom);
+void make_unit_cube(geometry *geom);
+void make_unit_sphere(geometry *geom, u32 precision);
+
 idx_t find_subgeom_by_mat_slot(const geometry *geom, idx_t mat_slot);
 
 } // namespace nslib
