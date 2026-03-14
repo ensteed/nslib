@@ -580,17 +580,29 @@ int vkr_init_device(vkr_device *dev,
     }
 
     // For now we will leave this blank - but probably enable geometry shaders later
-    VkPhysicalDeviceFeatures features{};
-    features.samplerAnisotropy = vk->inst.pdev_info.features.samplerAnisotropy;
+    // VkPhysicalDeviceFeatures features{};
+    // features.samplerAnisotropy = vk->inst.pdev_info.features.samplerAnisotropy;
+
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT ext_dyn = {.sType =
+                                                                   VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT};
+
+    VkPhysicalDeviceFeatures2 features_2{};
+    features_2.features = vk->inst.pdev_info.features;
+    features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features_2.pNext = &ext_dyn;
+    vkGetPhysicalDeviceFeatures2(vk->inst.pdev_info.hndl, &features_2);
+
+    ilog("Extended dynamic features enabled: %s", ext_dyn.extendedDynamicState ? "true" : "false");
 
     ilog("Creating device with %d queues", create_size);
     VkDeviceCreateInfo create_inf{};
+    create_inf.pNext = &features_2;
     create_inf.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create_inf.queueCreateInfoCount = create_size;
     create_inf.pQueueCreateInfos = qinfo;
     create_inf.enabledLayerCount = layer_count;
     create_inf.ppEnabledLayerNames = layers;
-    create_inf.pEnabledFeatures = &features;
+    create_inf.pEnabledFeatures = nullptr;
     create_inf.ppEnabledExtensionNames = device_extensions;
     create_inf.enabledExtensionCount = dev_ext_count;
 
