@@ -214,7 +214,7 @@ intern bool init_frame_contexts(renderer *rndr, sizet thread_cnt)
             if (result != err_code::VKR_NO_ERROR) {
                 return false;
             }
-
+            
             vkr_alloc_cmd_bufs_cfg buf_cfgs{};
             buf_cfgs.count = 1;
             buf_cfgs.pool = cur_fif->thread_pools[i].pool;
@@ -222,6 +222,7 @@ intern bool init_frame_contexts(renderer *rndr, sizet thread_cnt)
             if (result != err_code::VKR_NO_ERROR) {
                 return false;
             }
+            ilog("Created command pool %p with buffer %p", cur_fif->thread_pools[i].pool, cur_fif->thread_pools[i].buf);
         }
     }
     ilog("Successfully initialized %lu render frames in flight", rndr->fifs.size);
@@ -237,6 +238,7 @@ intern void terminate_frame_contexts(renderer *rndr)
         vkr_terminate_fence(cur_fif->in_flight, &rndr->vk);
         vkr_terminate_semaphore(cur_fif->image_avail, &rndr->vk);
         for (u32 i = 0; i < cur_fif->thread_pools.size; ++i) {
+            ilog("Destroying command pool %p with buffer %p", cur_fif->thread_pools[i].pool, cur_fif->thread_pools[i].buf);
             vkr_terminate_cmd_pool(cur_fif->thread_pools[i].pool, &rndr->vk);
         }
         arr_terminate(&cur_fif->thread_pools);

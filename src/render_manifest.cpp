@@ -949,10 +949,11 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
     reset_arena(&rndr->frame_linear);
 
     // Reset command pool
-    vk_res = vkResetCommandPool(dev->hndl, cur_fif->thread_pools[0].pool, {});
-    // for (u32 ti = 0; ti < cur_fif->thread_pools.size; ++ti) {
-    //     asrt(vk_res == VK_SUCCESS);
-    // }
+    for (u32 ti = 0; ti < cur_fif->thread_pools.size; ++ti) {
+        dlog("Resetting command pool %p and buffer %p", cur_fif->thread_pools[ti].pool, cur_fif->thread_pools[ti].buf);
+        vk_res = vkResetCommandPool(dev->hndl, cur_fif->thread_pools[ti].pool, {});
+        asrt(vk_res == VK_SUCCESS);
+    }
 
     /////////////////////
     // Reset FIF Fence //
