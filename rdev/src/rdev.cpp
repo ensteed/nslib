@@ -56,7 +56,7 @@ const rtexture_pool_cfg TPOOL_CFGS[] = {
     },
 };
 
-constexpr u32 MAX_INSTANCES = 100;
+constexpr u32 MAX_INSTANCES = 5000;
 
 const rpipeline_layout_cfg PL_LAYOUT_CFG{
     .view_ssbo_block_sz = sizeof(view_ssbo_data),
@@ -185,7 +185,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom, const material &mat)
 {
     // Create a grid of entities with odd ones being cubes and even being rectangles
-    int len = 5, width = 5, height = 3;
+    int len = 20, width = 20, height = 5;
     auto ent_offset = add_entities(len * width * height, region);
 
     auto tf_tbl = get_comp_tbl<transform>(&region->cdb);
