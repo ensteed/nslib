@@ -64,9 +64,6 @@ enum pline_dstate_update_flag
                               PLINE_DSTATE_UPDATE_DEPTH_BIAS | PLINE_DSTATE_UPDATE_BLEND_CONSTANTS,
 };
 
-struct vk_stencil_op_info
-{};
-
 enum mdraw_sort_key_shift : u32
 {
     MDRAW_SORT_KEY_SHIFT_SUBGEOM = 0,

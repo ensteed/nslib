@@ -213,30 +213,6 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
     }
 }
 
-intern void create_geometry(geometry_pool *geom_pool, geometry **rect, geometry **cube)
-{
-    auto cube_geom = create_asset(geom_pool, "rect");
-    auto rect_geom = create_asset(geom_pool, "cube");
-    make_rect(rect_geom.item);
-    make_cube(cube_geom.item);
-    *rect = rect_geom.item;
-    *cube = cube_geom.item;
-}
-
-intern void create_textures(texture_pool *tex_pool)
-{
-    auto daniel_face = create_asset(tex_pool, "daniel-face");
-    auto maria_face = create_asset(tex_pool, "maria-face");
-    cstr err = load_texture(maria_face.item, "import/maria.png");
-    if (err) {
-        wlog("Couldn't load texture: %s", ls(daniel_face.item->name), err);
-    }
-    err = load_texture(daniel_face.item, "import/daniel.png");
-    if (err) {
-        wlog("Couldn't load texture %s: %s", ls(maria_face.item->name), err);
-    }
-}
-
 intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
 {
     // First, create the needed target resources
@@ -296,6 +272,30 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
     dlog("Blueprint: %s", ls(to_json(*rbp.item)));
     compile_render_blueprint(rndr, rbp.item);
     return rbp;
+}
+
+intern void create_geometry(geometry_pool *geom_pool, geometry **rect, geometry **cube)
+{
+    auto cube_geom = create_asset(geom_pool, "rect");
+    auto rect_geom = create_asset(geom_pool, "cube");
+    make_unit_rect(rect_geom.item);
+    make_unit_cube(cube_geom.item);
+    *rect = rect_geom.item;
+    *cube = cube_geom.item;
+}
+
+intern void create_textures(texture_pool *tex_pool)
+{
+    auto daniel_face = create_asset(tex_pool, "daniel-face");
+    auto maria_face = create_asset(tex_pool, "maria-face");
+    cstr err = load_texture(maria_face.item, "import/maria.png");
+    if (err) {
+        wlog("Couldn't load texture: %s", ls(daniel_face.item->name), err);
+    }
+    err = load_texture(daniel_face.item, "import/daniel.png");
+    if (err) {
+        wlog("Couldn't load texture %s: %s", ls(maria_face.item->name), err);
+    }
 }
 
 intern technique_item_ref create_diffuse_technique(shader_pool *spool, technique_pool *tpool)
