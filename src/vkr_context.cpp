@@ -89,9 +89,9 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
     arenas->stats[scope].req_alloc += size;
 
     auto arena = &arenas->persistent_arena;
-    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-        arena = &arenas->command_arena;
-    }
+    // if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
+    //     arena = &arenas->command_arena;
+    // }
     sizet used_before = arena->used;
     sizet header_size = sizeof(internal_alloc_header);
 
@@ -143,9 +143,9 @@ intern void vk_free(void *user, void *ptr)
 
     ++arenas->stats[scope].free_count;
 
-    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-        arena = &arenas->command_arena;
-    }
+    // if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
+    //     arena = &arenas->command_arena;
+    // }
     sizet used_before = arena->used;
     arenas->stats[scope].req_free += req_size;
 
@@ -185,10 +185,10 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
 
     sizet header_size = sizeof(internal_alloc_header);
     auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - header_size) : nullptr;
-    if (old_header && old_header->scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-        asrt(old_header->scope == scope);
-        arena = &arenas->command_arena;
-    }
+    // if (old_header && old_header->scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
+    //     asrt(old_header->scope == scope);
+    //     arena = &arenas->command_arena;
+    // }
 
     sizet old_block_size = old_header ? mem_block_size(old_header, arena) : 0;
     sizet old_req_size = old_header ? old_header->req_size : 0;
