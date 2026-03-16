@@ -561,7 +561,7 @@ void init_arena(mem_arena *arena,
     arena->total_size = total_size;
     arena->alloc_type = mtype;
     arena->upstream_allocator = upstream;
-    arena->name = name;
+    strncpy(arena->name, name, SMALL_STR_LEN-1);
 
     if (!skip_log) {
         ilog("Initializing %s (%s) arena with %lu available", name, arena_type_str(arena->alloc_type), arena->total_size);

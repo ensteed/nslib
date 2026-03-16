@@ -6,9 +6,9 @@
 #include "SDL3/SDL_vulkan.h"
 #include "logging.h"
 
-#define PRINT_MEM_DEBUG false
+#define PRINT_MEM_DEBUG true
 #define PRINT_MEM_INSTANCE_ONLY false
-#define PRINT_MEM_OBJECT_ONLY true
+#define PRINT_MEM_OBJECT_ONLY false
 #define PRINT_MEM_GPU_ALLOC false
 
 #define vk_elog(args...) elog(args)
@@ -89,9 +89,9 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
     arenas->stats[scope].req_alloc += size;
 
     auto arena = &arenas->persistent_arena;
-    // if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-    //     arena = &arenas->command_arena;
-    // }
+    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
+        arena = &arenas->command_arena;
+    }
     sizet used_before = arena->used;
     sizet header_size = sizeof(internal_alloc_header);
 
@@ -110,7 +110,9 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
     #elif PRINT_MEM_OBJECT_ONLY
     if (scope == VK_SYSTEM_ALLOCATION_SCOPE_OBJECT) {
     #endif
-        dlog("hs:%lu, header_addr:%p ptr:%p requested_size:%lu alignment:%lu scope:%s used_before:%lu alloc:%lu used_after:%lu",
+        dlog("arena:%s hs:%lu, header_addr:%p ptr:%p requested_size:%lu alignment:%lu scope:%s used_before:%lu alloc:%lu used_after:%lu "
+             "rem:%lu",
+             arena->name,
              header_size,
              (void *)header,
              ret,
@@ -119,7 +121,8 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
              alloc_scope_str(scope),
              used_before,
              used_actual,
-             arena->used);
+             arena->used,
+             arena->total_size - arena->used);
     #if PRINT_MEM_INSTANCE_ONLY || PRINT_MEM_OBJECT_ONLY
     }
     #endif
@@ -143,9 +146,9 @@ intern void vk_free(void *user, void *ptr)
 
     ++arenas->stats[scope].free_count;
 
-    // if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-    //     arena = &arenas->command_arena;
-    // }
+    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
+        arena = &arenas->command_arena;
+    }
     sizet used_before = arena->used;
     arenas->stats[scope].req_free += req_size;
 
@@ -159,7 +162,8 @@ intern void vk_free(void *user, void *ptr)
     #elif PRINT_MEM_OBJECT_ONLY
         if (scope == VK_SYSTEM_ALLOCATION_SCOPE_OBJECT) {
     #endif
-        dlog("hs:%lu, header_addr:%p ptr:%p requested_size:%lu scope:%s used_before:%lu dealloc:%lu used_after:%lu",
+        dlog("arena:%s hs:%lu, header_addr:%p ptr:%p requested_size:%lu scope:%s used_before:%lu dealloc:%lu used_after:%lu rem:%lu",
+             arena->name,
              header_size,
              header,
              ptr,
@@ -167,7 +171,8 @@ intern void vk_free(void *user, void *ptr)
              alloc_scope_str(scope),
              used_before,
              actual_freed,
-             arena->used);
+             arena->used,
+             arena->total_size - arena->used);
     #if PRINT_MEM_INSTANCE_ONLY || PRINT_MEM_OBJECT_ONLY
     }
     #endif
@@ -185,10 +190,10 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
 
     sizet header_size = sizeof(internal_alloc_header);
     auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - header_size) : nullptr;
-    // if (old_header && old_header->scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-    //     asrt(old_header->scope == scope);
-    //     arena = &arenas->command_arena;
-    // }
+    if (old_header && old_header->scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
+        asrt(old_header->scope == scope);
+        arena = &arenas->command_arena;
+    }
 
     sizet old_block_size = old_header ? mem_block_size(old_header, arena) : 0;
     sizet old_req_size = old_header ? old_header->req_size : 0;
@@ -210,8 +215,10 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
     #elif PRINT_MEM_OBJECT_ONLY
             if (scope == VK_SYSTEM_ALLOCATION_SCOPE_OBJECT) {
     #endif
-        dlog("orig_header_addr:%p new_header_addr:%p orig_ptr:%p new_ptr:%p orig_req_size:%d new_req_size:%d scope:%s used_before:%d "
-             "dealloc:%d alloc:%d used_after:%d diff:%d",
+        dlog("arena:%s orig_header_addr:%p new_header_addr:%p orig_ptr:%p new_ptr:%p orig_req_size:%d new_req_size:%d scope:%s "
+             "used_before:%d "
+             "dealloc:%d alloc:%d used_after:%d diff:%d rem:%lu",
+             arena->name,
              old_header,
              new_header,
              ptr,
@@ -223,7 +230,8 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
              old_block_size,
              new_block_size,
              arena->used,
-             diff);
+             diff,
+             arena->total_size - arena->used);
     #if PRINT_MEM_INSTANCE_ONLY || PRINT_MEM_OBJECT_ONLY
     }
     #endif
@@ -1651,12 +1659,16 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     vk->arenas.alloc_cbs.pfnFree = vk_free;
     vk->arenas.alloc_cbs.pfnReallocation = vk_realloc;
 
-    for (sizet fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
+    for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
         arr_resize(&vk->fif_arenas[fif].t_arenas, cfg->thread_count);
         for (u32 t = 0; t < cfg->thread_count; ++t) {
             auto *ta = &vk->fif_arenas[fif].t_arenas[t];
-            init_fl_arena(&ta->persistent_arena, cfg->fif_t_arena_cfg.persistant_sz, &vk->arenas.persistent_arena, "vkr_fif_persistent");
-            init_lin_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_fif_command");
+            char buf_p[SMALL_STR_LEN]{};
+            char buf_c[SMALL_STR_LEN]{};
+            snprintf(buf_p, SMALL_STR_LEN, "vkr_fif_pers_%u_%u", (u8)fif, (u8)t);
+            snprintf(buf_c, SMALL_STR_LEN, "vkr_fif_cmd_%u_%u", (u8)fif, (u8)t);
+            init_fl_arena(&ta->persistent_arena, cfg->fif_t_arena_cfg.persistant_sz, &vk->arenas.persistent_arena, buf_p);
+            init_lin_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, &vk->arenas.persistent_arena, buf_c);
             ta->alloc_cbs.pUserData = ta;
             ta->alloc_cbs.pfnAllocation = vk_alloc;
             ta->alloc_cbs.pfnFree = vk_free;

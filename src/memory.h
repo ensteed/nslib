@@ -94,7 +94,7 @@ struct mem_arena
     pf_alloc_funcs pf_funcs{};
 
     // Name to use in debug/etc applications
-    const char *name{"default"};
+    small_str name{"default"};
 
     sizet used{0};
     sizet peak{0};
