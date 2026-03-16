@@ -78,9 +78,9 @@ const manifest_max_counts MANIFEST_MAX_COUNTS{
 };
 
 const renderer_cfg RNDR_CFG{
-    .persist_fl_size = 100 * MB_SIZE,
-    .scratch_stack_size = 3 * MB_SIZE,
-    .extra_frame_linear_size = 2 * MB_SIZE,
+    .persist_fl_size = 400 * MB_SIZE,
+    .scratch_stack_size = 10 * MB_SIZE,
+    .extra_frame_linear_size = 5 * MB_SIZE,
     .desc{PL_LAYOUT_CFG},
     .mcounts{MANIFEST_MAX_COUNTS},
     .texture_pool_count = ARR_SIZE(TPOOL_CFGS),
