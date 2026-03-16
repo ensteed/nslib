@@ -982,13 +982,13 @@ void vkr_free_desc_sets(const VkDescriptorSet *sets, sizet set_count, VkDescript
     vkFreeDescriptorSets(vk->inst.device.hndl, pool, (u32)set_count, sets);
 }
 
-int vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, vkr_context *vk)
+int vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, VkDevice dev, vk_arenas *arena)
 {
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = flags;
     pool_info.queueFamilyIndex = queue_fam_ind;
-    int ret = vkCreateCommandPool(vk->inst.device.hndl, &pool_info, &vk->arenas.alloc_cbs, hndl);
+    int ret = vkCreateCommandPool(dev, &pool_info, &arena->alloc_cbs, hndl);
     if (ret != VK_SUCCESS) {
         elog("Failed creating vulkan command pool with code %d", ret);
         ret = err_code::VKR_CREATE_COMMAND_POOL_FAIL;
@@ -996,9 +996,9 @@ int vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreat
     return ret;
 }
 
-void vkr_terminate_cmd_pool(VkCommandPool hndl, vkr_context *vk)
+void vkr_terminate_cmd_pool(VkCommandPool hndl, VkDevice dev, vk_arenas *arena)
 {
-    vkDestroyCommandPool(vk->inst.device.hndl, hndl, &vk->arenas.alloc_cbs);
+    vkDestroyCommandPool(dev, hndl, &arena->alloc_cbs);
 }
 
 int vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, vkr_context *vk)
