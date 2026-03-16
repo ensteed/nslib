@@ -69,6 +69,7 @@ inline constexpr sizet MAX_PUSH_CONSTANT_RANGES = 16;
 inline constexpr sizet MAX_VERT_BINDINGS = 16;
 inline constexpr sizet MAX_VERT_ATTRIBS = 16;
 inline constexpr sizet MAX_FRAMEBUFFER_ATTACHMENT_COUNT = 8;
+inline constexpr u8 MAX_THREAD_COUNT = 32;
 
 struct vkr_device;
 
@@ -90,15 +91,24 @@ struct vkr_gpu_allocator
 };
 
 struct mem_arena;
+struct vkr_arenas_cfg
+{
+    sizet persistant_sz;
+    sizet command_sz;
+};
 
 struct vk_arenas
 {
     vk_mem_alloc_stats stats[MEM_ALLOC_TYPE_COUNT]{};
 
     // Should persist through the lifetime of the program - only use free list arena
-    mem_arena *persistent_arena{};
+    mem_arena persistent_arena{};
+
     // Should persist for the lifetime of a vulkan command
-    mem_arena *command_arena{};
+    mem_arena command_arena{};
+
+    // Vk callback defs
+    VkAllocationCallbacks alloc_cbs;
 };
 
 enum vkr_log_info_flag
@@ -248,7 +258,8 @@ struct vkr_phys_device
     VkPhysicalDeviceMemoryProperties mem_properties{};
 };
 
-struct vkr_framebuffer_meta {
+struct vkr_framebuffer_meta
+{
     VkRenderPass rpass{VK_NULL_HANDLE};
     uvec2 dims{};
     u32 layers{};
@@ -500,11 +511,19 @@ struct vkr_desc_cfg
     u32 flags{0};
 };
 
+struct vkr_fif_arenas
+{
+    static_array<vk_arenas, MAX_THREAD_COUNT> t_arenas{};
+};
+
 struct vkr_cfg
 {
     const char *app_name;
     version_info vi;
-    vk_arenas arenas;
+    mem_arena *upstream;
+    u32 thread_count;
+    vkr_arenas_cfg g_arena_cfg{};
+    vkr_arenas_cfg fif_t_arena_cfg{};
     s32 log_verbosity;
     void *window;
     VkInstanceCreateFlags inst_create_flags;
@@ -527,12 +546,13 @@ struct vkr_context
 {
     vkr_instance inst;
     vkr_cfg cfg;
-    VkAllocationCallbacks alloc_cbs;
+    vk_arenas arenas;
+    vkr_fif_arenas fif_arenas[MAX_FRAMES_IN_FLIGHT];
 };
 
 // Utility to create a fence, submit the command buf to queue, and wait for the fence to signal before destroying the
 // fence and returning
-s32 vkr_blocking_queue_submit(VkQueue queue, const VkCommandBuffer *cmd_bufs, u32 cmd_buf_count, const vkr_context *vk);
+s32 vkr_blocking_queue_submit(VkQueue queue, const VkCommandBuffer *cmd_bufs, u32 cmd_buf_count, vkr_context *vk);
 
 // Get the best depth format for the current device
 VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, b32 need_stencil = true);
@@ -542,10 +562,10 @@ VkIndexType get_vk_index_type(sizet ind_size);
 u32 vkr_find_mem_type(u32 type_flags, VkMemoryPropertyFlags property_flags, const vkr_phys_device *pdev);
 
 const char *vkr_physical_device_type_str(VkPhysicalDeviceType type);
-vkr_queue_families vkr_get_queue_families(const vkr_context *vk, VkPhysicalDevice dev);
+vkr_queue_families vkr_get_queue_families(vkr_context *vk, VkPhysicalDevice dev);
 
 // Log out the physical devices and set device to the best one based on very simple scoring (dedicated takes the cake)
-s32 vkr_select_best_graphics_physical_device(const vkr_context *vk, vkr_phys_device *dev);
+s32 vkr_select_best_graphics_physical_device(vkr_context *vk, vkr_phys_device *dev);
 
 // NOTE: These enumerate functions are meant to be a convenience for not needing to use a tool to decide on which
 // extensions and validation layers you need to use. They also print the layers as part of the init routine for vk
@@ -569,51 +589,51 @@ void vkr_enumerate_device_extensions(const vkr_phys_device *pdevice,
 void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas, b32 log_available);
 
 // Descriptor Pools
-s32 vkr_init_desc_pool(VkDescriptorPool *hndl, const vkr_desc_cfg &cfg, const vkr_context *vk);
-void vkr_terminate_desc_pool(VkDescriptorPool hndl, const vkr_context *vk);
+s32 vkr_init_desc_pool(VkDescriptorPool *hndl, const vkr_desc_cfg &cfg, vkr_context *vk);
+void vkr_terminate_desc_pool(VkDescriptorPool hndl, vkr_context *vk);
 
 // Descriptor sets
 
 // s32 vkr_alloc_descriptor
-s32 vkr_alloc_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, const vkr_context *vk);
-void vkr_free_desc_sets(const VkDescriptorSet *sets, sizet set_count, VkDescriptorPool pool, const vkr_context *vk);
+s32 vkr_alloc_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cfg, vkr_context *vk);
+void vkr_free_desc_sets(const VkDescriptorSet *sets, sizet set_count, VkDescriptorPool pool, vkr_context *vk);
 
 // Command Pools
-s32 vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, const vkr_context *vk);
-void vkr_terminate_cmd_pool(VkCommandPool hndl, const vkr_context *vk);
+s32 vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, vkr_context *vk);
+void vkr_terminate_cmd_pool(VkCommandPool hndl, vkr_context *vk);
 
 // Command Buffers
-s32 vkr_alloc_cmd_bufs(VkCommandBuffer *bufs, const vkr_alloc_cmd_bufs_cfg &cfg, const vkr_context *vk);
+s32 vkr_alloc_cmd_bufs(VkCommandBuffer *bufs, const vkr_alloc_cmd_bufs_cfg &cfg, vkr_context *vk);
 // You should probably just free the pool and not the buffers individually
-void vkr_free_cmd_bufs(VkCommandBuffer *bufs, sizet count, VkCommandPool pool, const vkr_context *vk);
+void vkr_free_cmd_bufs(VkCommandBuffer *bufs, sizet count, VkCommandPool pool, vkr_context *vk);
 
 // Render passes
-s32 vkr_init_render_pass(VkRenderPass *hndl, const vkr_rpass_cfg &cfg, const vkr_context *vk);
-void vkr_terminate_render_pass(VkRenderPass hndl, const vkr_context *vk);
+s32 vkr_init_render_pass(VkRenderPass *hndl, const vkr_rpass_cfg &cfg, vkr_context *vk);
+void vkr_terminate_render_pass(VkRenderPass hndl, vkr_context *vk);
 
 // Descriptor set layouts
-s32 vkr_init_desc_set_layouts(VkDescriptorSetLayout *hndls, const vkr_descriptor_set_layout_cfg &cfg, const vkr_context *vk);
-void vkr_terminate_desc_set_layouts(VkDescriptorSetLayout *layouts, sizet size, const vkr_context *vk);
+s32 vkr_init_desc_set_layouts(VkDescriptorSetLayout *hndls, const vkr_descriptor_set_layout_cfg &cfg, vkr_context *vk);
+void vkr_terminate_desc_set_layouts(VkDescriptorSetLayout *layouts, sizet size, vkr_context *vk);
 
 // Pipeline layouts
-s32 vkr_init_pipeline_layout(VkPipelineLayout *hndl, const vkr_pipeline_layout_cfg &cfg, const vkr_context *vk);
-void vkr_terminate_pipeline_layout(VkPipelineLayout hndl, const vkr_context *vk);
+s32 vkr_init_pipeline_layout(VkPipelineLayout *hndl, const vkr_pipeline_layout_cfg &cfg, vkr_context *vk);
+void vkr_terminate_pipeline_layout(VkPipelineLayout hndl, vkr_context *vk);
 
 // Pipelines
-s32 vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, const vkr_context *vk);
-void vkr_terminate_pipeline(VkPipeline hndl, const vkr_context *vk_ctxt);
+s32 vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, vkr_context *vk);
+void vkr_terminate_pipeline(VkPipeline hndl, vkr_context *vk_ctxt);
 
 // Shader module
-s32 vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, const vkr_context *vk);
-void vkr_terminate_shader_module(VkShaderModule module, const vkr_context *vk);
+s32 vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, vkr_context *vk);
+void vkr_terminate_shader_module(VkShaderModule module, vkr_context *vk);
 
 // Framebuffers
-s32 vkr_init_framebuffer(vkr_framebuffer *framebuffer, const vkr_framebuffer_cfg &cfg, const vkr_context *vk);
-void vkr_terminate_framebuffer(vkr_framebuffer *fb, const vkr_context *vk);
+s32 vkr_init_framebuffer(vkr_framebuffer *framebuffer, const vkr_framebuffer_cfg &cfg, vkr_context *vk);
+void vkr_terminate_framebuffer(vkr_framebuffer *fb, vkr_context *vk);
 
 // Buffers
 s32 vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg);
-void vkr_terminate_buffer(vkr_buffer *buffer, const vkr_context *vk);
+void vkr_terminate_buffer(vkr_buffer *buffer, vkr_context *vk);
 void *vkr_map_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
 void vkr_unmap_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
 
@@ -623,57 +643,59 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
                                      const VkBufferCopy *regions,
                                      u32 region_count,
                                      VkCommandBuffer cmd_buf,
-                                     const vkr_context *vk);
+                                     vkr_context *vk);
 s32 vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
                                      vkr_buffer *staging_buffer,
                                      const void *src_data,
                                      sizet src_data_size,
                                      VkCommandBuffer cmd_buf,
-                                     const vkr_context *vk);
+                                     vkr_context *vk);
 
 // Images
 s32 vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg);
-void vkr_terminate_image(vkr_image *image, const vkr_context *vk);
+void vkr_terminate_image(vkr_image *image, vkr_context *vk);
 
 // Image views
-s32 vkr_init_image_view(VkImageView *hndl, const vkr_image_view_cfg &cfg, const vkr_context *vk);
-void vkr_terminate_image_view(VkImageView hndl, const vkr_context *vk);
+s32 vkr_init_image_view(VkImageView *hndl, const vkr_image_view_cfg &cfg, vkr_context *vk);
+void vkr_terminate_image_view(VkImageView hndl, vkr_context *vk);
 
 // Samplers
-s32 vkr_init_sampler(VkSampler *hndl, const vkr_sampler_cfg &cfg, const vkr_context *vk);
-void vkr_terminate_sampler(VkSampler sampler, const vkr_context *vk);
+s32 vkr_init_sampler(VkSampler *hndl, const vkr_sampler_cfg &cfg, vkr_context *vk);
+void vkr_terminate_sampler(VkSampler sampler, vkr_context *vk);
 
-s32 vkr_init_fence(VkFence *hndl, VkFenceCreateFlags flags, const vkr_context *vk);
-void vkr_terminate_fence(VkFence hndl, const vkr_context *vk);
+s32 vkr_init_fence(VkFence *hndl, VkFenceCreateFlags flags, vkr_context *vk);
+void vkr_terminate_fence(VkFence hndl, vkr_context *vk);
 
-s32 vkr_init_semaphore(VkSemaphore *hndl, VkSemaphoreCreateFlags flags, const vkr_context *vk);
-void vkr_terminate_semaphore(VkSemaphore hndl, const vkr_context *vk);
+s32 vkr_init_semaphore(VkSemaphore *hndl, VkSemaphoreCreateFlags flags, vkr_context *vk);
+void vkr_terminate_semaphore(VkSemaphore hndl, vkr_context *vk);
 
 // The device should be created before calling this
-s32 vkr_init_swapchain(vkr_swapchain *sw_info, const vkr_context *vk);
-void vkr_terminate_swapchain(vkr_swapchain *sw_info, const vkr_context *vk);
+s32 vkr_init_swapchain(vkr_swapchain *sw_info, vkr_context *vk);
+void vkr_terminate_swapchain(vkr_swapchain *sw_info, vkr_context *vk);
 
 void vkr_init_pdevice_swapchain_support(vkr_pdevice_swapchain_support *ssup, mem_arena *arena);
 void vkr_fill_pdevice_swapchain_support(VkPhysicalDevice pdevice, VkSurfaceKHR surface, vkr_pdevice_swapchain_support *ssup);
 void vkr_terminate_pdevice_swapchain_support(vkr_pdevice_swapchain_support *ssup);
 
 s32 vkr_init_device(vkr_device *dev,
-                    const vkr_context *vk,
+                    vkr_context *vk,
                     const char *const *layers,
                     u32 layer_count,
                     const char *const *device_extensions,
                     u32 dev_ext_count);
-void vkr_terminate_device(vkr_device *dev, const vkr_context *vk);
+void vkr_terminate_device(vkr_device *dev, vkr_context *vk);
 
 // Initialize surface in the vk_context from the window - the instance must have been created already
-s32 vkr_init_surface(const vkr_context *vk, VkSurfaceKHR *surface);
-void vkr_terminate_surface(const vkr_context *vk, VkSurfaceKHR surface);
+s32 vkr_init_surface(vkr_context *vk, VkSurfaceKHR *surface);
+void vkr_terminate_surface(vkr_context *vk, VkSurfaceKHR surface);
 
-s32 vkr_init_instance(const vkr_context *vk, vkr_instance *inst);
-void vkr_terminate_instance(const vkr_context *vk, vkr_instance *inst);
+s32 vkr_init_instance(vkr_context *vk, vkr_instance *inst);
+void vkr_terminate_instance(vkr_context *vk, vkr_instance *inst);
 
 s32 vkr_init(const vkr_cfg *cfg, vkr_context *vk);
 void vkr_terminate(vkr_context *vk);
+
+void vkr_reset_linear_arenas(vkr_context *vk, idx_t fif);
 
 s32 vkr_begin_cmd_buf(VkCommandBuffer hndl, VkCommandBufferUsageFlags flags);
 s32 vkr_end_cmd_buf(VkCommandBuffer hndl);
@@ -690,6 +712,5 @@ sizet vkr_min_uniform_buffer_offset_alignment(vkr_context *vk);
 sizet vkr_uniform_buffer_offset_alignment(vkr_context *vk, sizet uniform_block_size);
 
 void vkr_device_wait_idle(vkr_device *dev);
-
 
 } // namespace nslib

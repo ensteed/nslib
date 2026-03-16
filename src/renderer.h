@@ -501,9 +501,6 @@ struct renderer
 {
     // Owned vulkan context and mem arenas used only for vulkan stuff
     vkr_context vk{};
-    mem_arena vk_free_list;
-    mem_arena vk_frame_linear;
-
     mem_arena persist_fl;
     mem_arena scratch_stack;
     mem_arena frame_linear;

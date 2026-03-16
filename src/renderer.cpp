@@ -78,7 +78,7 @@ intern void terminate_geometry(renderer *rndr, rgeom_info *gref)
 intern bool fill_geometry_layout_entry(geom_buffer_layout_entry *layout,
                                        sizet cur_buffer_offset,
                                        const geometry_vert_layout_desc &desc,
-                                       const vkr_context *vk)
+                                       vkr_context *vk)
 {
     vkr_buffer_cfg alloc_cfg{};
     alloc_cfg.alloc_flags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -137,7 +137,7 @@ intern bool fill_geometry_layout_entry(geom_buffer_layout_entry *layout,
 
     // Create the virtual block using stream 0 as the guide (ci.size set in the loop above)
     if (!failed) {
-        ci.pAllocationCallbacks = &vk->alloc_cbs;
+        ci.pAllocationCallbacks = &vk->arenas.alloc_cbs;
         int result = vmaCreateVirtualBlock(&ci, &layout->vert_block);
         failed = result != VK_SUCCESS;
         if (failed) {
@@ -147,7 +147,7 @@ intern bool fill_geometry_layout_entry(geom_buffer_layout_entry *layout,
     return !failed;
 }
 
-intern void terminate_geometry_stream_group(geom_stream_group *gp, const vkr_context *vk)
+intern void terminate_geometry_stream_group(geom_stream_group *gp, vkr_context *vk)
 {
     ilog("Terminating geometry stream group %s (%lu)", gp->indice_stream.name, gp->id);
     for (u32 i = 0; i < gp->layouts.size; ++i) {
@@ -214,7 +214,7 @@ intern bool init_frame_contexts(renderer *rndr, sizet thread_cnt)
             if (result != err_code::VKR_NO_ERROR) {
                 return false;
             }
-            
+
             vkr_alloc_cmd_bufs_cfg buf_cfgs{};
             buf_cfgs.count = 1;
             buf_cfgs.pool = cur_fif->thread_pools[i].pool;
@@ -905,7 +905,7 @@ idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_des
             // Create the virtual block for the indice buffer
             VmaVirtualBlockCreateInfo ci{};
             ci.size = alloc_cfg.buffer_size;
-            ci.pAllocationCallbacks = &rndr->vk.alloc_cbs;
+            ci.pAllocationCallbacks = &rndr->vk.arenas.alloc_cbs;
             result = vmaCreateVirtualBlock(&ci, &cur_group->indices_block);
             failed = result != VK_SUCCESS;
             if (failed) {
@@ -1455,7 +1455,7 @@ void init_imgui(renderer *rndr, const rbp_pass &pass)
     init_info.Queue = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
     init_info.PipelineCache = VK_NULL_HANDLE;
     init_info.DescriptorPool = rndr->imgui.pool;
-    init_info.Allocator = &rndr->vk.alloc_cbs;
+    init_info.Allocator = &rndr->vk.arenas.alloc_cbs;
     init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
     init_info.ImageCount = rndr->vk.inst.device.swapchain.images.size;
     init_info.RenderPass = rndr->imgui.rpass;
@@ -1513,13 +1513,15 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
                    p.upsream,
                    "rndr-frame-linear");
 
-    init_fl_arena(&rndr->vk_free_list, 50 * MB_SIZE, &rndr->persist_fl, "rndr-vk-fl");
-    init_lin_arena(&rndr->vk_frame_linear, 10 * MB_SIZE, &rndr->persist_fl, "rndr-vk-frame");
-
+    vkr_arenas_cfg g_cfg = {.persistant_sz = 50 * MB_SIZE, .command_sz = 2 * MB_SIZE};
+    vkr_arenas_cfg per_fift_cfg = {.persistant_sz = 1 * MB_SIZE, .command_sz = 3 * MB_SIZE};
     // Vulkan
     vkr_cfg vkii{.app_name = "rdev",
                  .vi{1, 0, 0},
-                 .arenas{.persistent_arena = &rndr->vk_free_list, .command_arena = &rndr->vk_frame_linear},
+                 .upstream = &rndr->persist_fl,
+                 .thread_count = 1,
+                 .g_arena_cfg = g_cfg,
+                 .fif_t_arena_cfg = per_fift_cfg,
                  .log_verbosity = LOG_DEBUG,
                  .window = p.win_hndl,
                  .inst_create_flags = INST_CREATE_FLAGS,
@@ -1579,7 +1581,7 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
 void terminate_renderer(renderer *rndr)
 {
     ilog("Terminating");
-    reset_arena(&rndr->vk_frame_linear);
+    //vkr_reset_linear_arenas(rndr->vk, 0);
     reset_arena(&rndr->frame_linear);
 
     // Device needs to be idle before finishing with everything
@@ -1624,9 +1626,6 @@ void terminate_renderer(renderer *rndr)
 
     // Vulkan
     vkr_terminate(&rndr->vk);
-
-    terminate_arena(&rndr->vk_free_list);
-    terminate_arena(&rndr->vk_frame_linear);
 
     // Preserve this order just in case the passed in arena was a stack arena
     terminate_arena(&rndr->frame_linear);

@@ -67,7 +67,7 @@ b32 vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buf
     return true;
 }
 
-void vkr_terminate_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_context *vk)
+void vkr_terminate_chunked_buffer(vkr_chunked_buffer *chunk_buf, vkr_context *vk)
 {
     ilog("Terminating chunked buffer %s (%lu used chunks, %lu chunk size, %lu total chunk count)",
          chunk_buf->buffer.mem_info.pName,

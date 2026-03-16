@@ -21,7 +21,7 @@ struct vkr_texture_pool_cfg
     const char *pool_name{nullptr};
     mem_arena *persist_fl{nullptr};
     mem_arena *scratch_stack{nullptr};
-    const vkr_context *vk;
+    vkr_context *vk;
 };
 
 struct rtexture_info
@@ -47,7 +47,7 @@ struct vkr_texture_pool
     // has finished submitting and waiting on the command buffer using this pool.
     array<vkr_buffer> pending_staging_buffers;
     mem_arena *scratch_stack;
-    const vkr_context *vk;
+    vkr_context *vk;
 };
 
 struct vkr_source_image_data {

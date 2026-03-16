@@ -45,7 +45,7 @@ struct rtexture_regisitry_cfg
     mem_arena *scratch_stack;
     u32 pool_count;
     const rtexture_pool_cfg *cfgs;
-    const vkr_context *vk;
+    vkr_context *vk;
 };
 
 struct rtexture_desc
