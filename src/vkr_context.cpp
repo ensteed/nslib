@@ -177,9 +177,9 @@ intern void vk_free(void *user, void *ptr)
 intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSystemAllocationScope scope)
 {
     asrt(user);
-    if (!ptr) {
-        return nullptr;
-    }
+    // if (!ptr) {
+    //     return nullptr;
+    // }
     auto arenas = (vk_arenas *)user;
     ++arenas->stats[scope].realloc_count;
     arenas->stats[scope].req_alloc += size;
@@ -187,14 +187,14 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
     auto arena = &arenas->persistent_arena;
 
     sizet header_size = sizeof(internal_alloc_header);
-    auto old_header = (internal_alloc_header *)((sizet)ptr - header_size);
+    auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - header_size) : nullptr;
     asrt(old_header->scope == scope);
     if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
         arena = &arenas->command_arena;
     }
 
-    sizet old_block_size = mem_block_size(old_header, arena);
-    sizet old_req_size = old_header->req_size;
+    sizet old_block_size = old_header ? mem_block_size(old_header, arena) : 0;
+    sizet old_req_size = old_header ? old_header->req_size : 0;
     arenas->stats[scope].actual_free += old_block_size;
     arenas->stats[scope].req_free += old_req_size;
     sizet used_before = arena->used;
