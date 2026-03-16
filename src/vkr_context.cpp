@@ -185,8 +185,8 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
 
     sizet header_size = sizeof(internal_alloc_header);
     auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - header_size) : nullptr;
-    asrt(old_header->scope == scope);
-    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
+    if (old_header && old_header->scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
+        asrt(old_header->scope == scope);
         arena = &arenas->command_arena;
     }
 
@@ -1644,7 +1644,7 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     vk->cfg = *cfg;
 
     init_fl_arena(&vk->arenas.persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
-    init_fl_arena(&vk->arenas.command_arena, cfg->g_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_command");
+    init_lin_arena(&vk->arenas.command_arena, cfg->g_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_command");
 
     vk->arenas.alloc_cbs.pUserData = &vk->arenas;
     vk->arenas.alloc_cbs.pfnAllocation = vk_alloc;
@@ -1656,7 +1656,7 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
         for (u32 t = 0; t < cfg->thread_count; ++t) {
             auto *ta = &vk->fif_arenas[fif].t_arenas[t];
             init_fl_arena(&ta->persistent_arena, cfg->fif_t_arena_cfg.persistant_sz, &vk->arenas.persistent_arena, "vkr_fif_persistent");
-            init_fl_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_fif_command");
+            init_lin_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_fif_command");
             ta->alloc_cbs.pUserData = ta;
             ta->alloc_cbs.pfnAllocation = vk_alloc;
             ta->alloc_cbs.pfnFree = vk_free;
