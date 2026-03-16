@@ -952,7 +952,7 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
     }
     
     reset_arena(&rndr->frame_linear);
-    //vkr_reset_linear_arenas(&rndr->vk, fif);    
+    vkr_reset_linear_arenas(&rndr->vk, fif); 
 
     /////////////////////
     // Reset FIF Fence //
