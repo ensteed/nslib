@@ -945,14 +945,13 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
     }
     asrt(vk_res == VK_SUCCESS || vk_res == VK_SUBOPTIMAL_KHR);
 
-    reset_arena(&rndr->frame_linear);
-
     // Reset command pool
     for (u32 ti = 0; ti < cur_fif->thread_pools.size; ++ti) {
         vk_res = vkResetCommandPool(dev->hndl, cur_fif->thread_pools[ti].pool, {});
         asrt(vk_res == VK_SUCCESS);
     }
-
+    
+    reset_arena(&rndr->frame_linear);
     vkr_reset_linear_arenas(&rndr->vk, fif);    
 
     /////////////////////
