@@ -1515,7 +1515,7 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
                    "rndr-frame-linear");
 
     vkr_arenas_cfg g_cfg = {.persistant_sz = 20 * MB_SIZE, .command_sz = 2 * MB_SIZE};
-    vkr_arenas_cfg per_fift_cfg = {.persistant_sz = 1 * MB_SIZE, .command_sz = 2 * MB_SIZE};
+    vkr_arenas_cfg per_fift_cfg = {.persistant_sz = 10 * MB_SIZE, .command_sz = 2 * MB_SIZE};
     // Vulkan
     vkr_cfg vkii{.app_name = "rdev",
                  .vi{1, 0, 0},
