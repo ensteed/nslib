@@ -177,9 +177,6 @@ intern void vk_free(void *user, void *ptr)
 intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSystemAllocationScope scope)
 {
     asrt(user);
-    // if (!ptr) {
-    //     return nullptr;
-    // }
     auto arenas = (vk_arenas *)user;
     ++arenas->stats[scope].realloc_count;
     arenas->stats[scope].req_alloc += size;
@@ -1063,12 +1060,12 @@ int vkr_init_render_pass(VkRenderPass *hndl, const vkr_rpass_cfg &cfg, vkr_conte
     rpass_info.dependencyCount = (u32)cfg.subpass_dependencies.size;
     rpass_info.pDependencies = cfg.subpass_dependencies.data;
 
-    arr_terminate(&subpasses);
-
     if (vkCreateRenderPass(vk->inst.device.hndl, &rpass_info, &vk->arenas.alloc_cbs, hndl) != VK_SUCCESS) {
         elog("Failed to create render pass");
+        arr_terminate(&subpasses);
         return err_code::VKR_CREATE_RENDER_PASS_FAIL;
     }
+    arr_terminate(&subpasses);
     return err_code::VKR_NO_ERROR;
 }
 
@@ -1647,7 +1644,7 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     vk->cfg = *cfg;
 
     init_fl_arena(&vk->arenas.persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
-    init_lin_arena(&vk->arenas.command_arena, cfg->g_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_command");
+    init_fl_arena(&vk->arenas.command_arena, cfg->g_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_command");
 
     vk->arenas.alloc_cbs.pUserData = &vk->arenas;
     vk->arenas.alloc_cbs.pfnAllocation = vk_alloc;
@@ -1659,7 +1656,7 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
         for (u32 t = 0; t < cfg->thread_count; ++t) {
             auto *ta = &vk->fif_arenas[fif].t_arenas[t];
             init_fl_arena(&ta->persistent_arena, cfg->fif_t_arena_cfg.persistant_sz, &vk->arenas.persistent_arena, "vkr_fif_persistent");
-            init_lin_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_fif_command");
+            init_fl_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, &vk->arenas.persistent_arena, "vkr_fif_command");
             ta->alloc_cbs.pUserData = ta;
             ta->alloc_cbs.pfnAllocation = vk_alloc;
             ta->alloc_cbs.pfnFree = vk_free;
