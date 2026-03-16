@@ -56,7 +56,7 @@ const rtexture_pool_cfg TPOOL_CFGS[] = {
     },
 };
 
-constexpr u32 MAX_INSTANCES = 5000;
+constexpr u32 MAX_INSTANCES = 500;
 
 const rpipeline_layout_cfg PL_LAYOUT_CFG{
     .view_ssbo_block_sz = sizeof(view_ssbo_data),
@@ -78,9 +78,9 @@ const manifest_max_counts MANIFEST_MAX_COUNTS{
 };
 
 const renderer_cfg RNDR_CFG{
-    .persist_fl_size = 200 * MB_SIZE,
-    .scratch_stack_size = 10 * MB_SIZE,
-    .extra_frame_linear_size = 5 * MB_SIZE,
+    .persist_fl_size = 100 * MB_SIZE,
+    .scratch_stack_size = 3 * MB_SIZE,
+    .extra_frame_linear_size = 2 * MB_SIZE,
     .desc{PL_LAYOUT_CFG},
     .mcounts{MANIFEST_MAX_COUNTS},
     .texture_pool_count = ARR_SIZE(TPOOL_CFGS),
@@ -185,7 +185,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom, const material &mat)
 {
     // Create a grid of entities with odd ones being cubes and even being rectangles
-    int len = 20, width = 20, height = 5;
+    int len = 5, width = 5, height = 5;
     auto ent_offset = add_entities(len * width * height, region);
 
     auto tf_tbl = get_comp_tbl<transform>(&region->cdb);
