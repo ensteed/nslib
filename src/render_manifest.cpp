@@ -945,7 +945,7 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
     }
     asrt(vk_res == VK_SUCCESS || vk_res == VK_SUBOPTIMAL_KHR);
 
-    //vkr_reset_linear_arenas(&rndr->vk, fif);
+    vkr_reset_linear_arenas(&rndr->vk, fif);
     reset_arena(&rndr->frame_linear);
 
     // Reset command pool
