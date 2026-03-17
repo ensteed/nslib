@@ -599,8 +599,8 @@ s32 vkr_alloc_desc_sets(VkDescriptorSet *sets, const vkr_alloc_desc_sets_cfg &cf
 void vkr_free_desc_sets(const VkDescriptorSet *sets, sizet set_count, VkDescriptorPool pool, vkr_context *vk);
 
 // Command Pools
-s32 vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, VkDevice dev, vk_arenas *arena);
-void vkr_terminate_cmd_pool(VkCommandPool hndl, VkDevice dev, vk_arenas *arena);
+s32 vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, vkr_context *vk);
+void vkr_terminate_cmd_pool(VkCommandPool hndl, vkr_context *vk);
 
 // Command Buffers
 s32 vkr_alloc_cmd_bufs(VkCommandBuffer *bufs, const vkr_alloc_cmd_bufs_cfg &cfg, vkr_context *vk);

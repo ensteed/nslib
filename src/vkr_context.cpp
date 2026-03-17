@@ -230,7 +230,7 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
     // Set the offset in the new alloc
     u32 *offset = (u32 *)((sizet)ret - sizeof(u32));
     *offset = new_data_offset;
-    
+
     arenas->stats[scope].actual_alloc += new_block_size;
     sizet diff = arena->used - used_before;
 #if PRINT_MEM_DEBUG
@@ -1011,13 +1011,13 @@ void vkr_free_desc_sets(const VkDescriptorSet *sets, sizet set_count, VkDescript
     vkFreeDescriptorSets(vk->inst.device.hndl, pool, (u32)set_count, sets);
 }
 
-int vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, VkDevice dev, vk_arenas *arena)
+int vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreateFlags flags, vkr_context *vk)
 {
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = flags;
     pool_info.queueFamilyIndex = queue_fam_ind;
-    int ret = vkCreateCommandPool(dev, &pool_info, &arena->alloc_cbs, hndl);
+    int ret = vkCreateCommandPool(vk->inst.device.hndl, &pool_info, &vk->arenas.alloc_cbs, hndl);
     if (ret != VK_SUCCESS) {
         elog("Failed creating vulkan command pool with code %d", ret);
         ret = err_code::VKR_CREATE_COMMAND_POOL_FAIL;
@@ -1025,9 +1025,9 @@ int vkr_init_cmd_pool(VkCommandPool *hndl, u32 queue_fam_ind, VkCommandPoolCreat
     return ret;
 }
 
-void vkr_terminate_cmd_pool(VkCommandPool hndl, VkDevice dev, vk_arenas *arena)
+void vkr_terminate_cmd_pool(VkCommandPool hndl, vkr_context *vk)
 {
-    vkDestroyCommandPool(dev, hndl, &arena->alloc_cbs);
+    vkDestroyCommandPool(vk->inst.device.hndl, hndl, &vk->arenas.alloc_cbs);
 }
 
 int vkr_init_shader_module(VkShaderModule *module, const void *code, sizet code_byte_size, vkr_context *vk)
@@ -1682,23 +1682,6 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     vk->arenas.alloc_cbs.pfnAllocation = vk_alloc;
     vk->arenas.alloc_cbs.pfnFree = vk_free;
     vk->arenas.alloc_cbs.pfnReallocation = vk_realloc;
-
-    // for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
-    //     arr_resize(&vk->fif_arenas[fif].t_arenas, cfg->thread_count);
-    //     for (u32 t = 0; t < cfg->thread_count; ++t) {
-    //         auto *ta = &vk->fif_arenas[fif].t_arenas[t];
-    //         char buf_p[SMALL_STR_LEN]{};
-    //         char buf_c[SMALL_STR_LEN]{};
-    //         snprintf(buf_p, SMALL_STR_LEN, "vkr_fif_pers_%u_%u", (u8)fif, (u8)t);
-    //         snprintf(buf_c, SMALL_STR_LEN, "vkr_fif_cmd_%u_%u", (u8)fif, (u8)t);
-    //         init_fl_arena(&ta->persistent_arena, cfg->fif_t_arena_cfg.persistant_sz, cfg->upstream, buf_p);
-    //         init_fl_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, cfg->upstream, buf_c);
-    //         ta->alloc_cbs.pUserData = ta;
-    //         ta->alloc_cbs.pfnAllocation = vk_alloc;
-    //         ta->alloc_cbs.pfnFree = vk_free;
-    //         ta->alloc_cbs.pfnReallocation = vk_realloc;
-    //     }
-    // }
 
     int code = vkr_init_instance(vk, &vk->inst);
     if (code != err_code::VKR_NO_ERROR) {
