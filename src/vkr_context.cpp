@@ -23,7 +23,9 @@ namespace nslib
 struct internal_alloc_header
 {
     u32 scope{};
+    u32 pad{};
     sizet req_size{};
+    mem_arena *arena_ptr{}; // owning arena - used by vk_free to free from correct arena regardless of which callbacks fired
 };
 
 intern const char *alloc_scope_str(int scope)
@@ -105,6 +107,7 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
     auto header = (internal_alloc_header *)mem_alloc(size + data_offset, arena, alignment);
     memset(header, 0, size + data_offset);
     header->scope = scope;
+    header->arena_ptr = arena;
     header->req_size = size;
 
     // The ptr itself should now be correctly aligned
@@ -149,18 +152,15 @@ intern void vk_free(void *user, void *ptr)
         return;
     }
     auto arenas = (vk_arenas *)user;
-    auto arena = &arenas->persistent_arena;
 
     u32 data_offset = *(u32 *)((sizet)ptr - sizeof(u32));
     auto header = (internal_alloc_header *)((sizet)ptr - data_offset);
     u32 scope = header->scope;
     sizet req_size = header->req_size;
+    auto arena = header->arena_ptr; // use the arena that actually owns this allocation
 
     ++arenas->stats[scope].free_count;
 
-    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-        arena = &arenas->command_arena;
-    }
     sizet used_before = arena->used;
     arenas->stats[scope].req_free += req_size;
 
@@ -198,6 +198,7 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
     ++arenas->stats[scope].realloc_count;
     arenas->stats[scope].req_alloc += size;
 
+    // Determine the new allocation's arena from scope+pUserData (same as vk_alloc)
     auto arena = &arenas->persistent_arena;
     if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
         arena = &arenas->command_arena;
@@ -205,8 +206,10 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
 
     u32 data_offset = ptr ? *(u32 *)((sizet)ptr - sizeof(u32)) : 0;
     auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - data_offset) : nullptr;
+    // Use the arena the old allocation actually lives in (may differ from arena above)
+    auto old_arena = old_header ? old_header->arena_ptr : arena;
 
-    sizet old_block_size = old_header ? mem_block_size(old_header, arena) : 0;
+    sizet old_block_size = old_header ? mem_block_size(old_header, old_arena) : 0;
     sizet old_req_size = old_header ? old_header->req_size : 0;
     arenas->stats[scope].actual_free += old_block_size;
     arenas->stats[scope].req_free += old_req_size;
@@ -216,10 +219,11 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
     u32 rem = new_data_offset % alignment;
     if (rem != 0) new_data_offset += alignment - rem;
 
-    auto new_header = (internal_alloc_header *)mem_realloc(old_header, size + new_data_offset, arena, alignment);
+    auto new_header = (internal_alloc_header *)mem_realloc(old_header, size + new_data_offset, old_arena, alignment);
     sizet new_block_size = mem_block_size(new_header, arena);
 
     new_header->scope = scope;
+    new_header->arena_ptr = old_arena;
     new_header->req_size = size;
     // The ptr should be correctly aligned
     void *ret = (void *)((sizet)new_header + new_data_offset);
