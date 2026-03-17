@@ -117,7 +117,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     cam_comp->fov = 60.0f;
     cam_comp->near_far = {0.1f, 1000.0f};
     cam_comp->view = (math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
-    cam_comp->proj = math::perspective(cam_comp->fov, 1000.0f / 800.0f, cam_comp->near_far.x, cam_comp->near_far.y);
+    cam_comp->proj = math::perspective_vfov(cam_comp->fov, 1000.0f / 800.0f, cam_comp->near_far.x, cam_comp->near_far.y);
 
     cam_tcomp->cached = math::inverse(cam_comp->view);
     cam_tcomp->orientation = math::orientation(cam_tcomp->cached);
