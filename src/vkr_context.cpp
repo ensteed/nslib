@@ -25,10 +25,11 @@ thread_local u8 g_vk_thread_idx = 0;
 struct internal_alloc_header
 {
     u32 scope{};
-    u8 thread_idx{};  // which vk_thread_arena owns this block
+    u8 thread_idx{}; // which vk_thread_arena owns this block
     u8 pad[3]{};
     sizet req_size{};
-    union {
+    union
+    {
         mem_arena *arena_ptr;                // valid when live (used for debug logging)
         internal_alloc_header *next_pending; // valid when queued in a pending free stack
     };
@@ -95,16 +96,13 @@ intern void push_pending_free(atomic_uptr *head, internal_alloc_header *header)
     do {
         old_head = head->load(std::memory_order_relaxed);
         header->next_pending = (internal_alloc_header *)old_head;
-    } while (!head->compare_exchange_weak(old_head, (uintptr_t)header,
-                                          std::memory_order_release,
-                                          std::memory_order_relaxed));
+    } while (!head->compare_exchange_weak(old_head, (uintptr_t)header, std::memory_order_release, std::memory_order_relaxed));
 }
 
 intern void drain_pending_frees(atomic_uptr *head, mem_arena *arena)
 {
     // Atomically steal the whole list. Only the owning thread ever drains, so no ABA risk.
-    internal_alloc_header *pending =
-        (internal_alloc_header *)head->exchange((uintptr_t)0, std::memory_order_acquire);
+    internal_alloc_header *pending = (internal_alloc_header *)head->exchange((uintptr_t)0, std::memory_order_acquire);
     while (pending) {
         internal_alloc_header *next = pending->next_pending;
         mem_free(pending, arena);
@@ -207,7 +205,7 @@ intern void vk_free(void *user, void *ptr)
     #if PRINT_MEM_INSTANCE_ONLY
         if (scope == VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE) {
     #elif PRINT_MEM_OBJECT_ONLY
-        if (scope == VK_SYSTEM_ALLOCATION_SCOPE_OBJECT) {
+            if (scope == VK_SYSTEM_ALLOCATION_SCOPE_OBJECT) {
     #endif
             dlog("arena:%s hs:%lu, header_addr:%p ptr:%p requested_size:%lu scope:%s used_before:%lu dealloc:%lu used_after:%lu rem:%lu",
                  arena->name,
@@ -224,7 +222,8 @@ intern void vk_free(void *user, void *ptr)
         }
     #endif
 #endif
-    } else {
+    }
+    else {
         auto *pending = is_cmd ? &owner->pending_free_command : &owner->pending_free_persistent;
         push_pending_free(pending, header);
     }
@@ -283,7 +282,8 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
         if (old_header->thread_idx == g_vk_thread_idx) {
             auto old_arena = old_is_cmd ? &old_owner->command_arena : &old_owner->persistent_arena;
             mem_free(old_header, old_arena);
-        } else {
+        }
+        else {
             auto *old_pending = old_is_cmd ? &old_owner->pending_free_command : &old_owner->pending_free_persistent;
             push_pending_free(old_pending, old_header);
         }
@@ -474,7 +474,8 @@ int vkr_init_instance(vkr_context *vk, vkr_instance *inst)
     // This is for clarity.. we could just directly pass the enabled extension count
     u32 ext_count{0};
     const char *const *glfw_ext = SDL_Vulkan_GetInstanceExtensions(&ext_count);
-    auto ext = (char **)mem_alloc((ext_count + vk->cfg.extra_instance_extension_count) * sizeof(char *), &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
+    auto ext = (char **)mem_alloc((ext_count + vk->cfg.extra_instance_extension_count) * sizeof(char *),
+                                  &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
 
     u32 copy_ind = 0;
     for (u32 i = 0; i < ext_count; ++i) {
@@ -483,7 +484,8 @@ int vkr_init_instance(vkr_context *vk, vkr_instance *inst)
         ++copy_ind;
     }
     for (u32 i = 0; i < vk->cfg.extra_instance_extension_count; ++i) {
-        ext[copy_ind] = (char *)mem_alloc(strlen(vk->cfg.extra_instance_extension_names[i]) + 1, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
+        ext[copy_ind] =
+            (char *)mem_alloc(strlen(vk->cfg.extra_instance_extension_names[i]) + 1, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
         strcpy(ext[copy_ind], vk->cfg.extra_instance_extension_names[i]);
         ilog("Got extension %s", ext[copy_ind]);
         ++copy_ind;
@@ -1848,12 +1850,7 @@ intern void log_mem_stats(const char *type, u32 scope_idx, const vk_arenas *aren
         sum.actual_free += s.actual_free;
     }
     ilog("%s alloc_count:%d free_count:%d realloc_count:%d", type, sum.alloc_count, sum.free_count, sum.realloc_count);
-    ilog("%s req_alloc:%lu req_free:%lu actual_alloc:%lu actual_free:%lu",
-         type,
-         sum.req_alloc,
-         sum.req_free,
-         sum.actual_alloc,
-         sum.actual_free);
+    ilog("%s req_alloc:%lu req_free:%lu actual_alloc:%lu actual_free:%lu", type, sum.req_alloc, sum.req_free, sum.actual_alloc, sum.actual_free);
 }
 
 void vkr_terminate_instance(vkr_context *vk, vkr_instance *inst)
