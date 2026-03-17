@@ -23,7 +23,6 @@ namespace nslib
 struct internal_alloc_header
 {
     u32 scope{};
-    u32 freed{}; // sentinel: set to 1 by vk_free, cleared to 0 by vk_alloc - guards against v3dv double-frees
     sizet req_size{};
 };
 
@@ -106,7 +105,6 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
     auto header = (internal_alloc_header *)mem_alloc(size + data_offset, arena, alignment);
     memset(header, 0, size + data_offset);
     header->scope = scope;
-    header->freed = 0;
     header->req_size = size;
 
     // The ptr itself should now be correctly aligned
@@ -157,12 +155,6 @@ intern void vk_free(void *user, void *ptr)
     auto header = (internal_alloc_header *)((sizet)ptr - data_offset);
     u32 scope = header->scope;
     sizet req_size = header->req_size;
-
-    if (header->freed) {
-        wlog("vk_free: double-free detected for ptr %p (scope:%s) - v3dv freed this ptr already, skipping", ptr, alloc_scope_str(scope));
-        return;
-    }
-    header->freed = 1;
 
     ++arenas->stats[scope].free_count;
 
