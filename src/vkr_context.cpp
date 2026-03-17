@@ -6,7 +6,7 @@
 #include "SDL3/SDL_vulkan.h"
 #include "logging.h"
 
-#define PRINT_MEM_DEBUG true
+#define PRINT_MEM_DEBUG false
 #define PRINT_MEM_INSTANCE_ONLY false
 #define PRINT_MEM_OBJECT_ONLY false
 #define PRINT_MEM_GPU_ALLOC false
@@ -93,14 +93,26 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
         arena = &arenas->command_arena;
     }
     sizet used_before = arena->used;
-    sizet header_size = sizeof(internal_alloc_header);
 
-    auto header = (internal_alloc_header *)mem_alloc(size + header_size, arena, alignment);
-    memset(header, 0, size + header_size);
+    // We have to align the returned ptr to the requested alignment - we can't just add 16 for example (for a fixed
+    // header size) or this fails on ARM where 32 and 64 are common (which this would fail for). So first calculate the
+    // needed offset, considering we also need to store the number of bytes the header ends up needing to be in the
+    // header space as well.
+    u32 data_offset = sizeof(internal_alloc_header) + sizeof(u32);
+    u32 rem = data_offset % alignment;
+    if (rem != 0) data_offset += alignment - rem;
+
+    auto header = (internal_alloc_header *)mem_alloc(size + data_offset, arena, alignment);
+    memset(header, 0, size + data_offset);
     header->scope = scope;
     header->req_size = size;
 
-    void *ret = (void *)((sizet)header + header_size);
+    // The ptr itself should now be correctly aligned
+    void *ret = (void *)((sizet)header + data_offset);
+    // Set offset u32 to the data_offset size so free can get at it
+    u32 *offset = (u32 *)((sizet)ret - sizeof(u32));
+    *offset = data_offset;
+
     sizet used_actual = arena->used - used_before;
 
     arenas->stats[scope].actual_alloc += used_actual;
@@ -110,10 +122,10 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
     #elif PRINT_MEM_OBJECT_ONLY
     if (scope == VK_SYSTEM_ALLOCATION_SCOPE_OBJECT) {
     #endif
-        dlog("arena:%s hs:%lu, header_addr:%p ptr:%p requested_size:%lu alignment:%lu scope:%s used_before:%lu alloc:%lu used_after:%lu "
+        dlog("arena:%s doffs:%lu, header_addr:%p ptr:%p requested_size:%lu alignment:%lu scope:%s used_before:%lu alloc:%lu used_after:%lu "
              "rem:%lu",
              arena->name,
-             header_size,
+             data_offset,
              (void *)header,
              ret,
              size,
@@ -139,8 +151,8 @@ intern void vk_free(void *user, void *ptr)
     auto arenas = (vk_arenas *)user;
     auto arena = &arenas->persistent_arena;
 
-    sizet header_size = sizeof(internal_alloc_header);
-    auto header = (internal_alloc_header *)((sizet)ptr - header_size);
+    u32 data_offset = *(u32 *)((sizet)ptr - sizeof(u32));
+    auto header = (internal_alloc_header *)((sizet)ptr - data_offset);
     u32 scope = header->scope;
     sizet req_size = header->req_size;
 
@@ -164,7 +176,7 @@ intern void vk_free(void *user, void *ptr)
     #endif
         dlog("arena:%s hs:%lu, header_addr:%p ptr:%p requested_size:%lu scope:%s used_before:%lu dealloc:%lu used_after:%lu rem:%lu",
              arena->name,
-             header_size,
+             data_offset,
              header,
              ptr,
              req_size,
@@ -187,13 +199,12 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
     arenas->stats[scope].req_alloc += size;
 
     auto arena = &arenas->persistent_arena;
-
-    sizet header_size = sizeof(internal_alloc_header);
-    auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - header_size) : nullptr;
-    if (old_header && old_header->scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-        asrt(old_header->scope == scope);
+    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
         arena = &arenas->command_arena;
     }
+
+    u32 data_offset = ptr ? *(u32 *)((sizet)ptr - sizeof(u32)) : 0;
+    auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - data_offset) : nullptr;
 
     sizet old_block_size = old_header ? mem_block_size(old_header, arena) : 0;
     sizet old_req_size = old_header ? old_header->req_size : 0;
@@ -201,12 +212,21 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
     arenas->stats[scope].req_free += old_req_size;
     sizet used_before = arena->used;
 
-    auto new_header = (internal_alloc_header *)mem_realloc(old_header, size + header_size, arena, alignment);
+    u32 new_data_offset = sizeof(internal_alloc_header) + sizeof(u32);
+    u32 rem = new_data_offset % alignment;
+    if (rem != 0) new_data_offset += alignment - rem;
+
+    auto new_header = (internal_alloc_header *)mem_realloc(old_header, size + new_data_offset, arena, alignment);
     sizet new_block_size = mem_block_size(new_header, arena);
 
     new_header->scope = scope;
     new_header->req_size = size;
-    void *ret = (void *)((sizet)new_header + header_size);
+    // The ptr should be correctly aligned
+    void *ret = (void *)((sizet)new_header + new_data_offset);
+    // Set the offset in the new alloc
+    u32 *offset = (u32 *)((sizet)ret - sizeof(u32));
+    *offset = new_data_offset;
+    
     arenas->stats[scope].actual_alloc += new_block_size;
     sizet diff = arena->used - used_before;
 #if PRINT_MEM_DEBUG
