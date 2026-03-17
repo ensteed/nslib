@@ -211,7 +211,7 @@ intern bool init_frame_contexts(renderer *rndr, sizet thread_cnt)
                                        dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
                                        VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
                                        rndr->vk.inst.device.hndl,
-                                       &rndr->vk.fif_arenas[framei].t_arenas[i]);
+                                       &rndr->vk.arenas);//fif_arenas[framei].t_arenas[i]);
             if (result != err_code::VKR_NO_ERROR) {
                 return false;
             }
@@ -240,7 +240,7 @@ intern void terminate_frame_contexts(renderer *rndr)
         vkr_terminate_semaphore(cur_fif->image_avail, &rndr->vk);
         for (u32 i = 0; i < cur_fif->thread_pools.size; ++i) {
             ilog("Destroying command pool %p with buffer %p", cur_fif->thread_pools[i].pool, cur_fif->thread_pools[i].buf);
-            vkr_terminate_cmd_pool(cur_fif->thread_pools[i].pool, rndr->vk.inst.device.hndl, &rndr->vk.fif_arenas[framei].t_arenas[i]);
+            vkr_terminate_cmd_pool(cur_fif->thread_pools[i].pool, rndr->vk.inst.device.hndl, &rndr->vk.arenas);
         }
         arr_terminate(&cur_fif->thread_pools);
     }
