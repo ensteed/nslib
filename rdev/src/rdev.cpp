@@ -117,7 +117,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     cam_comp->fov = 60.0f;
     cam_comp->near_far = {0.1f, 1000.0f};
     cam_comp->view = (math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
-    cam_comp->proj = math::perspective(cam_comp->fov, 1000.0f/800.0f, cam_comp->near_far.x, cam_comp->near_far.y);
+    cam_comp->proj = math::perspective(cam_comp->fov, 1000.0f / 800.0f, cam_comp->near_far.x, cam_comp->near_far.y);
 
     cam_tcomp->cached = math::inverse(cam_comp->view);
     cam_tcomp->orientation = math::orientation(cam_tcomp->cached);
@@ -343,7 +343,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     renderer_cfg p{RNDR_CFG};
     p.win_hndl = ctxt->win_hndl;
-    
+
     p.upsream = &ctxt->arenas.free_list;
     if (!init_renderer(&app->rndr, p)) return false;
 
@@ -455,7 +455,9 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     auto imgui_view_id = push_view(m, {});
 
     push_render_job(m, {.pass = mp_id, .view = view_id, .max_draw_calls = MAX_INSTANCES, .cb = draw_geometry, .cb_user = nullptr});
+#if defined(USE_IMGUI)
     push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
+#endif
 
     update_and_draw_region(m, &app->rgn, &app->cg);
 }

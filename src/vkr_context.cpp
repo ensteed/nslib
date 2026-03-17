@@ -6,7 +6,7 @@
 #include "SDL3/SDL_vulkan.h"
 #include "logging.h"
 
-#define PRINT_MEM_DEBUG true
+#define PRINT_MEM_DEBUG false
 #define PRINT_MEM_INSTANCE_ONLY false
 #define PRINT_MEM_OBJECT_ONLY false
 #define PRINT_MEM_GPU_ALLOC false
