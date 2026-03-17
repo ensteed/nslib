@@ -1672,7 +1672,7 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     vk->cfg = *cfg;
 
     init_fl_arena(&vk->arenas.persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
-    init_lin_arena(&vk->arenas.command_arena, cfg->g_arena_cfg.command_sz, cfg->upstream, "vkr_command");
+    init_fl_arena(&vk->arenas.command_arena, cfg->g_arena_cfg.command_sz, cfg->upstream, "vkr_command");
 
     vk->arenas.alloc_cbs.pUserData = &vk->arenas;
     vk->arenas.alloc_cbs.pfnAllocation = vk_alloc;
@@ -1688,7 +1688,7 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
             snprintf(buf_p, SMALL_STR_LEN, "vkr_fif_pers_%u_%u", (u8)fif, (u8)t);
             snprintf(buf_c, SMALL_STR_LEN, "vkr_fif_cmd_%u_%u", (u8)fif, (u8)t);
             init_fl_arena(&ta->persistent_arena, cfg->fif_t_arena_cfg.persistant_sz, cfg->upstream, buf_p);
-            init_lin_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, cfg->upstream, buf_c);
+            init_fl_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, cfg->upstream, buf_c);
             ta->alloc_cbs.pUserData = ta;
             ta->alloc_cbs.pfnAllocation = vk_alloc;
             ta->alloc_cbs.pfnFree = vk_free;
