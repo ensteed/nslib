@@ -511,10 +511,10 @@ struct vkr_desc_cfg
     u32 flags{0};
 };
 
-struct vkr_fif_arenas
-{
-    static_array<vk_arenas, MAX_THREAD_COUNT> t_arenas{};
-};
+// struct vkr_fif_arenas
+// {
+//     static_array<vk_arenas, MAX_THREAD_COUNT> t_arenas{};
+// };
 
 struct vkr_cfg
 {
@@ -547,7 +547,7 @@ struct vkr_context
     vkr_instance inst;
     vkr_cfg cfg;
     vk_arenas arenas;
-    vkr_fif_arenas fif_arenas[MAX_FRAMES_IN_FLIGHT];
+    //vkr_fif_arenas fif_arenas[MAX_FRAMES_IN_FLIGHT];
 };
 
 // Utility to create a fence, submit the command buf to queue, and wait for the fence to signal before destroying the

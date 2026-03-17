@@ -6,7 +6,7 @@
 #include "SDL3/SDL_vulkan.h"
 #include "logging.h"
 
-#define PRINT_MEM_DEBUG true
+#define PRINT_MEM_DEBUG false
 #define PRINT_MEM_INSTANCE_ONLY false
 #define PRINT_MEM_OBJECT_ONLY false
 #define PRINT_MEM_GPU_ALLOC false
@@ -1683,22 +1683,22 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     vk->arenas.alloc_cbs.pfnFree = vk_free;
     vk->arenas.alloc_cbs.pfnReallocation = vk_realloc;
 
-    for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
-        arr_resize(&vk->fif_arenas[fif].t_arenas, cfg->thread_count);
-        for (u32 t = 0; t < cfg->thread_count; ++t) {
-            auto *ta = &vk->fif_arenas[fif].t_arenas[t];
-            char buf_p[SMALL_STR_LEN]{};
-            char buf_c[SMALL_STR_LEN]{};
-            snprintf(buf_p, SMALL_STR_LEN, "vkr_fif_pers_%u_%u", (u8)fif, (u8)t);
-            snprintf(buf_c, SMALL_STR_LEN, "vkr_fif_cmd_%u_%u", (u8)fif, (u8)t);
-            init_fl_arena(&ta->persistent_arena, cfg->fif_t_arena_cfg.persistant_sz, cfg->upstream, buf_p);
-            init_lin_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, cfg->upstream, buf_c);
-            ta->alloc_cbs.pUserData = ta;
-            ta->alloc_cbs.pfnAllocation = vk_alloc;
-            ta->alloc_cbs.pfnFree = vk_free;
-            ta->alloc_cbs.pfnReallocation = vk_realloc;
-        }
-    }
+    // for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
+    //     arr_resize(&vk->fif_arenas[fif].t_arenas, cfg->thread_count);
+    //     for (u32 t = 0; t < cfg->thread_count; ++t) {
+    //         auto *ta = &vk->fif_arenas[fif].t_arenas[t];
+    //         char buf_p[SMALL_STR_LEN]{};
+    //         char buf_c[SMALL_STR_LEN]{};
+    //         snprintf(buf_p, SMALL_STR_LEN, "vkr_fif_pers_%u_%u", (u8)fif, (u8)t);
+    //         snprintf(buf_c, SMALL_STR_LEN, "vkr_fif_cmd_%u_%u", (u8)fif, (u8)t);
+    //         init_fl_arena(&ta->persistent_arena, cfg->fif_t_arena_cfg.persistant_sz, cfg->upstream, buf_p);
+    //         init_fl_arena(&ta->command_arena, cfg->fif_t_arena_cfg.command_sz, cfg->upstream, buf_c);
+    //         ta->alloc_cbs.pUserData = ta;
+    //         ta->alloc_cbs.pfnAllocation = vk_alloc;
+    //         ta->alloc_cbs.pfnFree = vk_free;
+    //         ta->alloc_cbs.pfnReallocation = vk_realloc;
+    //     }
+    // }
 
     int code = vkr_init_instance(vk, &vk->inst);
     if (code != err_code::VKR_NO_ERROR) {
@@ -1821,13 +1821,13 @@ void vkr_terminate(vkr_context *vk)
          vk->arenas.command_arena.total_size,
          vk->arenas.command_arena.peak);
 
-    for (sizet fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
-        for (sizet t = 0; t < vk->fif_arenas[fif].t_arenas.size; ++t) {
-            auto *ta = &vk->fif_arenas[fif].t_arenas[t];
-            terminate_arena(&ta->command_arena);
-            terminate_arena(&ta->persistent_arena);
-        }
-    }
+    // for (sizet fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
+    //     for (sizet t = 0; t < vk->fif_arenas[fif].t_arenas.size; ++t) {
+    //         auto *ta = &vk->fif_arenas[fif].t_arenas[t];
+    //         terminate_arena(&ta->command_arena);
+    //         terminate_arena(&ta->persistent_arena);
+    //     }
+    // }
     terminate_arena(&vk->arenas.command_arena);
     terminate_arena(&vk->arenas.persistent_arena);
 }
@@ -1876,9 +1876,9 @@ sizet vkr_uniform_buffer_offset_alignment(vkr_context *vk, sizet uniform_block_s
 void vkr_reset_linear_arenas(vkr_context *vk, idx_t fif)
 {
     reset_arena(&vk->arenas.command_arena);
-    for (u32 i = 0; i < vk->fif_arenas[fif].t_arenas.size; ++i) {
-        reset_arena(&vk->fif_arenas[fif].t_arenas[i].command_arena);
-    }
+    // for (u32 i = 0; i < vk->fif_arenas[fif].t_arenas.size; ++i) {
+    //     reset_arena(&vk->fif_arenas[fif].t_arenas[i].command_arena);
+    // }
 }
 
 void vkr_cmd_begin_rpass(VkCommandBuffer cmd_buf,
