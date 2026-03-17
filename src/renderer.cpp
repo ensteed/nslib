@@ -210,8 +210,7 @@ intern bool init_frame_contexts(renderer *rndr, sizet thread_cnt)
             result = vkr_init_cmd_pool(&cur_fif->thread_pools[i].pool,
                                        dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
                                        VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                                       rndr->vk.inst.device.hndl,
-                                       &rndr->vk.arenas);//fif_arenas[framei].t_arenas[i]);
+                                       &rndr->vk);
             if (result != err_code::VKR_NO_ERROR) {
                 return false;
             }
@@ -240,7 +239,7 @@ intern void terminate_frame_contexts(renderer *rndr)
         vkr_terminate_semaphore(cur_fif->image_avail, &rndr->vk);
         for (u32 i = 0; i < cur_fif->thread_pools.size; ++i) {
             ilog("Destroying command pool %p with buffer %p", cur_fif->thread_pools[i].pool, cur_fif->thread_pools[i].buf);
-            vkr_terminate_cmd_pool(cur_fif->thread_pools[i].pool, rndr->vk.inst.device.hndl, &rndr->vk.arenas);
+            vkr_terminate_cmd_pool(cur_fif->thread_pools[i].pool, &rndr->vk);
         }
         arr_terminate(&cur_fif->thread_pools);
     }
@@ -1560,8 +1559,7 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
     result = vkr_init_cmd_pool(&rndr->transient_pool,
                                rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].fam_ind,
                                VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                               rndr->vk.inst.device.hndl,
-                               &rndr->vk.arenas);
+                               &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) return false;
 
     // Setup frames in flight
@@ -1604,7 +1602,7 @@ void terminate_renderer(renderer *rndr)
     terminate_frame_contexts(rndr);
 
     // Transient pool
-    vkr_terminate_cmd_pool(rndr->transient_pool, rndr->vk.inst.device.hndl, &rndr->vk.arenas);
+    vkr_terminate_cmd_pool(rndr->transient_pool, &rndr->vk);
 
     // Resource targets
     terminate_resource_target_registry(rndr);

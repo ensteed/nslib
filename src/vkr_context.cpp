@@ -19,13 +19,19 @@
 namespace nslib
 {
 
+thread_local u8 g_vk_thread_idx = 0;
+
 // If this is less than 16 bytes we can get crashes... not totally sure why but probably has to do with... aliasing...?
 struct internal_alloc_header
 {
     u32 scope{};
-    u32 pad{};
+    u8 thread_idx{};  // which vk_thread_arena owns this block
+    u8 pad[3]{};
     sizet req_size{};
-    mem_arena *arena_ptr{}; // owning arena - used by vk_free to free from correct arena regardless of which callbacks fired
+    union {
+        mem_arena *arena_ptr;                // valid when live (used for debug logging)
+        internal_alloc_header *next_pending; // valid when queued in a pending free stack
+    };
 };
 
 intern const char *alloc_scope_str(int scope)
@@ -83,17 +89,43 @@ intern void vk_gpu_free_cb(VmaAllocator allocator, uint32_t memory_type, VkDevic
 #endif
 }
 
+intern void push_pending_free(atomic_uptr *head, internal_alloc_header *header)
+{
+    uintptr_t old_head;
+    do {
+        old_head = head->load(std::memory_order_relaxed);
+        header->next_pending = (internal_alloc_header *)old_head;
+    } while (!head->compare_exchange_weak(old_head, (uintptr_t)header,
+                                          std::memory_order_release,
+                                          std::memory_order_relaxed));
+}
+
+intern void drain_pending_frees(atomic_uptr *head, mem_arena *arena)
+{
+    // Atomically steal the whole list. Only the owning thread ever drains, so no ABA risk.
+    internal_alloc_header *pending =
+        (internal_alloc_header *)head->exchange((uintptr_t)0, std::memory_order_acquire);
+    while (pending) {
+        internal_alloc_header *next = pending->next_pending;
+        mem_free(pending, arena);
+        pending = next;
+    }
+}
+
 intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocationScope scope)
 {
     asrt(user);
     auto arenas = (vk_arenas *)user;
-    ++arenas->stats[scope].alloc_count;
-    arenas->stats[scope].req_alloc += size;
+    ++arenas->t_arenas[g_vk_thread_idx].stats[scope].alloc_count;
+    arenas->t_arenas[g_vk_thread_idx].stats[scope].req_alloc += size;
 
-    auto arena = &arenas->persistent_arena;
-    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-        arena = &arenas->command_arena;
-    }
+    auto t_arena = &arenas->t_arenas[g_vk_thread_idx];
+    bool is_cmd = (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+    auto arena = is_cmd ? &t_arena->command_arena : &t_arena->persistent_arena;
+    auto *pending = is_cmd ? &t_arena->pending_free_command : &t_arena->pending_free_persistent;
+
+    drain_pending_frees(pending, arena);
+
     sizet used_before = arena->used;
 
     // We have to align the returned ptr to the requested alignment - we can't just add 16 for example (for a fixed
@@ -107,8 +139,9 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
     auto header = (internal_alloc_header *)mem_alloc(size + data_offset, arena, alignment);
     memset(header, 0, size + data_offset);
     header->scope = scope;
-    header->arena_ptr = arena;
+    header->thread_idx = g_vk_thread_idx;
     header->req_size = size;
+    header->arena_ptr = arena;
 
     // The ptr itself should now be correctly aligned
     void *ret = (void *)((sizet)header + data_offset);
@@ -118,7 +151,7 @@ intern void *vk_alloc(void *user, sizet size, sizet alignment, VkSystemAllocatio
 
     sizet used_actual = arena->used - used_before;
 
-    arenas->stats[scope].actual_alloc += used_actual;
+    arenas->t_arenas[g_vk_thread_idx].stats[scope].actual_alloc += used_actual;
 #if PRINT_MEM_DEBUG
     #if PRINT_MEM_INSTANCE_ONLY
     if (scope == VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE) {
@@ -157,81 +190,107 @@ intern void vk_free(void *user, void *ptr)
     auto header = (internal_alloc_header *)((sizet)ptr - data_offset);
     u32 scope = header->scope;
     sizet req_size = header->req_size;
-    auto arena = header->arena_ptr; // use the arena that actually owns this allocation
 
-    ++arenas->stats[scope].free_count;
+    ++arenas->t_arenas[g_vk_thread_idx].stats[scope].free_count;
+    arenas->t_arenas[g_vk_thread_idx].stats[scope].req_free += req_size;
 
-    sizet used_before = arena->used;
-    arenas->stats[scope].req_free += req_size;
+    auto owner = &arenas->t_arenas[header->thread_idx];
+    bool is_cmd = (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+    auto arena = is_cmd ? &owner->command_arena : &owner->persistent_arena;
 
-    mem_free(header, arena);
-    sizet actual_freed = used_before - arena->used;
-    arenas->stats[scope].actual_free += actual_freed;
-
+    if (header->thread_idx == g_vk_thread_idx) {
+        sizet used_before = arena->used;
+        mem_free(header, arena);
+        sizet actual_freed = used_before - arena->used;
+        arenas->t_arenas[g_vk_thread_idx].stats[scope].actual_free += actual_freed;
 #if PRINT_MEM_DEBUG
     #if PRINT_MEM_INSTANCE_ONLY
-    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE) {
+        if (scope == VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE) {
     #elif PRINT_MEM_OBJECT_ONLY
         if (scope == VK_SYSTEM_ALLOCATION_SCOPE_OBJECT) {
     #endif
-        dlog("arena:%s hs:%lu, header_addr:%p ptr:%p requested_size:%lu scope:%s used_before:%lu dealloc:%lu used_after:%lu rem:%lu",
-             arena->name,
-             data_offset,
-             header,
-             ptr,
-             req_size,
-             alloc_scope_str(scope),
-             used_before,
-             actual_freed,
-             arena->used,
-             arena->total_size - arena->used);
+            dlog("arena:%s hs:%lu, header_addr:%p ptr:%p requested_size:%lu scope:%s used_before:%lu dealloc:%lu used_after:%lu rem:%lu",
+                 arena->name,
+                 data_offset,
+                 header,
+                 ptr,
+                 req_size,
+                 alloc_scope_str(scope),
+                 used_before,
+                 actual_freed,
+                 arena->used,
+                 arena->total_size - arena->used);
     #if PRINT_MEM_INSTANCE_ONLY || PRINT_MEM_OBJECT_ONLY
-    }
+        }
     #endif
 #endif
+    } else {
+        auto *pending = is_cmd ? &owner->pending_free_command : &owner->pending_free_persistent;
+        push_pending_free(pending, header);
+    }
 }
 
 intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSystemAllocationScope scope)
 {
     asrt(user);
     auto arenas = (vk_arenas *)user;
-    ++arenas->stats[scope].realloc_count;
-    arenas->stats[scope].req_alloc += size;
+    ++arenas->t_arenas[g_vk_thread_idx].stats[scope].realloc_count;
+    arenas->t_arenas[g_vk_thread_idx].stats[scope].req_alloc += size;
 
-    // Determine the new allocation's arena from scope+pUserData (same as vk_alloc)
-    auto arena = &arenas->persistent_arena;
-    if (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND) {
-        arena = &arenas->command_arena;
-    }
+    auto t_arena = &arenas->t_arenas[g_vk_thread_idx];
+    bool is_cmd = (scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+    auto arena = is_cmd ? &t_arena->command_arena : &t_arena->persistent_arena;
+    auto *pending = is_cmd ? &t_arena->pending_free_command : &t_arena->pending_free_persistent;
 
-    u32 data_offset = ptr ? *(u32 *)((sizet)ptr - sizeof(u32)) : 0;
-    auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - data_offset) : nullptr;
-    // Use the arena the old allocation actually lives in (may differ from arena above)
-    auto old_arena = old_header ? old_header->arena_ptr : arena;
+    drain_pending_frees(pending, arena);
 
-    sizet old_block_size = old_header ? mem_block_size(old_header, old_arena) : 0;
+    u32 old_data_offset = ptr ? *(u32 *)((sizet)ptr - sizeof(u32)) : 0;
+    auto old_header = ptr ? (internal_alloc_header *)((sizet)ptr - old_data_offset) : nullptr;
+
+    // mem_block_size only uses arena->alloc_type for dispatch (all vk arenas are FREE_LIST),
+    // so passing the current thread's arena is safe regardless of where old_header lives.
+    sizet old_block_size = old_header ? mem_block_size(old_header, arena) : 0;
     sizet old_req_size = old_header ? old_header->req_size : 0;
-    arenas->stats[scope].actual_free += old_block_size;
-    arenas->stats[scope].req_free += old_req_size;
+    arenas->t_arenas[g_vk_thread_idx].stats[scope].actual_free += old_block_size;
+    arenas->t_arenas[g_vk_thread_idx].stats[scope].req_free += old_req_size;
     sizet used_before = arena->used;
 
+    // Allocate new block on the current thread's arena
     u32 new_data_offset = sizeof(internal_alloc_header) + sizeof(u32);
     u32 rem = new_data_offset % alignment;
     if (rem != 0) new_data_offset += alignment - rem;
 
-    auto new_header = (internal_alloc_header *)mem_realloc(old_header, size + new_data_offset, old_arena, alignment);
-    sizet new_block_size = mem_block_size(new_header, arena);
-
+    auto new_header = (internal_alloc_header *)mem_alloc(size + new_data_offset, arena, alignment);
+    memset(new_header, 0, new_data_offset);
     new_header->scope = scope;
-    new_header->arena_ptr = old_arena;
+    new_header->thread_idx = g_vk_thread_idx;
     new_header->req_size = size;
-    // The ptr should be correctly aligned
-    void *ret = (void *)((sizet)new_header + new_data_offset);
-    // Set the offset in the new alloc
-    u32 *offset = (u32 *)((sizet)ret - sizeof(u32));
-    *offset = new_data_offset;
+    new_header->arena_ptr = arena;
 
-    arenas->stats[scope].actual_alloc += new_block_size;
+    void *ret = (void *)((sizet)new_header + new_data_offset);
+    *(u32 *)((sizet)ret - sizeof(u32)) = new_data_offset;
+
+    // Copy old data before releasing old block
+    if (old_header) {
+        sizet copy_size = old_req_size < size ? old_req_size : size;
+        memcpy(ret, ptr, copy_size);
+    }
+
+    // Free old block via cross-thread-safe path
+    if (old_header) {
+        auto old_owner = &arenas->t_arenas[old_header->thread_idx];
+        bool old_is_cmd = (old_header->scope == VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if (old_header->thread_idx == g_vk_thread_idx) {
+            auto old_arena = old_is_cmd ? &old_owner->command_arena : &old_owner->persistent_arena;
+            mem_free(old_header, old_arena);
+        } else {
+            auto *old_pending = old_is_cmd ? &old_owner->pending_free_command : &old_owner->pending_free_persistent;
+            push_pending_free(old_pending, old_header);
+        }
+    }
+
+    sizet new_block_size = mem_block_size(new_header, arena);
+    arenas->t_arenas[g_vk_thread_idx].stats[scope].actual_alloc += new_block_size;
     sizet diff = arena->used - used_before;
 #if PRINT_MEM_DEBUG
     #if PRINT_MEM_INSTANCE_ONLY
@@ -260,10 +319,10 @@ intern void *vk_realloc(void *user, void *ptr, sizet size, sizet alignment, VkSy
     }
     #endif
 #endif
-    if (diff != (new_block_size - old_block_size)) {
+    // diff check only holds when old block was freed in the same arena (same-thread realloc)
+    if (old_header && old_header->thread_idx == g_vk_thread_idx && diff != (new_block_size - old_block_size)) {
         wlog("Diff problems!");
     }
-    //    asrt(diff == (new_block_size - old_block_size));
     return ret;
 }
 
@@ -277,7 +336,7 @@ void vkr_enumerate_device_extensions(const vkr_phys_device *pdevice,
     ilog("Enumerating device extensions...");
     int res = vkEnumerateDeviceExtensionProperties(pdevice->hndl, nullptr, &extension_count, nullptr);
     asrt(res == VK_SUCCESS);
-    auto ext_array = mem_alloc<VkExtensionProperties>(&arenas->command_arena, extension_count);
+    auto ext_array = mem_alloc<VkExtensionProperties>(&arenas->t_arenas[g_vk_thread_idx].command_arena, extension_count);
     memset(ext_array, 0, extension_count * sizeof(VkExtensionProperties));
     res = vkEnumerateDeviceExtensionProperties(pdevice->hndl, nullptr, &extension_count, ext_array);
     asrt(res == VK_SUCCESS);
@@ -303,7 +362,7 @@ void vkr_enumerate_instance_extensions(const char *const *enabled_extensions, u3
     ilog("Enumerating instance extensions...");
     int res = vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr);
     asrt(res == VK_SUCCESS);
-    auto ext_array = mem_alloc<VkExtensionProperties>(&arenas->command_arena, extension_count);
+    auto ext_array = mem_alloc<VkExtensionProperties>(&arenas->t_arenas[g_vk_thread_idx].command_arena, extension_count);
     memset(ext_array, 0, extension_count * sizeof(VkExtensionProperties));
     res = vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, ext_array);
     asrt(res == VK_SUCCESS);
@@ -329,7 +388,7 @@ void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enab
     ilog("Enumerating vulkan validation layers...");
     int res = vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
     asrt(res == VK_SUCCESS);
-    auto layer_array = mem_alloc<VkLayerProperties>(&arenas->command_arena, layer_count);
+    auto layer_array = mem_alloc<VkLayerProperties>(&arenas->t_arenas[g_vk_thread_idx].command_arena, layer_count);
     memset(layer_array, 0, layer_count * sizeof(VkLayerProperties));
 
     res = vkEnumerateInstanceLayerProperties(&layer_count, layer_array);
@@ -415,16 +474,16 @@ int vkr_init_instance(vkr_context *vk, vkr_instance *inst)
     // This is for clarity.. we could just directly pass the enabled extension count
     u32 ext_count{0};
     const char *const *glfw_ext = SDL_Vulkan_GetInstanceExtensions(&ext_count);
-    auto ext = (char **)mem_alloc((ext_count + vk->cfg.extra_instance_extension_count) * sizeof(char *), &vk->arenas.command_arena);
+    auto ext = (char **)mem_alloc((ext_count + vk->cfg.extra_instance_extension_count) * sizeof(char *), &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
 
     u32 copy_ind = 0;
     for (u32 i = 0; i < ext_count; ++i) {
-        ext[copy_ind] = (char *)mem_alloc(strlen(glfw_ext[i]) + 1, &vk->arenas.command_arena);
+        ext[copy_ind] = (char *)mem_alloc(strlen(glfw_ext[i]) + 1, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
         strcpy(ext[copy_ind], glfw_ext[i]);
         ++copy_ind;
     }
     for (u32 i = 0; i < vk->cfg.extra_instance_extension_count; ++i) {
-        ext[copy_ind] = (char *)mem_alloc(strlen(vk->cfg.extra_instance_extension_names[i]) + 1, &vk->arenas.command_arena);
+        ext[copy_ind] = (char *)mem_alloc(strlen(vk->cfg.extra_instance_extension_names[i]) + 1, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
         strcpy(ext[copy_ind], vk->cfg.extra_instance_extension_names[i]);
         ilog("Got extension %s", ext[copy_ind]);
         ++copy_ind;
@@ -516,7 +575,7 @@ vkr_queue_families vkr_get_queue_families(vkr_context *vk, VkPhysicalDevice pdev
     u32 count{};
     vkr_queue_families ret{};
     vkGetPhysicalDeviceQueueFamilyProperties(pdevice, &count, nullptr);
-    auto qfams = mem_alloc<VkQueueFamilyProperties>(&vk->arenas.command_arena, count);
+    auto qfams = mem_alloc<VkQueueFamilyProperties>(&vk->arenas.t_arenas[g_vk_thread_idx].command_arena, count);
     vkGetPhysicalDeviceQueueFamilyProperties(pdevice, &count, qfams);
     ilog("%d queue families available for selected device", count);
 
@@ -655,7 +714,7 @@ int vkr_init_device(vkr_device *dev,
 
     // Get queues for each queue family
     for (int i = 0; i < VKR_QUEUE_FAM_TYPE_COUNT; ++i) {
-        arr_init(&dev->qfams[i].qs, &vk->arenas.persistent_arena);
+        arr_init(&dev->qfams[i].qs, &vk->arenas.t_arenas[g_vk_thread_idx].persistent_arena);
         arr_resize(&dev->qfams[i].qs, qfams->qinfo[i].requested_count);
         dev->qfams[i].fam_ind = qfams->qinfo[i].index;
         for (u32 qind = 0; qind < qfams->qinfo[i].requested_count; ++qind) {
@@ -703,7 +762,7 @@ int vkr_select_best_graphics_physical_device(vkr_context *vk, vkr_phys_device *d
     int high_score = -1;
 
     ilog("Selecting physical device - found %d physical devices", count);
-    auto pdevices = mem_alloc<VkPhysicalDevice>(&vk->arenas.command_arena, count);
+    auto pdevices = mem_alloc<VkPhysicalDevice>(&vk->arenas.t_arenas[g_vk_thread_idx].command_arena, count);
     ret = vkEnumeratePhysicalDevices(vk->inst.hndl, &count, pdevices);
     if (ret != VK_SUCCESS) {
         elog("Failed to enumerate physical devices with code %d", ret);
@@ -823,13 +882,13 @@ void vkr_fill_pdevice_swapchain_support(VkPhysicalDevice pdevice, VkSurfaceKHR s
 int vkr_init_swapchain(vkr_swapchain *sw_info, vkr_context *vk)
 {
     ilog("Setting up swapchain");
-    arr_init(&sw_info->image_views, &vk->arenas.persistent_arena);
-    arr_init(&sw_info->images, &vk->arenas.persistent_arena);
-    arr_init(&sw_info->renders_finished, &vk->arenas.persistent_arena);
+    arr_init(&sw_info->image_views, &vk->arenas.t_arenas[g_vk_thread_idx].persistent_arena);
+    arr_init(&sw_info->images, &vk->arenas.t_arenas[g_vk_thread_idx].persistent_arena);
+    arr_init(&sw_info->renders_finished, &vk->arenas.t_arenas[g_vk_thread_idx].persistent_arena);
 
     // I no like typing too much
     vkr_pdevice_swapchain_support swap_support{};
-    vkr_init_pdevice_swapchain_support(&swap_support, &vk->arenas.command_arena);
+    vkr_init_pdevice_swapchain_support(&swap_support, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
     vkr_fill_pdevice_swapchain_support(vk->inst.pdev_info.hndl, vk->inst.surface, &swap_support);
     auto qfams = &vk->inst.pdev_info.qfams;
 
@@ -922,7 +981,7 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, vkr_context *vk)
     }
 
     array<VkImage> simages;
-    arr_init(&simages, &vk->arenas.command_arena);
+    arr_init(&simages, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
     arr_resize(&simages, image_count);
     arr_resize(&sw_info->images, image_count, vkr_image{});
 
@@ -1055,7 +1114,7 @@ int vkr_init_render_pass(VkRenderPass *hndl, const vkr_rpass_cfg &cfg, vkr_conte
 
     // Create just one subpass for now
     array<VkSubpassDescription> subpasses{};
-    arr_init(&subpasses, &vk->arenas.command_arena);
+    arr_init(&subpasses, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
     arr_resize(&subpasses, cfg.subpasses.size);
 
     for (u32 i = 0; i < cfg.subpasses.size; ++i) {
@@ -1162,7 +1221,7 @@ void vkr_terminate_pipeline_layout(VkPipelineLayout hndl, vkr_context *vk)
 int vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, vkr_context *vk)
 {
     array<VkPipelineShaderStageCreateInfo> stages;
-    arr_init(&stages, &vk->arenas.command_arena, cfg.stage_cnt);
+    arr_init(&stages, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena, cfg.stage_cnt);
     arr_resize(&stages, cfg.stage_cnt);
     for (u32 stagei = 0; stagei < cfg.stage_cnt; ++stagei) {
         auto cur_dst = &stages[stagei];
@@ -1409,7 +1468,7 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
     }
 
     array<VkBufferCopy> new_regions;
-    arr_init(&new_regions, &vk->arenas.command_arena);
+    arr_init(&new_regions, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
     arr_resize(&new_regions, region_count);
 
     // Translate all regions from source buffers to regions from staging buffer
@@ -1668,6 +1727,12 @@ void vkr_terminate_surface(vkr_context *vk, VkSurfaceKHR surface)
     vkDestroySurfaceKHR(vk->inst.hndl, surface, &vk->arenas.alloc_cbs);
 }
 
+void vkr_register_vk_thread(vk_arenas *arenas, u8 thread_idx)
+{
+    asrt(thread_idx < arenas->thread_count);
+    g_vk_thread_idx = thread_idx;
+}
+
 int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
 {
     ilog("Initializing vulkan");
@@ -1675,8 +1740,9 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     asrt(cfg->upstream);
     vk->cfg = *cfg;
 
-    init_fl_arena(&vk->arenas.persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
-    init_fl_arena(&vk->arenas.command_arena, cfg->g_arena_cfg.command_sz, cfg->upstream, "vkr_command");
+    vk->arenas.thread_count = 1;
+    init_fl_arena(&vk->arenas.t_arenas[0].persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
+    init_fl_arena(&vk->arenas.t_arenas[0].command_arena, cfg->g_arena_cfg.command_sz, cfg->upstream, "vkr_command");
 
     vk->arenas.alloc_cbs.pUserData = &vk->arenas;
     vk->arenas.alloc_cbs.pfnAllocation = vk_alloc;
@@ -1768,15 +1834,26 @@ void vkr_terminate_device(vkr_device *dev, vkr_context *vk)
     vkr_terminate_eds1_fptrs(&dev->eds1_fns);
 }
 
-intern void log_mem_stats(const char *type, const vk_mem_alloc_stats *stats)
+intern void log_mem_stats(const char *type, u32 scope_idx, const vk_arenas *arenas)
 {
-    ilog("%s alloc_count:%d free_count:%d realloc_count:%d", type, stats->alloc_count, stats->free_count, stats->realloc_count);
+    vk_mem_alloc_stats sum{};
+    for (u8 t = 0; t < arenas->thread_count; ++t) {
+        const auto &s = arenas->t_arenas[t].stats[scope_idx];
+        sum.alloc_count += s.alloc_count;
+        sum.free_count += s.free_count;
+        sum.realloc_count += s.realloc_count;
+        sum.req_alloc += s.req_alloc;
+        sum.actual_alloc += s.actual_alloc;
+        sum.req_free += s.req_free;
+        sum.actual_free += s.actual_free;
+    }
+    ilog("%s alloc_count:%d free_count:%d realloc_count:%d", type, sum.alloc_count, sum.free_count, sum.realloc_count);
     ilog("%s req_alloc:%lu req_free:%lu actual_alloc:%lu actual_free:%lu",
          type,
-         stats->req_alloc,
-         stats->req_free,
-         stats->actual_alloc,
-         stats->actual_free);
+         sum.req_alloc,
+         sum.req_free,
+         sum.actual_alloc,
+         sum.actual_free);
 }
 
 void vkr_terminate_instance(vkr_context *vk, vkr_instance *inst)
@@ -1796,13 +1873,17 @@ void vkr_terminate(vkr_context *vk)
     ilog("Terminating vulkan");
     vkr_terminate_instance(vk, &vk->inst);
     for (int i = 0; i < MEM_ALLOC_TYPE_COUNT; ++i) {
-        log_mem_stats(alloc_scope_str(i), &vk->arenas.stats[i]);
+        log_mem_stats(alloc_scope_str(i), i, &vk->arenas);
     }
-    ilog("Persistant mem size:%lu peak:%lu  Command mem size:%lu peak:%lu",
-         vk->arenas.persistent_arena.total_size,
-         vk->arenas.persistent_arena.peak,
-         vk->arenas.command_arena.total_size,
-         vk->arenas.command_arena.peak);
+    for (u8 t = 0; t < vk->arenas.thread_count; ++t) {
+        const auto &ta = vk->arenas.t_arenas[t];
+        ilog("Thread %u - Persistent mem size:%lu peak:%lu  Command mem size:%lu peak:%lu",
+             t,
+             ta.persistent_arena.total_size,
+             ta.persistent_arena.peak,
+             ta.command_arena.total_size,
+             ta.command_arena.peak);
+    }
 
     // for (sizet fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
     //     for (sizet t = 0; t < vk->fif_arenas[fif].t_arenas.size; ++t) {
@@ -1811,8 +1892,13 @@ void vkr_terminate(vkr_context *vk)
     //         terminate_arena(&ta->persistent_arena);
     //     }
     // }
-    terminate_arena(&vk->arenas.command_arena);
-    terminate_arena(&vk->arenas.persistent_arena);
+    for (u8 t = 0; t < vk->arenas.thread_count; ++t) {
+        auto *ta = &vk->arenas.t_arenas[t];
+        drain_pending_frees(&ta->pending_free_command, &ta->command_arena);
+        drain_pending_frees(&ta->pending_free_persistent, &ta->persistent_arena);
+        terminate_arena(&ta->command_arena);
+        terminate_arena(&ta->persistent_arena);
+    }
 }
 
 int vkr_begin_cmd_buf(VkCommandBuffer hndl, VkCommandBufferUsageFlags flags)
@@ -1858,7 +1944,9 @@ sizet vkr_uniform_buffer_offset_alignment(vkr_context *vk, sizet uniform_block_s
 
 void vkr_reset_linear_arenas(vkr_context *vk, idx_t fif)
 {
-    reset_arena(&vk->arenas.command_arena);
+    for (u8 t = 0; t < vk->arenas.thread_count; ++t) {
+        reset_arena(&vk->arenas.t_arenas[t].command_arena);
+    }
     // for (u32 i = 0; i < vk->fif_arenas[fif].t_arenas.size; ++i) {
     //     reset_arena(&vk->fif_arenas[fif].t_arenas[i].command_arena);
     // }

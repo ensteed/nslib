@@ -85,6 +85,7 @@ using f64 = double;
 using f128 = long double;
 using b32 = bool;
 using cstr = const char *;
+using uptr = uintptr_t;
 
 const sizet KB_SIZE = 1024;
 const sizet MB_SIZE = 1024 * KB_SIZE;

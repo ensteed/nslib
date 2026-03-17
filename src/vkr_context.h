@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+
 #include "vk_mem_alloc.h"
 #include "containers/array.h"
 #include "util.h"
@@ -6,6 +8,8 @@
 #include "vkr_dynamic_state.h"
 #include "math/primitives.h"
 #include "basic_types.h"
+
+using atomic_uptr = std::atomic<uintptr_t>;
 
 namespace nslib
 {
@@ -97,7 +101,7 @@ struct vkr_arenas_cfg
     sizet command_sz;
 };
 
-struct vk_arenas
+struct vk_thread_arena
 {
     vk_mem_alloc_stats stats[MEM_ALLOC_TYPE_COUNT]{};
 
@@ -106,6 +110,17 @@ struct vk_arenas
 
     // Should persist for the lifetime of a vulkan command
     mem_arena command_arena{};
+
+    // Lock-free MPSC pending-free stacks (internal_alloc_header* stored as uintptr_t).
+    // Other threads push freed blocks here; the owning thread drains them at the start of vk_alloc.
+    atomic_uptr pending_free_persistent{0};
+    atomic_uptr pending_free_command{0};
+};
+
+struct vk_arenas
+{
+    u8 thread_count{1};
+    vk_thread_arena t_arenas[MAX_THREAD_COUNT]{};
 
     // Vk callback defs
     VkAllocationCallbacks alloc_cbs;
@@ -694,6 +709,11 @@ void vkr_terminate_instance(vkr_context *vk, vkr_instance *inst);
 
 s32 vkr_init(const vkr_cfg *cfg, vkr_context *vk);
 void vkr_terminate(vkr_context *vk);
+
+// Must be called by each thread before it issues any Vulkan work.
+// thread_idx must be in [0, vkr_cfg::thread_count). The main thread is
+// pre-registered as index 0 inside vkr_init.
+void vkr_register_vk_thread(vk_arenas *arenas, u8 thread_idx);
 
 void vkr_reset_linear_arenas(vkr_context *vk, idx_t fif);
 
