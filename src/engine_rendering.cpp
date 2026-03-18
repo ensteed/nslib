@@ -7,6 +7,46 @@
 namespace nslib
 {
 
+intern rstencil_op_state get_stencil_op_state(stencil_mode mode)
+{
+    rstencil_op_state ret{};
+    switch (mode) {
+    case STENCIL_MODE_OFF:
+        break;
+    case STENCIL_MODE_WRITE:
+        ret.on_fail = RSTENCIL_OP_REPLACE;
+        ret.on_pass = RSTENCIL_OP_REPLACE;
+        ret.on_depth_fail = RSTENCIL_OP_REPLACE;
+        ret.comp = RCOMPARE_OP_ALWAYS;
+        ret.comp_mask = 0xff;
+        ret.write_mask = 0xff;
+        ret.ref = 1;
+        break;
+    case STENCIL_MODE_CLIP_INSIDE:
+        ret.on_fail = RSTENCIL_OP_KEEP;
+        ret.on_pass = RSTENCIL_OP_KEEP;
+        ret.on_depth_fail = RSTENCIL_OP_KEEP;
+        ret.comp = RCOMPARE_OP_EQUAL;
+        ret.comp_mask = 0xff;
+        ret.write_mask = 0x00;
+        ret.ref = 1;
+        break;
+    case STENCIL_MODE_CLIP_OUTSIDE:
+        ret.on_fail = RSTENCIL_OP_KEEP;
+        ret.on_pass = RSTENCIL_OP_KEEP;
+        ret.on_depth_fail = RSTENCIL_OP_KEEP;
+        ret.comp = RCOMPARE_OP_NOT_EQUAL;
+        ret.comp_mask = 0xff;
+        ret.write_mask = 0x00;
+        ret.ref = 1;
+        break;
+    default:
+        asrt_break("Failed to handle stencil mode case");
+        break;
+    }
+    return ret;
+}
+
 intern rformat get_rformat_for_usage(texture_usage usage)
 {
     switch (usage) {
@@ -108,6 +148,7 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
                         dp.mat = mref.item->rhndl;
                         dp.tech = tref.item->rhndl;
                         dp.inst = tfind;
+                        asrt(tref.item->passes.size > 0);
                         push_draw(m, dp);
                     }
                 }
@@ -350,6 +391,17 @@ u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp
 {
     auto upload_func = [rndr, sp, scratch](technique *tech) -> bool { return upload_technique(rndr, tech, sp, scratch); };
     return upload_assets_helper(tech_pool, upload_func);
+}
+
+bool upload_material(renderer *rndr, material *mat, mem_arena *scratch)
+{
+    
+}
+
+u32 upload_materials(renderer *rndr, material_pool *mat_pool, mem_arena *scratch)
+{
+    auto upload_func = [rndr, scratch](material *mat) -> bool { return upload_material(rndr, mat, scratch); };
+    return upload_assets_helper(mat_pool, upload_func);
 }
 
 bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch)

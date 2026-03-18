@@ -14,6 +14,12 @@ namespace nslib
 
 intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
 
+struct track_rdraw_dyn_state
+{
+    idx_t last_pline{INVALID_IDX};
+    rdraw_dyn_state dstate;
+};
+
 struct render_job_cb_params
 {
     // Manifest pass
@@ -32,7 +38,7 @@ struct render_job_cb_params
     // Frame in flight index
     idx_t fif;
     // Dynamic state tracked at the job level - each draw function should update this as it goes
-    rpline_dyn_state *dyn_state;
+    track_rdraw_dyn_state *dyn_state;
     // Draw functions for extended dynamic state (needed for rpi has to use extension)
     const vkr_eds1_fptrs *fns;
 
@@ -93,7 +99,7 @@ intern u64 pack_mdraw_sort_key(const mdraw_call &dc)
            ((u64)dc.geom << MDRAW_SORT_KEY_SHIFT_GEOM) | ((u64)dc.subgeom << MDRAW_SORT_KEY_SHIFT_SUBGEOM);
 }
 
-intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &fns, const mdraw_call &dc, rpline_dyn_state *state)
+intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &fns, const mdraw_call &dc, track_rdraw_dyn_state *state)
 {
     bool state_valid = is_valid(state->last_pline);
     u32 state_update_mask = state_valid ? PLINE_DSTATE_UPDATE_NONE : PLINE_DSTATE_UPDATE_ALL;
@@ -109,15 +115,15 @@ intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &
     fill_vk_stencil_op_state(&cur_st_opstate_back, dc.dstate.stencil_back);
 
     if (state_valid) {
-        VkCullModeFlags prev_cm = get_vk_cullmode(state->dflags);
-        VkFrontFace prev_ff = get_vk_front_face(state->ffw);
-        VkBool32 prev_stest_enable = test_flags(state->dflags, RTECHNIQUE_DYN_STATE_FLAG_STENCIL_TEST);
+        VkCullModeFlags prev_cm = get_vk_cullmode(state->dstate.dflags);
+        VkFrontFace prev_ff = get_vk_front_face(state->dstate.ffw);
+        VkBool32 prev_stest_enable = test_flags(state->dstate.dflags, RTECHNIQUE_DYN_STATE_FLAG_STENCIL_TEST);
 
         VkStencilOpState prev_st_opstate_front{};
-        fill_vk_stencil_op_state(&prev_st_opstate_front, state->stencil_front);
+        fill_vk_stencil_op_state(&prev_st_opstate_front, state->dstate.stencil_front);
 
         VkStencilOpState prev_st_opstate_back{};
-        fill_vk_stencil_op_state(&prev_st_opstate_back, state->stencil_back);
+        fill_vk_stencil_op_state(&prev_st_opstate_back, state->dstate.stencil_back);
 
         state_update_mask |= (prev_cm != cur_cm) ? PLINE_DSTATE_UPDATE_CULL_MODE : PLINE_DSTATE_UPDATE_NONE;
 
@@ -160,15 +166,15 @@ intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &
         state_update_mask |= (prev_st_opstate_back.reference != cur_st_opstate_back.reference) ? PLINE_DSTATE_UPDATE_STENCIL_REFERENCE_BACK
                                                                                                : PLINE_DSTATE_UPDATE_NONE;
 
-        state_update_mask |= (state->depth_b != dc.dstate.depth_b) ? PLINE_DSTATE_UPDATE_DEPTH_BIAS : PLINE_DSTATE_UPDATE_NONE;
+        state_update_mask |= (state->dstate.depth_b != dc.dstate.depth_b) ? PLINE_DSTATE_UPDATE_DEPTH_BIAS : PLINE_DSTATE_UPDATE_NONE;
 
-        state_update_mask |= (state->blend_ops != dc.dstate.blend_ops) ? PLINE_DSTATE_UPDATE_BLEND_CONSTANTS : PLINE_DSTATE_UPDATE_NONE;
+        state_update_mask |=
+            (state->dstate.blend_consts != dc.dstate.blend_consts) ? PLINE_DSTATE_UPDATE_BLEND_CONSTANTS : PLINE_DSTATE_UPDATE_NONE;
     }
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_CULL_MODE)) {
         fns.vkCmdSetCullMode(cb, cur_cm);
     }
-
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_FRONT_FACE)) {
         fns.vkCmdSetFrontFace(cb, cur_ff);
@@ -180,20 +186,20 @@ intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_OP_FRONT)) {
         fns.vkCmdSetStencilOp(cb,
-                          VK_STENCIL_FACE_FRONT_BIT,
-                          cur_st_opstate_front.failOp,
-                          cur_st_opstate_front.passOp,
-                          cur_st_opstate_front.depthFailOp,
-                          cur_st_opstate_front.compareOp);
+                              VK_STENCIL_FACE_FRONT_BIT,
+                              cur_st_opstate_front.failOp,
+                              cur_st_opstate_front.passOp,
+                              cur_st_opstate_front.depthFailOp,
+                              cur_st_opstate_front.compareOp);
     }
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_OP_BACK)) {
         fns.vkCmdSetStencilOp(cb,
-                          VK_STENCIL_FACE_BACK_BIT,
-                          cur_st_opstate_back.failOp,
-                          cur_st_opstate_back.passOp,
-                          cur_st_opstate_back.depthFailOp,
-                          cur_st_opstate_back.compareOp);
+                              VK_STENCIL_FACE_BACK_BIT,
+                              cur_st_opstate_back.failOp,
+                              cur_st_opstate_back.passOp,
+                              cur_st_opstate_back.depthFailOp,
+                              cur_st_opstate_back.compareOp);
     }
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_STENCIL_COMPARE_MASK_FRONT)) {
@@ -225,9 +231,10 @@ intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &
     }
 
     if (test_flags(state_update_mask, PLINE_DSTATE_UPDATE_BLEND_CONSTANTS)) {
-        vkCmdSetBlendConstants(cb, dc.dstate.blend_ops.data);
+        vkCmdSetBlendConstants(cb, dc.dstate.blend_consts.data);
     }
-    *state = dc.dstate;
+    state->dstate = dc.dstate;
+    state->last_pline = dc.pl;
 }
 
 void draw_geometry(const render_job_cb_params &p, void *)
@@ -689,7 +696,7 @@ intern void sort_draw_list(mrender_job *rjob)
 
     rjob->instanced_dcs.size = 1;
     rjob->instanced_dcs[0] = rjob->sorted_dcs[0];
-    
+
     for (u32 i = 1; i < n; ++i) {
         if (rjob->dcs[rjob->sorted_dcs[i]].sort_key != rjob->dcs[rjob->sorted_dcs[i - 1]].sort_key) {
             rjob->instanced_dcs[rjob->instanced_dcs.size] = rjob->sorted_dcs[i];
@@ -736,7 +743,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
         return false;
     }
 
-    rpline_dyn_state dyn_state{};
+    track_rdraw_dyn_state dyn_state{};
 
     // We place all draw call data for all jobs in a single SSBO, so this is the base offset for the current job's draw call data
     sizet job_ssbo_base = 0;
@@ -805,6 +812,26 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
     }
     vkr_end_cmd_buf(buf);
     return true;
+}
+
+#define SET_DSTATE_VAL(val, flag)                                                                                                          \
+    ret.val = (test_flags(tech.can_override, flag) && test_flags(mat.override_mask, flag)) ? mat.dstate.val : tech.dstate.val
+
+#define SET_DSTATE_RASTER_FLAGS(override_flag, raster_flags)                                                                               \
+    ret.dflags |= (test_flags(tech.can_override, override_flag) && test_flags(mat.override_mask, override_flag))                           \
+                      ? (mat.dstate.dflags & (raster_flags))                                                                               \
+                      : (tech.dstate.dflags & (raster_flags))
+
+intern rdraw_dyn_state get_dynamic_state(const rmaterial_info &mat, const rtechnique_pass_entry &tech)
+{
+    rdraw_dyn_state ret{};
+    SET_DSTATE_RASTER_FLAGS(RDRAW_STATE_OVERRIDE_FLAG_CULLING, RTECHNIQUE_DYN_STATE_FLAG_CULL_FRONT | RTECHNIQUE_DYN_STATE_FLAG_CULL_BACK);
+    SET_DSTATE_RASTER_FLAGS(RDRAW_STATE_OVERRIDE_FLAG_STENCIL_TEST, RTECHNIQUE_DYN_STATE_FLAG_STENCIL_TEST);
+    SET_DSTATE_VAL(stencil_front, RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_FRONT);
+    SET_DSTATE_VAL(stencil_back, RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_BACK);
+    SET_DSTATE_VAL(blend_consts, RDRAW_STATE_OVERRIDE_FLAG_BLEND_CONSTANTS);
+    SET_DSTATE_VAL(depth_b, RDRAW_STATE_OVERRIDE_FLAG_DEPTH_BIAS);
+    return ret;
 }
 
 idx_t push_pass(rmanifest *m, const mpass_params &p)
@@ -879,8 +906,11 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
     u32 push_cnt{0};
     idx_t fif = get_fif_ind(m->rndr);
     rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.tech);
+    rmaterial_info *mptr = get_slot_item(&m->rndr->materials, dp.mat);
+
     for (u32 i = 0; i < tptr->rpass_plines.size; ++i) {
         auto cur_pl = &tptr->rpass_plines[i];
+        auto dstate = get_dynamic_state(*mptr, *cur_pl);
         for (u32 rji = 0; rji < m->jobs.size; ++rji) {
             mrender_job *cur_rj = &m->jobs[rji];
             mpass *cur_mp = &m->passes[cur_rj->mp];
@@ -895,7 +925,7 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 cur_d->mat = dp.mat.si;
                 cur_d->pl = cur_pl->pline.si;
                 cur_d->sort_key = pack_mdraw_sort_key(*cur_d);
-                cur_d->dstate = cur_pl->dstate;
+                cur_d->dstate = dstate;
                 cur_d->inst_count = 1;
                 ++push_cnt;
             }
@@ -952,7 +982,7 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
     }
 
     reset_arena(&rndr->frame_linear);
-    //vkr_reset_linear_arenas(&rndr->vk, fif);
+    // vkr_reset_linear_arenas(&rndr->vk, fif);
 
     /////////////////////
     // Reset FIF Fence //

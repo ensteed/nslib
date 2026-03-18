@@ -211,8 +211,27 @@ struct geometry_stream_group_desc
 
 struct imgui_ctxt;
 
+// The parts of technique pass state that can be overwritten by a material
+enum rdraw_state_override_flag
+{
+    RDRAW_STATE_OVERRIDE_FLAG_NONE = 0,
+    RDRAW_STATE_OVERRIDE_FLAG_CULLING = make_flag(0),
+    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_TEST = make_flag(1),
+    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_FRONT = make_flag(2),
+    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_BACK = make_flag(3),
+    RDRAW_STATE_OVERRIDE_FLAG_BLEND_CONSTANTS = make_flag(4),
+    RDRAW_STATE_OVERRIDE_FLAG_DEPTH_BIAS = make_flag(5),
+    RDRAW_STATE_OVERRIDE_FLAG_ALL =
+        (RDRAW_STATE_OVERRIDE_FLAG_CULLING | RDRAW_STATE_OVERRIDE_FLAG_STENCIL_TEST | RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_FRONT |
+         RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_BACK | RDRAW_STATE_OVERRIDE_FLAG_BLEND_CONSTANTS | RDRAW_STATE_OVERRIDE_FLAG_DEPTH_BIAS),
+};
+using rdraw_state_override_flags = u8;
+
 struct rmaterial_info
-{};
+{
+    rdraw_dyn_state dstate;
+    rdraw_state_override_flags override_mask;
+};
 
 struct rshader_stage_info
 {
@@ -233,7 +252,8 @@ struct rtechnique_pass_entry
     idx_t subpass;
     idx_t bp_pass;
     rpipeline_handle pline;
-    rpline_dyn_state dstate;
+    rdraw_dyn_state dstate;
+    rdraw_state_override_flags can_override{RDRAW_STATE_OVERRIDE_FLAG_ALL};
 };
 
 struct rtechnique_info
@@ -422,7 +442,7 @@ struct rtexture_target_desc
 #define TEXTURE_TARGET_COLOR_HDR(pname)                                                                                                    \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
-        .format = RFMT_RGBA16_SFLOAT,                                                                                                  \
+        .format = RFMT_RGBA16_SFLOAT,                                                                                                      \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
@@ -431,7 +451,7 @@ struct rtexture_target_desc
 #define TEXTURE_TARGET_COLOR(pname)                                                                                                        \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
-        .format = RFMT_RGBA8_SRGB,                                                                                                     \
+        .format = RFMT_RGBA8_SRGB,                                                                                                         \
         .type = RTARGET_TEXTURE_TYPE_COLOR,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
@@ -440,7 +460,7 @@ struct rtexture_target_desc
 #define TEXTURE_TARGET_DEPTH(pname)                                                                                                        \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
-        .format = RFMT_D32_SFLOAT,                                                                                                     \
+        .format = RFMT_D32_SFLOAT,                                                                                                         \
         .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
         .dims = WINDOW_SIZE,                                                                                                               \
         .flags = RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW,                                                                                  \
@@ -449,7 +469,7 @@ struct rtexture_target_desc
 #define TEXTURE_TARGET_SHADOW_MAP(pname)                                                                                                   \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
-        .format = RFMT_D32_SFLOAT,                                                                                                     \
+        .format = RFMT_D32_SFLOAT,                                                                                                         \
         .type = RTARGET_TEXTURE_TYPE_DEPTH,                                                                                                \
         .dims = DEFAULT_SHADOW_MAP_SIZE,                                                                                                   \
     }
@@ -460,7 +480,8 @@ struct rtexture_target_desc
 // rbp_pass *create_pass(render_blueprint *bp, const char *pass_t);
 // void add_subpass(rbp_pass *pass);
 
-struct desc_block_buffer {
+struct desc_block_buffer
+{
     vkr_buffer buffer;
     u32 fif_block_count;
     sizet block_size;
@@ -474,7 +495,7 @@ struct global_descriptor_info
     VkDescriptorSet images;
     VkPipelineLayout pline_layout;
     VkDescriptorPool pool;
-    
+
     //////////////////////////////////////////////////////
     // For all buffers, each fif has its own subsection //
     //////////////////////////////////////////////////////
@@ -557,7 +578,8 @@ struct sbuffer_cfg
     sizet block_size;
 };
 
-struct push_constant_range {
+struct push_constant_range
+{
     u32 offset;
     u32 size;
     rshader_stage_flags stages;
@@ -593,7 +615,7 @@ constexpr sizet calculate_render_job_needed_capacity(u32 draw_call_count, sizet 
     // draw call data + sorted index + tmp sorted index, alloc headers for these 3 allocations plus the actual SSBO data and allocation
     // header for each draw call
     sizet ssbo_block_alloc_sz = sizeof(alloc_header) + draw_ssbo_block_size;
-    return draw_call_count * (sizeof(mdraw_call) + sizeof(u32)*2 + ssbo_block_alloc_sz) + sizeof(alloc_header) * 3;
+    return draw_call_count * (sizeof(mdraw_call) + sizeof(u32) * 2 + ssbo_block_alloc_sz) + sizeof(alloc_header) * 3;
 }
 
 constexpr sizet calculate_manifest_approximate_needed_capacity(const manifest_max_counts &max_counts, sizet draw_ssbo_block_sz)
@@ -605,7 +627,6 @@ constexpr sizet calculate_manifest_approximate_needed_capacity(const manifest_ma
     sizet texture_targets = max_counts.texture_targets * sizeof(rtexture_target);
     return sizeof(rmanifest) + pass_sz + view_sz + job_sz + buffer_targets + texture_targets;
 }
-
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
@@ -640,8 +661,8 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
 void update_view_data(rmanifest *m, idx_t view, const void *view_data);
-void update_instance_data(rmanifest* m, idx_t inst, const void* instance_data);
-void post_material_update(renderer* rndr, u32 material_idx, const void* material_data);
+void update_instance_data(rmanifest *m, idx_t inst, const void *instance_data);
+void post_material_update(renderer *rndr, u32 material_idx, const void *material_data);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);
@@ -653,6 +674,5 @@ rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
 
 bool init_renderer(renderer *rndr, const renderer_cfg &p);
 void terminate_renderer(renderer *rndr);
-
 
 } // namespace nslib

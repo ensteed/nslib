@@ -112,25 +112,26 @@ struct rdepth_bias
     float clamp;
 };
 
-op_eq_func(rdepth_bias) {
+op_eq_func(rdepth_bias)
+{
     return fequals(lhs.clamp, rhs.clamp) && fequals(lhs.const_factor, rhs.const_factor) && fequals(lhs.slope_factor, rhs.slope_factor);
 }
 
 op_neq_func(rdepth_bias);
 
-struct rpline_dyn_state
+struct rdraw_dyn_state
 {
-    idx_t last_pline{INVALID_IDX};
     rtechnique_dyn_state_flags dflags;
     rstencil_op_state stencil_front;
     rstencil_op_state stencil_back;
+    vec4 blend_consts;
     rdepth_bias depth_b;
-    vec4 blend_ops;
     // Should almost never be set to something different
     rfront_face_winding ffw{DEFAULT_FRONT_FACE_WINDING};
 };
 
-struct mdraw_ssbo_data {
+struct mdraw_ssbo_data
+{
     idx_t inst;
     idx_t material;
     idx_t view;
@@ -150,11 +151,11 @@ struct mdraw_call
 {
     idx_t inst;
     idx_t geom;
-    idx_t subgeom;    
+    idx_t subgeom;
     idx_t mat;
     idx_t pl;
     // Dynamic pipeline state
-    rpline_dyn_state dstate;
+    rdraw_dyn_state dstate;
     vec4 scissor_override{};
     // Computed sort key for the draw call - used to sort the draw calls in a render job before submission.
     // Feel free to override for custom sorting

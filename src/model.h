@@ -14,7 +14,7 @@ enum mat_sampler_slot
     MAT_SAMPLER_SLOT_COUNT
 };
 
-enum  geometry_topology : u8
+enum geometry_topology : u8
 {
     GEOMETRY_TOPOLOGY_POINT_LIST,
     GEOMETRY_TOPOLOGY_LINE_LIST,
@@ -32,7 +32,7 @@ enum struct texture_usage : u8
     HDR,
 };
 
-enum texture_flag: u32
+enum texture_flag : u32
 {
     TEXTURE_FLAG_CUBEMAP = make_flag_base(ASSET_FLAG_USER_BASE, 0),
 };
@@ -66,8 +66,9 @@ enum raster_override_state_flag
     RASTER_OVERRIDE_STATE_STENCIL_TEST = make_flag(1),
     RASTER_OVERRIDE_STATE_STENCIL_MODE = make_flag(2),
     RASTER_OVERRIDE_STATE_BLEND_CONSTANTS = make_flag(3),
+    RASTER_OVERRIDE_STATE_DEPTH_BIAS = make_flag(4),
     RASTER_OVERRIDE_STATE_ALL = (RASTER_OVERRIDE_STATE_CULLING | RASTER_OVERRIDE_STATE_STENCIL_TEST | RASTER_OVERRIDE_STATE_STENCIL_MODE |
-                                 RASTER_OVERRIDE_STATE_BLEND_CONSTANTS),
+                                 RASTER_OVERRIDE_STATE_BLEND_CONSTANTS | RASTER_OVERRIDE_STATE_DEPTH_BIAS),
 };
 using raster_override_state_flags = u8;
 
@@ -124,9 +125,9 @@ struct raster_state
 {
     raster_flags rmask;
     stencil_mode sm;
-
     // Only used by blend mode constant
     vec4 blend_constants;
+    vec3 depth_bias;
 };
 
 enum polygon_mode
@@ -140,7 +141,7 @@ struct technique_pass
 {
     // Shader id
     asset_id shader;
-    // Blueprint pass id and subpass index 
+    // Blueprint pass id and subpass index
     rres_id bp_pass;
     idx_t bp_subpass;
     // Which layout the technique uses within the stream group. The stream group is specified in the blueprint pass.
@@ -149,7 +150,8 @@ struct technique_pass
     // specifically overrides it
     raster_state dflt_st{.rmask = RASTER_FLAG_CULL_BACK | RASTER_FLAG_DEPTH_TEST | RASTER_FLAG_DEPTH_WRITE,
                          .sm = STENCIL_MODE_OFF,
-                         .blend_constants{1.0f}};
+                         .blend_constants{1.0f},
+                         .depth_bias{}};
     // This is a mask of all raster properties that CAN be overridden
     raster_override_state_flags can_override{RASTER_OVERRIDE_STATE_ALL};
     depth_mode dm{DEPTH_MODE_NORMAL};
@@ -168,7 +170,8 @@ struct technique
     rtechnique_handle rhndl;
 };
 
-struct mat_blueprint_mapping {
+struct mat_blueprint_mapping
+{
     rres_id bpid;
     asset_id tech_id;
 };

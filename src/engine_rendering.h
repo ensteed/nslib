@@ -103,6 +103,9 @@ u32 upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch);
 bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_arena *scratch);
 u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp, mem_arena *scratch);
 
+bool upload_material(renderer *rndr, material *tech, mem_arena *scratch);
+u32 upload_materials(renderer *rndr, material_pool *mat_pool, mem_arena *scratch);
+
 bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch);
 u32 upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch);
 
