@@ -15,6 +15,22 @@ struct ImGuiContext;
 namespace nslib
 {
 
+// The parts of technique pass state that can be overwritten by a material
+enum rdraw_state_override_flag
+{
+    RDRAW_STATE_OVERRIDE_FLAG_NONE = 0,
+    RDRAW_STATE_OVERRIDE_FLAG_CULLING = make_flag(0),
+    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_TEST = make_flag(1),
+    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_FRONT = make_flag(2),
+    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_BACK = make_flag(3),
+    RDRAW_STATE_OVERRIDE_FLAG_BLEND_CONSTANTS = make_flag(4),
+    RDRAW_STATE_OVERRIDE_FLAG_DEPTH_BIAS = make_flag(5),
+    RDRAW_STATE_OVERRIDE_FLAG_ALL =
+        (RDRAW_STATE_OVERRIDE_FLAG_CULLING | RDRAW_STATE_OVERRIDE_FLAG_STENCIL_TEST | RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_FRONT |
+         RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_BACK | RDRAW_STATE_OVERRIDE_FLAG_BLEND_CONSTANTS | RDRAW_STATE_OVERRIDE_FLAG_DEPTH_BIAS),
+};
+using rdraw_state_override_flags = u8;
+
 template<typename T>
 struct gpu_resource_entry
 {
@@ -120,6 +136,9 @@ struct rtechnique_pass_desc
     rshader_handle shader;
     rbp_info bp_info{};
     idx_t geom_buffer_layout;
+    
+    rdraw_dyn_state dstate;
+    rdraw_state_override_flags dstate_can_override;
 };
 
 struct rtechnique_desc
@@ -132,8 +151,9 @@ struct rtechnique_desc
 struct rmaterial_desc
 {
     const char *name;
-    rtechnique_handle tch_rhndl;
     rtexture_handle slots[RMATERIAL_TEXTURE_COUNT];
+    rdraw_dyn_state dstate;
+    rdraw_state_override_flags dstate_override_mask;
 };
 
 namespace err_code
@@ -211,26 +231,14 @@ struct geometry_stream_group_desc
 
 struct imgui_ctxt;
 
-// The parts of technique pass state that can be overwritten by a material
-enum rdraw_state_override_flag
-{
-    RDRAW_STATE_OVERRIDE_FLAG_NONE = 0,
-    RDRAW_STATE_OVERRIDE_FLAG_CULLING = make_flag(0),
-    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_TEST = make_flag(1),
-    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_FRONT = make_flag(2),
-    RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_BACK = make_flag(3),
-    RDRAW_STATE_OVERRIDE_FLAG_BLEND_CONSTANTS = make_flag(4),
-    RDRAW_STATE_OVERRIDE_FLAG_DEPTH_BIAS = make_flag(5),
-    RDRAW_STATE_OVERRIDE_FLAG_ALL =
-        (RDRAW_STATE_OVERRIDE_FLAG_CULLING | RDRAW_STATE_OVERRIDE_FLAG_STENCIL_TEST | RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_FRONT |
-         RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_BACK | RDRAW_STATE_OVERRIDE_FLAG_BLEND_CONSTANTS | RDRAW_STATE_OVERRIDE_FLAG_DEPTH_BIAS),
-};
-using rdraw_state_override_flags = u8;
 
 struct rmaterial_info
 {
+    idx_t mat_ssbo;
     rdraw_dyn_state dstate;
     rdraw_state_override_flags override_mask;
+    // Used to track how many fifs are left to process after update
+    u32 fif_dirty;
 };
 
 struct rshader_stage_info
@@ -659,10 +667,6 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
-
-void update_view_data(rmanifest *m, idx_t view, const void *view_data);
-void update_instance_data(rmanifest *m, idx_t inst, const void *instance_data);
-void post_material_update(renderer *rndr, u32 material_idx, const void *material_data);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);

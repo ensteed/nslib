@@ -47,6 +47,43 @@ intern rstencil_op_state get_stencil_op_state(stencil_mode mode)
     return ret;
 }
 
+intern rdraw_state_override_flags get_dynamic_state_override_flags(raster_override_state_flags raster_flags)
+{
+    rdraw_state_override_flags ret{};
+    set_flag_from_bool(ret, RDRAW_STATE_OVERRIDE_FLAG_CULLING, test_flags(raster_flags, RASTER_OVERRIDE_STATE_CULLING));
+    set_flag_from_bool(ret, RDRAW_STATE_OVERRIDE_FLAG_STENCIL_TEST, test_flags(raster_flags, RASTER_OVERRIDE_STATE_STENCIL_TEST));
+    set_flag_from_bool(ret, RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_FRONT, test_flags(raster_flags, RASTER_OVERRIDE_STATE_STENCIL_MODE));
+    set_flag_from_bool(ret, RDRAW_STATE_OVERRIDE_FLAG_STENCIL_OP_BACK, test_flags(raster_flags, RASTER_OVERRIDE_STATE_STENCIL_MODE));
+    set_flag_from_bool(ret, RDRAW_STATE_OVERRIDE_FLAG_BLEND_CONSTANTS, test_flags(raster_flags, RASTER_OVERRIDE_STATE_BLEND_CONSTANTS));
+    set_flag_from_bool(ret, RDRAW_STATE_OVERRIDE_FLAG_DEPTH_BIAS, test_flags(raster_flags, RASTER_OVERRIDE_STATE_DEPTH_BIAS));
+    return ret;
+}
+
+intern rdraw_dyn_state get_dynamic_state(const raster_state &st)
+{
+    rdraw_dyn_state ds{};
+    set_flag_from_bool(ds.dflags, RTECHNIQUE_DYN_STATE_FLAG_CULL_FRONT, test_flags(st.rmask, RASTER_FLAG_CULL_FRONT));
+    set_flag_from_bool(ds.dflags, RTECHNIQUE_DYN_STATE_FLAG_CULL_BACK, test_flags(st.rmask, RASTER_FLAG_CULL_BACK));
+    set_flag_from_bool(ds.dflags, RTECHNIQUE_DYN_STATE_FLAG_STENCIL_TEST, test_flags(st.rmask, RASTER_FLAG_STENCIL_TEST));
+    ds.stencil_front = get_stencil_op_state(st.sm);
+    ds.stencil_back = get_stencil_op_state(st.sm);
+    ds.blend_consts = st.blend_constants;
+    ds.depth_b.const_factor = st.depth_bias.x;
+    ds.depth_b.slope_factor = st.depth_bias.y;
+    ds.depth_b.clamp = st.depth_bias.z;
+    return ds;
+}
+
+intern rdraw_dyn_state get_dynamic_state(const material &mat)
+{
+    return get_dynamic_state(mat.overrides);
+}
+
+intern rdraw_dyn_state get_dynamic_state(const technique_pass &tpass)
+{
+    return get_dynamic_state(tpass.dflt_st);
+}
+
 intern rformat get_rformat_for_usage(texture_usage usage)
 {
     switch (usage) {
@@ -98,22 +135,46 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
     auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
     auto tftbs = get_comp_tbl<transform>(&sr->cdb);
     auto cam_tbl = get_comp_tbl<camera>(&sr->cdb);
-    
     auto mpool = get_asset_pool<material>(cg);
+    auto tex_pool = get_asset_pool<texture>(cg);
     auto techpool = get_asset_pool<technique>(cg);
     auto geompool = get_asset_pool<geometry>(cg);
+
+    // Update materials that need updating
+    for (auto mat_iter = asset_pool_begin(mpool); is_valid(mat_iter); mat_iter = asset_pool_next(mpool, mat_iter)) {
+        auto minfo = get_slot_item(&m->rndr->materials, mat_iter.item->rhndl);
+        if (test_flags(mat_iter.item->flags, ASSET_FLAG_DIRTY)) {
+            minfo->fif_dirty = MAX_FRAMES_IN_FLIGHT;
+        }
+        if (minfo->fif_dirty > 0) {
+            minfo->dstate = get_dynamic_state(*mat_iter.item);
+            minfo->override_mask = get_dynamic_state_override_flags(mat_iter.item->override_mask);
+
+            material_ssbo_data md{};
+            md.col = mat_iter.item->col;
+            md.use_col = (u32)test_flags(mat_iter.item->flags, MATERIAL_FLAG_USE_COLOR);
+            md.sampler_idx = 0;
+            auto diffuse = find_asset(tex_pool, mat_iter.item->textures[MAT_SAMPLER_SLOT_ALBEDO]);
+            if (is_valid(diffuse)) {
+                md.tex_pool_idx = diffuse.item->rhndl.pool_idx;
+                md.tex_layer = diffuse.item->rhndl.hndl.si;
+            }
+            update_material_data(m, mat_iter.item->rhndl, &md);
+        }
+    }
+
     transform_tbl *tftb = get_comp_tbl<transform>(&sr->cdb);
     for (u32 i = 0; i < sr->ents.size; ++i) {
-        transform* tf = get_comp<transform>(sr->ents[i].id, tftb);
-        static_mesh* sm = get_comp<static_mesh>(sr->ents[i].id, smtbl);
+        transform *tf = get_comp<transform>(sr->ents[i].id, tftb);
+        static_mesh *sm = get_comp<static_mesh>(sr->ents[i].id, smtbl);
         camera *cam = get_comp<camera>(sr->ents[i].id, cam_tbl);
         idx_t tfind = get_comp_ind(tf, tftb);
-        
+
         if (test_flags(tf->flags, COMP_FLAG_DIRTY)) {
             tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
             tf->flags &= ~COMP_FLAG_DIRTY;
         }
-        
+
         if (tf->rfif_dirty > 0) {
             tf->cached_prev = tf->cached;
             tf->cached = math::model_tform(tf->world_pos, tf->orientation, tf->scale);
@@ -121,27 +182,27 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
                 cam->view = math::inverse(tf->cached);
                 cam->proj_view = cam->proj * cam->view;
             }
-            
+
             instance_ssbo_data update_d{};
             update_d.model = tf->cached;
             update_d.prev_model = tf->cached_prev;
             update_instance_data(m, tfind, &update_d);
-            --tf->rfif_dirty;            
+            --tf->rfif_dirty;
         }
 
         if (sm) {
             geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
             asrt(is_valid(gref));
-                
+
             for (u32 mi = 0; mi < sm->mat_mapping.size; ++mi) {
                 material_item_ref mref = find_asset<material>(mpool, sm->mat_mapping[mi].mat_id);
                 asrt(is_valid(mref));
-                    
+
                 for (u32 bpi = 0; bpi < mref.item->bp_techniques.size; ++bpi) {
                     if (mref.item->bp_techniques[bpi].bpid == m->rbp.item->id) {
                         technique_item_ref tref = find_asset<technique>(techpool, mref.item->bp_techniques[bpi].tech_id);
                         asrt(is_valid(tref));
-                    
+
                         mdraw_params dp{};
                         dp.geom = gref.item->rhndl;
                         dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
@@ -156,7 +217,6 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
         }
     }
 }
-
 
 u32 setup_geometry_stream_group(renderer *rndr)
 {
@@ -276,14 +336,14 @@ intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_p
 {
     idx_t pass_idx = find_rbp_pass(bp.item, src.bp_pass);
     asrt(is_valid(pass_idx));
-    
+
     shader_item_ref shdr = find_asset(sp, src.shader);
     dst->shader = is_valid(shdr) ? shdr.item->rhndl : rshader_handle{};
     dst->bp_info.bp = bp.hndl;
     dst->bp_info.pid = pass_idx;
     dst->bp_info.spi = src.bp_subpass;
     dst->geom_buffer_layout = src.gsg_layout;
-    
+
     // Sensible defaults for fields not driven by technique_pass
     dst->topology = (rgeom_topology)src.topology;
     dst->poly_mode = (rpolygon_mode)src.poly_mode;
@@ -291,6 +351,9 @@ intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_p
     dst->logic_op = RLOGIC_OP_COPY;
     dst->depth_bounds = {0.0f, 1.0f};
     dst->tmask = 0;
+
+    dst->dstate = get_dynamic_state(src);
+    dst->dstate_can_override = get_dynamic_state_override_flags(src.can_override);
 
     // DEPTH_MODE_OFF disables both test and write entirely
     bool depth_active = (src.dm != DEPTH_MODE_OFF);
@@ -393,14 +456,27 @@ u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp
     return upload_assets_helper(tech_pool, upload_func);
 }
 
-bool upload_material(renderer *rndr, material *mat, mem_arena *scratch)
+bool upload_material(renderer *rndr, material *mat, texture_pool *tex_pool, mem_arena *scratch)
 {
-    
+    rmaterial_desc md{};
+    md.name = ls(mat->name);
+    md.dstate = get_dynamic_state(*mat);
+    md.dstate_override_mask = get_dynamic_state_override_flags(mat->override_mask);
+    static_assert((u8)MAT_SAMPLER_SLOT_COUNT <= (u8)RMATERIAL_TEXTURE_COUNT);
+    for (u32 i = 0; i < MAT_SAMPLER_SLOT_COUNT; ++i) {
+        auto tex = find_asset(tex_pool, mat->textures[i]);
+        md.slots[i] = tex.item ? tex.item->rhndl : rtexture_handle{};
+        if (!is_valid(tex) && is_valid(mat->textures[i])) {
+            wlog("Failed to load texture id %lu from texture pool", mat->textures[i].id);
+        }
+    }
+    mat->rhndl = create_rmaterial(rndr, md);
+    return get_and_log_upload_result(mat);
 }
 
-u32 upload_materials(renderer *rndr, material_pool *mat_pool, mem_arena *scratch)
+u32 upload_materials(renderer *rndr, material_pool *mat_pool, texture_pool *tex_pool, mem_arena *scratch)
 {
-    auto upload_func = [rndr, scratch](material *mat) -> bool { return upload_material(rndr, mat, scratch); };
+    auto upload_func = [rndr, tex_pool, scratch](material *mat) -> bool { return upload_material(rndr, mat, tex_pool, scratch); };
     return upload_assets_helper(mat_pool, upload_func);
 }
 

@@ -176,6 +176,11 @@ struct mat_blueprint_mapping
     asset_id tech_id;
 };
 
+enum material_flag
+{
+    MATERIAL_FLAG_USE_COLOR = make_flag_base(ASSET_FLAG_USER_BASE, 0),
+};
+
 // Material references textures and pipelines, which both must be uploaded to GPUa
 struct material
 {
@@ -194,7 +199,7 @@ struct material
     raster_override_state_flags override_mask;
 
     // Textures used by material
-    static_array<asset_id, MAT_SAMPLER_SLOT_COUNT> textures{.size = MAT_SAMPLER_SLOT_COUNT};
+    asset_id textures[MAT_SAMPLER_SLOT_COUNT];
 
     // Handle given back by renderer
     rmaterial_handle rhndl;

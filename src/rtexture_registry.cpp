@@ -5,7 +5,8 @@
 namespace nslib
 {
 
-b32 is_valid(const rtexture_handle &h) {
+b32 is_valid(const rtexture_handle &h)
+{
     return h.pool_idx != INVALID_IDX && is_valid(h.hndl);
 }
 
@@ -21,7 +22,7 @@ u32 get_slot_used_count(const rtexture_registry &reg)
 b32 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg)
 {
     ilog("Initializing texture registry with %u pools", cfg.pool_count);
-    hmap_init(&reg->pmap, hash_type, cfg.persist_fl, cfg.pool_count*2);
+    hmap_init(&reg->pmap, hash_type, cfg.persist_fl, cfg.pool_count * 2);
     arr_init(&reg->pools, cfg.persist_fl, cfg.pool_count);
     arr_resize(&reg->pools, cfg.pool_count, vkr_texture_pool{});
     for (u32 i = 0; i < reg->pools.size; ++i) {
@@ -61,7 +62,7 @@ rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tde
     asrt(tdesc.data_size > 0);
     asrt(tdesc.name);
     rtexture_handle ret{};
-    u64 key = hash_type(&tdesc.meta,sizeof(rtexture_meta));
+    u64 key = hash_type(&tdesc.meta, sizeof(rtexture_meta));
     auto pool_fiter = hmap_find(&reg->pmap, key);
     if (!pool_fiter) return ret;
 
@@ -71,7 +72,7 @@ rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tde
     if (!success) return {};
 
     asrt(is_valid(slot));
-            
+
     VkCommandBuffer tmp_cmd_buf;
     s32 result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = (VkCommandPool)transient_pool}, pool->vk);
     asrt(result == err_code::VKR_NO_ERROR);
@@ -79,7 +80,7 @@ rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tde
 
     result = vkr_begin_cmd_buf(tmp_cmd_buf, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     asrt(result == err_code::VKR_NO_ERROR);
-            
+
     vkr_source_image_data src_data{};
     src_data.data = tdesc.data;
     src_data.name = tdesc.name;
@@ -91,14 +92,13 @@ rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tde
 
     result = vkr_end_cmd_buf(tmp_cmd_buf);
     asrt(result == err_code::VKR_NO_ERROR);
-                
+
     result = vkr_blocking_queue_submit(tmp_q, &tmp_cmd_buf, 1, pool->vk);
     asrt(result == err_code::VKR_NO_ERROR);
-    
+
     ret.pool_idx = pool_fiter->val;
     ret.hndl = slot.hndl;
     return ret;
 }
 
-
-}
+} // namespace nslib

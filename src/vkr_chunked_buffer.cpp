@@ -4,27 +4,26 @@
 namespace nslib
 {
 
-u64 vkr_get_chunk_offset(const vkr_chunked_buffer *chunk_buf, u32 chunk_index)
+sizet vkr_get_chunk_offset(const vkr_chunked_buffer *chunk_buf, idx_t chunk_index, idx_t section)
 {
     asrt(chunk_buf);
     asrt(chunk_index < chunk_buf->chunk_count);
-    return chunk_buf->chunk_size * (u64)chunk_index;
+    asrt(section < chunk_buf->section_count);
+    return chunk_buf->chunk_size * (section * chunk_buf->chunk_count + chunk_index);
 }
 
-void *vkr_get_chunk_ptr(const vkr_chunked_buffer *chunk_buf, u32 chunk_index)
+void *vkr_get_chunk_ptr(const vkr_chunked_buffer *chunk_buf, idx_t chunk_index, idx_t section)
 {
-    asrt(chunk_buf);
-    asrt(chunk_index < chunk_buf->chunk_count);
     asrt(chunk_buf->buffer.mem_info.pMappedData);
     auto base = (u8 *)chunk_buf->buffer.mem_info.pMappedData;
-    return base + chunk_buf->chunk_size * chunk_index;
+    return base + vkr_get_chunk_offset(chunk_buf, chunk_index, section);
 }
 
-VkDescriptorBufferInfo vkr_get_chunk_desc_info(const vkr_chunked_buffer *chunk_buf, u32 chunk_index, u64 range_override)
+VkDescriptorBufferInfo vkr_get_chunk_desc_info(const vkr_chunked_buffer *chunk_buf, idx_t chunk_index, idx_t section, u64 range_override)
 {
     VkDescriptorBufferInfo info{};
     info.buffer = chunk_buf->buffer.hndl;
-    info.offset = vkr_get_chunk_offset(chunk_buf, chunk_index);
+    info.offset = vkr_get_chunk_offset(chunk_buf, chunk_index, section);
     info.range = (range_override != 0) ? range_override : chunk_buf->chunk_size;
     return info;
 }
@@ -33,22 +32,23 @@ b32 vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buf
 {
     asrt(chunk_buf);
     asrt(chunk_buf->free_chunks.size == 0 && chunk_buf->free_chunks.capacity == 0);
-    asrt(cfg.chunk_size && cfg.buffer_cfg.buffer_size && cfg.buffer_cfg.vma_alloc);
-    asrt(cfg.buffer_cfg.buffer_size % cfg.chunk_size == 0);
+    asrt(cfg.chunk_size && cfg.buffer_cfg.buffer_size && cfg.section_count && cfg.buffer_cfg.vma_alloc);
+    asrt(cfg.buffer_cfg.buffer_size % (cfg.section_count * cfg.chunk_size) == 0);
     asrt(cfg.chunk_tracking_arena);
-
-    sizet chunk_count = cfg.buffer_cfg.buffer_size / cfg.chunk_size;
+    
+    sizet chunk_count = cfg.buffer_cfg.buffer_size / (cfg.section_count * cfg.chunk_size);
     asrt(chunk_count != 0 && chunk_count < UINT_MAX);
 
     vkr_buffer_cfg buf_cfg = cfg.buffer_cfg;
     // We need this memory to be host visible and mapped no matter what - thats the whole point of this thing
     buf_cfg.alloc_flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
-    ilog("Creating %lu byte %s with %lu byte chunks (%lu slots)",
+    ilog("Creating %lu byte %s with %lu byte chunks (%lu slots) and %lu sections",
          cfg.buffer_cfg.buffer_size,
          cfg.buffer_cfg.vma_alloc_name,
          cfg.chunk_size,
-         cfg.buffer_cfg.buffer_size / cfg.chunk_size);
+         chunk_count,
+         cfg.section_count);
 
     int err = vkr_init_buffer(&chunk_buf->buffer, buf_cfg);
     if (err != err_code::VKR_NO_ERROR) {
@@ -60,6 +60,7 @@ b32 vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buf
 
     chunk_buf->chunk_size = cfg.chunk_size;
     chunk_buf->chunk_count = chunk_count;
+    chunk_buf->section_count = cfg.section_count;
     chunk_buf->used_chunk_count = 0;
     chunk_buf->next_chunk_index = 0;
 
@@ -78,13 +79,10 @@ void vkr_terminate_chunked_buffer(vkr_chunked_buffer *chunk_buf, vkr_context *vk
     asrt(vk);
     arr_terminate(&chunk_buf->free_chunks);
     vkr_terminate_buffer(&chunk_buf->buffer, vk);
-    chunk_buf->chunk_count = 0;
-    chunk_buf->chunk_size = 0;
-    chunk_buf->used_chunk_count = 0;
-    chunk_buf->next_chunk_index = 0;
+    *chunk_buf = {};
 }
 
-u32 vkr_acquire_chunk(vkr_chunked_buffer *chunk_buf)
+idx_t vkr_acquire_chunk(vkr_chunked_buffer *chunk_buf)
 {
     asrt(chunk_buf);
     asrt(chunk_buf->buffer.mem_info.pMappedData);
@@ -106,7 +104,7 @@ u32 vkr_acquire_chunk(vkr_chunked_buffer *chunk_buf)
     return ret;
 }
 
-void vkr_release_chunk(vkr_chunked_buffer *chunk_buf, u32 chunk_index)
+void vkr_release_chunk(vkr_chunked_buffer *chunk_buf, idx_t chunk_index)
 {
     asrt(chunk_buf);
     asrt(chunk_index < chunk_buf->chunk_count);

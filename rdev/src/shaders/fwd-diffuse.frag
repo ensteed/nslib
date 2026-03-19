@@ -1,15 +1,26 @@
 #version 450
+struct material_block {
+    uint tex_pool_idx;
+    uint sampler_idx;
+    uint tex_layer;
+    uint use_color;
+    vec4 col;
+};
+
 layout(location = 0) in vec4 frag_color;
 layout(location = 1) in vec2 frag_uv;
-
+layout(location = 2) flat in uint material_idx;
 layout(location = 0) out vec4 out_color;
 
+layout(set = 0, binding = 5) readonly buffer material_ssbo_data {
+    material_block mats[];
+} mat_ssbo;
 layout(set = 0, binding = 6) uniform sampler samplers[1];
 layout(set = 1, binding = 0) uniform texture2DArray tex_pools[2];
 
 // Helper to pick the sampler
 // We use a sampler object specifically here
-vec4 sample_with_sampler(texture2DArray tex, int sampler_idx, vec3 uvw) {
+vec4 sample_with_sampler(texture2DArray tex, uint sampler_idx, vec3 uvw) {
     switch(sampler_idx) {
     case 0: return texture(sampler2DArray(tex, samplers[0]), uvw);
         // case 1: return texture(sampler2DArray(tex, samplers[1]), uvw);
@@ -20,7 +31,7 @@ vec4 sample_with_sampler(texture2DArray tex, int sampler_idx, vec3 uvw) {
 }
 
 // Helper to pick the texture
-vec4 get_final_color(int texture_idx, int sampler_idx, vec3 uvw) {
+vec4 get_final_color(uint texture_idx, uint sampler_idx, vec3 uvw) {
     switch(texture_idx) {
     case 0:  return sample_with_sampler(tex_pools[0],  sampler_idx, uvw);
     case 1:  return sample_with_sampler(tex_pools[1],  sampler_idx, uvw);
@@ -39,6 +50,10 @@ vec4 get_final_color(int texture_idx, int sampler_idx, vec3 uvw) {
 }
 
 void main() {
-    out_color = get_final_color(0, 0, vec3(frag_uv, 0));
-    //out_color = frag_color;
+    material_block mat = mat_ssbo.mats[material_idx];
+    if (mat.use_color > 0) {
+        out_color = mat.col;
+        return;
+    }
+    out_color = get_final_color(mat.tex_pool_idx, mat.sampler_idx, vec3(frag_uv, mat.tex_layer));
 }

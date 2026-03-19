@@ -23,10 +23,6 @@ struct instance_block {
     mat4 prev_model;
 };
 
-struct material_block {
-    vec4 col;
-};
-
 layout(set = 0, binding = 0) readonly buffer draw_ssbo_data {
     draw_block draws[];
 } draw_ssbo;
@@ -43,10 +39,6 @@ layout(set = 0, binding = 4) readonly buffer instance_ssbo_data {
     instance_block instances[];
 } inst_ssbo;
 
-layout(set = 0, binding = 5) readonly buffer material_ssbo_data {
-    material_block mats[];
-} mat_ssbo;
-
 layout(set = 0, binding = 3) uniform frame_ubo_data {
     float elapsed;
     float dt;
@@ -62,6 +54,7 @@ layout(location = 4) in vec2 in_uv;
 
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec2 frag_uv;
+layout(location = 2) flat out uint material_idx;
 
 void main() {
     // Because GLSL stores matrices in column major, we reverse our multiplication order
@@ -71,4 +64,5 @@ void main() {
     gl_Position =  viewp * model * vec4(in_pos, 1.0);
     frag_color = in_color;
     frag_uv = in_uv;
+    material_idx = draw.material_idx;
 }

@@ -533,10 +533,9 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     //////////////////////////
     // Create material SSBO //
     //////////////////////////
-    // For materials we also do a buffer for each frame in flight - at least for now unless it proves too much. But
-    // really, mat data is probably pretty small compared to instance data
     sizet mat_buf_fif_sz = dip.material_ssbo.block_size * dip.material_ssbo.block_count;
     cb_cfg.buffer_cfg.buffer_size = mat_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
+    cb_cfg.section_count = MAX_FRAMES_IN_FLIGHT;
     cb_cfg.chunk_size = dip.material_ssbo.block_size;
     cb_cfg.buffer_cfg.vma_alloc_name = "material_ssbo";
     if (!vkr_init_chunked_buffer(&rndr->desc_info.material_ssbo, cb_cfg)) {
@@ -1287,7 +1286,9 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         rtech.item->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
         rtech.item->rpass_plines[i].subpass = cur_desc->bp_info.spi;
         rtech.item->rpass_plines[i].pline = new_slot.hndl;
-
+        
+        rtech.item->rpass_plines[i].dstate = cur_desc->dstate;
+        rtech.item->rpass_plines[i].can_override = cur_desc->dstate_can_override;
         ++rtech.item->rpass_plines.size;
     }
     return rtech.hndl;
@@ -1295,7 +1296,12 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
 
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo)
 {
-    return {};
+    rmaterial_ref mref = acquire_slot(&rndr->materials);
+    if (!is_valid(mref)) return {};
+    mref.item->dstate = ctinfo.dstate;
+    mref.item->override_mask = ctinfo.dstate_override_mask;
+    mref.item->mat_ssbo = vkr_acquire_chunk(&rndr->desc_info.material_ssbo);
+    return mref.hndl;
 }
 
 rformat get_swapchain_format(renderer *rnd)
@@ -1401,22 +1407,6 @@ rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
 {
     auto fiter = hmap_find(&rndr->rtargets.buffer_id_map, id);
     return fiter ? fiter->val : rbuffer_target_handle{};
-}
-
-void update_view_data(rmanifest *m, idx_t view, const void *view_data)
-{
-    sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
-    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.view_ssbo.fif_block_count + view);
-    void *dst = (void *)((sizet)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset);
-    memcpy(dst, view_data, blocksz);
-}
-
-void update_instance_data(rmanifest *m, idx_t inst, const void *instance_data)
-{
-    sizet blocksz = m->rndr->desc_info.instance_ssbo.block_size;
-    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.instance_ssbo.fif_block_count + inst);
-    void *dst = (void *)((sizet)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset);
-    memcpy(dst, instance_data, blocksz);
 }
 
 #ifdef USE_IMGUI

@@ -359,8 +359,9 @@ void draw_geometry(const render_job_cb_params &, void *);
 rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p);
 bool end_render_frame(rmanifest *m);
 
-void update_instance_data(rmanifest *rm, void *block, sizet block_size);
-void update_material_data(rmanifest *rm, void *block, sizet block_size);
+void update_view_data(rmanifest *m, idx_t view, const void *data);
+void update_instance_data(rmanifest *m, idx_t inst, const void *data);
+void update_material_data(rmanifest *m, rmaterial_handle mh, const void *data);
 
 idx_t push_pass(rmanifest *m, const mpass_params &p);
 u32 push_slot_assignment(rmanifest *m, idx_t pid, const mpass_slot_assignment &sa);

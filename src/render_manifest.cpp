@@ -834,6 +834,31 @@ intern rdraw_dyn_state get_dynamic_state(const rmaterial_info &mat, const rtechn
     return ret;
 }
 
+
+void update_view_data(rmanifest *m, idx_t view, const void *view_data)
+{
+    sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
+    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.view_ssbo.fif_block_count + view);
+    void *dst = (u8*)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset;
+    memcpy(dst, view_data, blocksz);
+}
+
+void update_instance_data(rmanifest *m, idx_t inst, const void *instance_data)
+{
+    sizet blocksz = m->rndr->desc_info.instance_ssbo.block_size;
+    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.instance_ssbo.fif_block_count + inst);
+    void *dst = (u8*)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset;
+    memcpy(dst, instance_data, blocksz);
+}
+
+void update_material_data(rmanifest *m, rmaterial_handle mh, const void *data)
+{
+    auto minfo = get_slot_item(m->rndr->materials, mh);
+    sizet blocksz = m->rndr->desc_info.material_ssbo.chunk_size;
+    void *dst = vkr_get_chunk_ptr(&m->rndr->desc_info.material_ssbo,minfo->mat_ssbo, m->fif);
+    memcpy(dst, data, blocksz);
+}
+
 idx_t push_pass(rmanifest *m, const mpass_params &p)
 {
     idx_t pind = (idx_t)m->passes.size;
