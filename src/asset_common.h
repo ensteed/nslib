@@ -64,9 +64,17 @@ void terminate_asset_cache(asset_cache *cache);
 void terminate_asset_cache_default_types(asset_cache *cache);
 
 template<typename T>
-asset_pool<T> *get_asset_pool(const asset_cache *cache)
+const asset_pool<T> *get_asset_pool(const asset_cache &cache)
 {
-    asrt(cache);
+    if (T::type_id < cache.pools.size) {
+        return (asset_pool<T> *)cache.pools[T::type_id];
+    }
+    return nullptr;
+}
+
+template<typename T>
+asset_pool<T> *get_asset_pool(asset_cache *cache)
+{
     if (T::type_id < cache->pools.size) {
         return (asset_pool<T> *)cache->pools[T::type_id];
     }
@@ -210,10 +218,9 @@ T *get_asset(asset_pool<T> *pool, asset_handle<T> hndl)
 }
 
 template<typename T>
-const T *get_asset(const asset_pool<T> *pool, asset_handle<T> hndl)
+const T *get_asset(const asset_pool<T> &pool, asset_handle<T> hndl)
 {
-    asrt(pool);
-    return get_slot_item(&pool->assets, hndl);
+    return get_slot_item(pool.assets, hndl);
 }
 
 template<typename T>
@@ -225,11 +232,10 @@ T *get_asset(asset_cache *cache, asset_handle<T> hndl)
 }
 
 template<typename T>
-const T *get_asset(const asset_cache *cache, asset_handle<T> hndl)
+const T *get_asset(const asset_cache &cache, asset_handle<T> hndl)
 {
-    asrt(cache);
     auto pool = get_asset_pool<T>(cache);
-    return pool ? get_asset(pool, hndl) : nullptr;
+    return pool ? get_asset(*pool, hndl) : nullptr;
 }
 
 template<typename T>
@@ -246,16 +252,46 @@ asset_item_ref<T> find_asset(asset_pool<T> *pool, asset_id id)
 }
 
 template<typename T>
-asset_item_ref<const T> find_asset(const asset_pool<T> *pool, asset_id id)
+asset_item_ref<T> find_asset(asset_pool<T> *pool, const char *name)
 {
     asrt(pool);
+    for (auto iter = hmap_begin(&pool->amap); iter; iter = hmap_next(&pool->amap, iter)) {
+        auto item = get_asset(pool, iter->val);
+        if (strcmp(name, str_cstr(item->name)) == 0) {
+            asset_item_ref<T> ret{};
+            ret.hndl = iter->val;
+            ret.item = item;
+            return ret;
+        }
+    }
+    return {};
+}
+
+template<typename T>
+asset_item_ref<const T> find_asset(const asset_pool<T> &pool, asset_id id)
+{
     asset_item_ref<const T> ret{};
-    auto item = hmap_find(&pool->amap, id);
+    auto item = hmap_find(&pool.amap, id);
     if (item) {
         ret.hndl = item->val;
         ret.item = get_asset(pool, ret.hndl);
     }
     return ret;
+}
+
+template<typename T>
+asset_item_ref<const T> find_asset(const asset_pool<T> &pool, const char *name)
+{
+    for (auto iter = hmap_begin(&pool->amap); is_valid(iter); iter = hmap_next(&pool->amap, iter)) {
+        auto item = get_asset(pool, iter->val);
+        if (strcmp(name, str_cstr(item->name)) == 0) {
+            asset_item_ref<const T> ret{};
+            ret.hndl = iter->val;
+            ret.item = item;
+            return ret;
+        }
+    }
+    return {};
 }
 
 template<typename T>
@@ -267,11 +303,25 @@ asset_item_ref<T> find_asset(asset_cache *cache, asset_id id)
 }
 
 template<typename T>
-asset_item_ref<const T> find_asset(const asset_cache *cache, asset_id id)
+asset_item_ref<T> find_asset(asset_cache *cache, const char *name)
 {
     asrt(cache);
     auto pool = get_asset_pool<T>(cache);
+    return pool ? find_asset(pool, name) : asset_item_ref<T>{};
+}
+
+template<typename T>
+asset_item_ref<const T> find_asset(const asset_cache &cache, asset_id id)
+{
+    auto pool = get_asset_pool<T>(cache);
     return pool ? find_asset(pool, id) : asset_item_ref<const T>{};
+}
+
+template<typename T>
+asset_item_ref<const T> find_asset(const asset_cache &cache, const char *name)
+{
+    auto pool = get_asset_pool<T>(cache);
+    return pool ? find_asset(pool, name) : asset_item_ref<const T>{};
 }
 
 template<typename T>

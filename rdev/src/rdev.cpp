@@ -93,7 +93,11 @@ struct rdev_app_ctxt
     sim_region rgn;
     asset_cache cg;
     f64 accumulater;
+    
     material_handle default_mat;
+    
+    asset_id daniel_mat;
+    asset_id maria_mat; 
 
     input_keymap movement_km;
     input_keymap global_km;
@@ -183,7 +187,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     app->movement_km.mbutton_mask = MBUTTON_MASK_NONE;
 }
 
-intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom)
+intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom, rdev_app_ctxt *app)
 {
     // Create a grid of entities with odd ones being cubes and even being rectangles
     int len = 5, width = 5, height = 5;
@@ -199,12 +203,12 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
                 auto sc = add_comp<static_mesh>(ent);
                 if (xind % 2) {
                     sc->geom_id = cube_geom.id;
-                    arr_emplace_back(&sc->mat_mapping, INVALID_ASSET_ID, 0);
+                    arr_emplace_back(&sc->mat_mapping, app->daniel_mat, 0);
                     ent->name = to_str("cube-%d", ent_ind);
                 }
                 else {
                     sc->geom_id = rect_geom.id;
-                    arr_emplace_back(&sc->mat_mapping, INVALID_ASSET_ID, 0);
+                    arr_emplace_back(&sc->mat_mapping, app->maria_mat, 0);
                     ent->name = to_str("rect-%d", ent_ind);
                 }
                 tfcomp->world_pos = vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f};
@@ -321,7 +325,7 @@ intern technique_item_ref create_diffuse_technique(shader_pool *spool, technique
     return tech;
 }
 
-intern void create_materials(material_pool *mat_pool, technique *tech, rdev_app_ctxt *app) {
+intern void create_materials(material_pool *mat_pool, technique *tech, texture_pool *tex_pool, rdev_app_ctxt *app) {
     material_item_ref default_mat = create_asset(mat_pool, "default");
     default_mat.item->col = {1,0,0,1};
     default_mat.item->flags |= MATERIAL_FLAG_USE_COLOR;
@@ -330,6 +334,22 @@ intern void create_materials(material_pool *mat_pool, technique *tech, rdev_app_
     default_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
     arr_emplace_back(&default_mat.item->bp_techniques, FWD_PBR_RBP_ID, tech->id);
     app->default_mat = default_mat.hndl;
+
+    material_item_ref daniel_mat = create_asset(mat_pool, "daniel");
+    // Disable all culling
+    daniel_mat.item->overrides.rmask = 0;
+    daniel_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
+    daniel_mat.item->textures[MAT_SAMPLER_SLOT_ALBEDO].id = find_asset(tex_pool, "daniel-face").item->id;
+    arr_emplace_back(&daniel_mat.item->bp_techniques, FWD_PBR_RBP_ID, tech->id);
+    app->daniel_mat = daniel_mat.item->id;
+
+    material_item_ref maria_mat = create_asset(mat_pool, "maria");
+    // Disable all culling
+    maria_mat.item->overrides.rmask = 0;
+    maria_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
+    maria_mat.item->textures[MAT_SAMPLER_SLOT_ALBEDO].id = find_asset(tex_pool, "maria-face").item->id;
+    arr_emplace_back(&maria_mat.item->bp_techniques, FWD_PBR_RBP_ID, tech->id);
+    app->maria_mat = maria_mat.item->id;
 }
 
 intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
@@ -349,7 +369,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     create_geometry(geom_pool, &rect, &cube);
     create_textures(tex_pool);
     technique_item_ref diff_tech = create_diffuse_technique(shdr_pool, tech_pool);
-    create_materials(mat_pool, diff_tech.item, app);
+    create_materials(mat_pool, diff_tech.item, tex_pool, app);
 
     renderer_cfg p{RNDR_CFG};
     p.win_hndl = ctxt->win_hndl;
@@ -388,7 +408,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     // Create and setup input for camera
     setup_camera_controller(ctxt, app);
-    create_entity_grid(&app->rgn, *cube, *rect);
+    create_entity_grid(&app->rgn, *cube, *rect, app);
     return true;
 }
 
