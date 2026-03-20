@@ -93,6 +93,7 @@ struct rdev_app_ctxt
     sim_region rgn;
     asset_cache cg;
     f64 accumulater;
+    material_handle default_mat;
 
     input_keymap movement_km;
     input_keymap global_km;
@@ -182,7 +183,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     app->movement_km.mbutton_mask = MBUTTON_MASK_NONE;
 }
 
-intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom, const material &mat)
+intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom)
 {
     // Create a grid of entities with odd ones being cubes and even being rectangles
     int len = 5, width = 5, height = 5;
@@ -198,12 +199,12 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
                 auto sc = add_comp<static_mesh>(ent);
                 if (xind % 2) {
                     sc->geom_id = cube_geom.id;
-                    arr_emplace_back(&sc->mat_mapping, mat.id, 0);
+                    arr_emplace_back(&sc->mat_mapping, INVALID_ASSET_ID, 0);
                     ent->name = to_str("cube-%d", ent_ind);
                 }
                 else {
                     sc->geom_id = rect_geom.id;
-                    arr_emplace_back(&sc->mat_mapping, mat.id, 0);
+                    arr_emplace_back(&sc->mat_mapping, INVALID_ASSET_ID, 0);
                     ent->name = to_str("rect-%d", ent_ind);
                 }
                 tfcomp->world_pos = vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f};
@@ -320,6 +321,17 @@ intern technique_item_ref create_diffuse_technique(shader_pool *spool, technique
     return tech;
 }
 
+intern void create_materials(material_pool *mat_pool, technique *tech, rdev_app_ctxt *app) {
+    material_item_ref default_mat = create_asset(mat_pool, "default");
+    default_mat.item->col = {1,0,0,1};
+    default_mat.item->flags |= MATERIAL_FLAG_USE_COLOR;
+    // Disable all culling
+    default_mat.item->overrides.rmask = 0;
+    default_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
+    arr_emplace_back(&default_mat.item->bp_techniques, FWD_PBR_RBP_ID, tech->id);
+    app->default_mat = default_mat.hndl;
+}
+
 intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     init_asset_cache_default_types(
@@ -337,14 +349,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     create_geometry(geom_pool, &rect, &cube);
     create_textures(tex_pool);
     technique_item_ref diff_tech = create_diffuse_technique(shdr_pool, tech_pool);
-
-    material_item_ref default_mat = create_asset(mat_pool, "default");
-    default_mat.item->col = {1,0,0,1};
-    default_mat.item->flags |= MATERIAL_FLAG_USE_COLOR;
-    // Disable all culling
-    default_mat.item->overrides.rmask = 0;
-    default_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
-    arr_emplace_back(&default_mat.item->bp_techniques, FWD_PBR_RBP_ID, diff_tech.item->id);
+    create_materials(mat_pool, diff_tech.item, app);
 
     renderer_cfg p{RNDR_CFG};
     p.win_hndl = ctxt->win_hndl;
@@ -383,7 +388,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     // Create and setup input for camera
     setup_camera_controller(ctxt, app);
-    create_entity_grid(&app->rgn, *cube, *rect, *default_mat.item);
+    create_entity_grid(&app->rgn, *cube, *rect);
     return true;
 }
 
@@ -423,6 +428,8 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 
 intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
 {
+    material_pool *mat_pool = get_asset_pool<material>(&app->cg);
+    auto default_mat = get_asset(mat_pool, app->default_mat);
     auto bp_main_pass = find_rbp_pass(m->rbp.item, MAIN_PASS_ID);
     auto imgui_pass = find_rbp_pass(m->rbp.item, IMGUI_PASS_ID);
 
@@ -465,7 +472,7 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
 #endif
 
-    update_and_draw_region(m, &app->rgn, &app->cg);
+    update_and_draw_region(m, &app->rgn, &app->cg, default_mat);
 }
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)

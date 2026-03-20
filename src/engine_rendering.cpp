@@ -140,7 +140,7 @@ intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
     return success_count;
 }
 
-void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
+void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
 {
     auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
     auto tftbs = get_comp_tbl<transform>(&sr->cdb);
@@ -200,21 +200,25 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
 
         if (sm) {
             geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
-            asrt(is_valid(gref));
-
+            if (!is_valid(gref)) {
+                // TODO: Probably have a default mesh?
+                wlog("No geometry found for %s", ls(sr->ents[i].name));
+                continue;
+            }
+            
             for (u32 mi = 0; mi < sm->mat_mapping.size; ++mi) {
                 material_item_ref mref = find_asset<material>(mpool, sm->mat_mapping[mi].mat_id);
-                asrt(is_valid(mref));
+                material *mat = is_valid(mref) ? mref.item : def_material;
 
-                for (u32 bpi = 0; bpi < mref.item->bp_techniques.size; ++bpi) {
-                    if (mref.item->bp_techniques[bpi].bpid == m->rbp.item->id) {
-                        technique_item_ref tref = find_asset<technique>(techpool, mref.item->bp_techniques[bpi].tech_id);
+                for (u32 bpi = 0; bpi < mat->bp_techniques.size; ++bpi) {
+                    if (mat->bp_techniques[bpi].bpid == m->rbp.item->id) {
+                        technique_item_ref tref = find_asset<technique>(techpool, mat->bp_techniques[bpi].tech_id);
                         asrt(is_valid(tref));
 
                         mdraw_params dp{};
                         dp.geom = gref.item->rhndl;
                         dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
-                        dp.mat = mref.item->rhndl;
+                        dp.mat = mat->rhndl;
                         dp.tech = tref.item->rhndl;
                         dp.inst = tfind;
                         asrt(tref.item->passes.size > 0);

@@ -9,6 +9,8 @@ struct asset_id
     u64 id{0};
 };
 
+inline constexpr const asset_id INVALID_ASSET_ID{INVALID_ID};
+
 asset_id make_asset_id(const string &str);
 asset_id make_asset_id(const char *str);
 
