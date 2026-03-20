@@ -17,6 +17,7 @@ intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
 struct track_rdraw_dyn_state
 {
     idx_t last_pline{INVALID_IDX};
+    idx_t last_material{INVALID_IDX};
     rdraw_dyn_state dstate;
 };
 
@@ -101,6 +102,8 @@ intern u64 pack_mdraw_sort_key(const mdraw_call &dc)
 
 intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &fns, const mdraw_call &dc, track_rdraw_dyn_state *state)
 {
+    // Early out if material and pipeline didn't change
+    if (dc.pl == state->last_pline && dc.mat == state->last_material) return;
     bool state_valid = is_valid(state->last_pline);
     u32 state_update_mask = state_valid ? PLINE_DSTATE_UPDATE_NONE : PLINE_DSTATE_UPDATE_ALL;
 
@@ -235,6 +238,7 @@ intern void setup_pline_dynamic_state(VkCommandBuffer cb, const vkr_eds1_fptrs &
     }
     state->dstate = dc.dstate;
     state->last_pline = dc.pl;
+    state->last_material = dc.mat;
 }
 
 void draw_geometry(const render_job_cb_params &p, void *)
@@ -292,17 +296,16 @@ void draw_geometry(const render_job_cb_params &p, void *)
         const rpipeline_entry *pl = &p.plines->items.slots[dc->pl].item;
 
         asrt(geom && mat && pl);
-
         if (p.dyn_state->last_pline != dc->pl) {
-            setup_pline_dynamic_state(cb, *p.fns, *dc, p.dyn_state);
             vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)pl->gpu_d);
-            p.dyn_state->last_pline = dc->pl;
         }
+        setup_pline_dynamic_state(cb, *p.fns, *dc, p.dyn_state);
 
         const rsubgeom_range *cur_r = &geom->subgeom_vert_ind_counts[dc->subgeom];
         u32 voffset = geom->vert_offset + cur_r->offset;
         u32 ioffset = geom->ind_offset + cur_r->offset;
         vkCmdDrawIndexed(cb, cur_r->count, dc->inst_count, ioffset, voffset, inst_draw_id);
+        
         inst_draw_id += dc->inst_count;
     }
 }

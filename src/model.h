@@ -14,6 +14,11 @@ enum mat_sampler_slot
     MAT_SAMPLER_SLOT_COUNT
 };
 
+enum mat_sampler_type {
+    MAT_SAMPLER_TYPE_LINEAR_REPEAT,
+    MAT_SAMPLER_TYPE_COUNT
+};
+
 enum geometry_topology : u8
 {
     GEOMETRY_TOPOLOGY_POINT_LIST,
@@ -181,6 +186,12 @@ enum material_flag
     MATERIAL_FLAG_USE_COLOR = make_flag_base(ASSET_FLAG_USER_BASE, 0),
 };
 
+struct texture_info
+{
+    asset_id id{INVALID_ID};
+    mat_sampler_type sampler{MAT_SAMPLER_TYPE_LINEAR_REPEAT};
+};
+
 // Material references textures and pipelines, which both must be uploaded to GPUa
 struct material
 {
@@ -199,7 +210,7 @@ struct material
     raster_override_state_flags override_mask;
 
     // Textures used by material
-    asset_id textures[MAT_SAMPLER_SLOT_COUNT];
+    texture_info textures[MAT_SAMPLER_SLOT_COUNT];
 
     // Handle given back by renderer
     rmaterial_handle rhndl;

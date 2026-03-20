@@ -47,6 +47,16 @@ intern rstencil_op_state get_stencil_op_state(stencil_mode mode)
     return ret;
 }
 
+intern idx_t get_rsampler(mat_sampler_type stype)
+{
+    switch (stype) {
+    case (MAT_SAMPLER_TYPE_LINEAR_REPEAT):
+        return RSAMPLER_TYPE_LINEAR_REPEAT;
+    default:
+        return INVALID_IDX;
+    }
+}
+
 intern rdraw_state_override_flags get_dynamic_state_override_flags(raster_override_state_flags raster_flags)
 {
     rdraw_state_override_flags ret{};
@@ -153,12 +163,10 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg)
             material_ssbo_data md{};
             md.col = mat_iter.item->col;
             md.use_col = (u32)test_flags(mat_iter.item->flags, MATERIAL_FLAG_USE_COLOR);
-            md.sampler_idx = 0;
-            auto diffuse = find_asset(tex_pool, mat_iter.item->textures[MAT_SAMPLER_SLOT_ALBEDO]);
-            if (is_valid(diffuse)) {
-                md.tex_pool_idx = diffuse.item->rhndl.pool_idx;
-                md.tex_layer = diffuse.item->rhndl.hndl.si;
-            }
+            md.sampler_idx = get_rsampler(mat_iter.item->textures[MAT_SAMPLER_SLOT_ALBEDO].sampler);
+            auto diffuse = find_asset(tex_pool, mat_iter.item->textures[MAT_SAMPLER_SLOT_ALBEDO].id);
+            md.tex_pool_idx = is_valid(diffuse) ? diffuse.item->rhndl.pool_idx : INVALID_IDX;
+            md.tex_layer = is_valid(diffuse) ? diffuse.item->rhndl.hndl.si : 0;
             update_material_data(m, mat_iter.item->rhndl, &md);
         }
     }
@@ -464,9 +472,9 @@ bool upload_material(renderer *rndr, material *mat, texture_pool *tex_pool, mem_
     md.dstate_override_mask = get_dynamic_state_override_flags(mat->override_mask);
     static_assert((u8)MAT_SAMPLER_SLOT_COUNT <= (u8)RMATERIAL_TEXTURE_COUNT);
     for (u32 i = 0; i < MAT_SAMPLER_SLOT_COUNT; ++i) {
-        auto tex = find_asset(tex_pool, mat->textures[i]);
+        auto tex = find_asset(tex_pool, mat->textures[i].id);
         md.slots[i] = tex.item ? tex.item->rhndl : rtexture_handle{};
-        if (!is_valid(tex) && is_valid(mat->textures[i])) {
+        if (!is_valid(tex) && is_valid(mat->textures[i].id)) {
             wlog("Failed to load texture id %lu from texture pool", mat->textures[i].id);
         }
     }

@@ -26,7 +26,7 @@ vec4 sample_with_sampler(texture2DArray tex, uint sampler_idx, vec3 uvw) {
         // case 1: return texture(sampler2DArray(tex, samplers[1]), uvw);
         // case 2: return texture(sampler2DArray(tex, samplers[2]), uvw);
         // case 3: return texture(sampler2DArray(tex, samplers[3]), uvw);
-    default: return vec4(0,0,0,0);
+    default: return vec4(1,0,1,1); // Error Magenta
     }
 }
 

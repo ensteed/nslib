@@ -46,9 +46,9 @@ struct instance_ssbo_data {
 };
 
 struct material_ssbo_data {
-    uint tex_pool_idx;
-    uint sampler_idx;
-    uint tex_layer;
+    idx_t tex_pool_idx;
+    idx_t sampler_idx;
+    idx_t tex_layer;
     uint use_col;
     vec4 col;
 };

@@ -227,7 +227,9 @@ void terminate_asset(technique *tech)
 }
 
 void init_asset(material *mat)
-{}
+{
+    mat->flags |= ASSET_FLAG_DIRTY;
+}
 
 void terminate_asset(material *mat)
 {}

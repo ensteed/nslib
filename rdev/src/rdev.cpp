@@ -339,6 +339,11 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     technique_item_ref diff_tech = create_diffuse_technique(shdr_pool, tech_pool);
 
     material_item_ref default_mat = create_asset(mat_pool, "default");
+    default_mat.item->col = {1,0,0,1};
+    default_mat.item->flags |= MATERIAL_FLAG_USE_COLOR;
+    // Disable all culling
+    default_mat.item->overrides.rmask = 0;
+    default_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
     arr_emplace_back(&default_mat.item->bp_techniques, FWD_PBR_RBP_ID, diff_tech.item->id);
 
     renderer_cfg p{RNDR_CFG};
@@ -359,6 +364,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
     upload_shaders(&app->rndr, shdr_pool, &ctxt->arenas.stack);
     upload_techniques(&app->rndr, tech_pool, shdr_pool, &ctxt->arenas.stack);
+    upload_materials(&app->rndr, mat_pool, tex_pool, &ctxt->arenas.stack);
 
     // Create render targets
     // create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));
