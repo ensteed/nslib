@@ -24,7 +24,6 @@ enum transform_flag : u32
 {
 };
 
-
 #define COMP(type)                                                                                                                         \
     static constexpr const char *type_str = #type;                                                                                         \
     static constexpr const u32 type_id = COMP_TYPE_##type;                                                                                 \
@@ -104,6 +103,10 @@ struct sim_region
     comp_db cdb;
     u32 last_id{};
 };
+
+void set_transform_pos(transform *tf, const vec3 &pos);
+void set_transform_orientation(transform *tf, const quat &q);
+void set_transform_scale(transform *tf, const vec3 &s);
 
 template<typename T>
 void init_comp_tbl(comp_table<T> *tbl, mem_arena *arena, sizet initial_capacity)
@@ -227,6 +230,18 @@ template<typename T>
 sizet get_comp_ind(const T *comp, const comp_db *cdb)
 {
     return get_comp_ind(comp, get_comp_tbl<T>(cdb));
+}
+
+template<typename T>
+void mark_comp_dirty(T *comp)
+{
+    set_flags(comp->flags, COMP_FLAG_DIRTY);
+}
+
+template<typename T>
+bool is_comp_dirty(const T &comp)
+{
+    return test_flags(comp.flags, COMP_FLAG_DIRTY);
 }
 
 using transform_tbl = comp_table<transform>;

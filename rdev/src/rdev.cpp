@@ -129,8 +129,6 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     cam_tcomp->scale = math::scaling_vec(cam_tcomp->cached);
     cam_tcomp->world_pos = math::translation_vec(cam_tcomp->cached);
     app->cam_id = cam->id;
-
-    cam_tcomp->cached = math::model_tform(cam_tcomp->world_pos, cam_tcomp->orientation, cam_tcomp->scale);
     cam_comp->view = math::inverse(cam_tcomp->cached);
 
     // Add our input trigger functions
@@ -146,10 +144,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         f32 factor = 2.5;
         vec4 horizontal = {right, -(f32)delta.y * factor};
         vec4 vertical = {{0, 0, 1}, (f32)delta.x * factor};
-        camt->orientation = math::orientation(vertical) * math::orientation(horizontal) * camt->orientation;
-        camt->cached = math::model_tform(camt->world_pos, camt->orientation, camt->scale);
-        camc->view = math::inverse(camt->cached);
-        camt->flags |= COMP_FLAG_DIRTY;
+        set_transform_orientation(camt, math::orientation(vertical) * math::orientation(horizontal) * camt->orientation);
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
@@ -211,8 +206,7 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
                     arr_emplace_back(&sc->mat_mapping, app->maria_mat, 0);
                     ent->name = to_str("rect-%d", ent_ind);
                 }
-                tfcomp->world_pos = vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f};
-                tfcomp->cached = math::model_tform(tfcomp->world_pos, tfcomp->orientation, tfcomp->scale);
+                set_transform_pos(tfcomp, vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f});
             }
         }
     }
@@ -420,8 +414,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
         auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
         auto right = math::right_vec(cam_tform->orientation);
         auto target = math::target_vec(cam_tform->orientation);
-        cam_tform->world_pos += (right * app->movement.x + target * app->movement.y) * dt * 10;
-        cam_tform->flags |= COMP_FLAG_DIRTY;
+        set_transform_pos(cam_tform, cam_tform->world_pos + (right * app->movement.x + target * app->movement.y) * dt * 10);
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
@@ -432,16 +425,8 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     for (sizet i = 0; i < tform_tbl->entries.size; ++i) {
         auto curtf = &tform_tbl->entries[i];
         if (curtf->ent_id != app->cam_id) {
-            if (i % 3 == 0) {
-                curtf->orientation *= math::orientation(vec4{1.0, 0.0, 0.0, (f32)dt});
-            }
-            else if (i % 3 == 2) {
-                curtf->orientation *= math::orientation(vec4{0.0, 1.0, 0.0, (f32)dt});
-            }
-            else {
-                curtf->orientation *= math::orientation(vec4{0.0, 0.0, 1.0, (f32)dt});
-            }
-            curtf->flags |= COMP_FLAG_DIRTY;
+            vec4 axis_angle{(i % 3 == 0)*1.0f, (i % 3 == 2)*1.0f, (i % 3 == 1)*1.0f, (f32)dt};
+            set_transform_orientation(curtf, curtf->orientation * math::orientation(axis_angle));
         }
     }
 }

@@ -3,6 +3,24 @@
 namespace nslib
 {
 
+void set_transform_pos(transform *tf, const vec3 &pos)
+{
+    tf->world_pos = pos;
+    mark_comp_dirty(tf);
+}
+
+void set_transform_orientation(transform *tf, const quat &q)
+{
+    tf->orientation = q;
+    mark_comp_dirty(tf);
+}
+
+void set_transform_scale(transform *tf, const vec3 &s)
+{
+    tf->scale = s;
+    mark_comp_dirty(tf);
+}
+
 void init_static_model(static_mesh *sm, mem_arena *arena)
 {
     arr_init(&sm->mat_mapping, arena);
@@ -72,7 +90,7 @@ bool remove_entity(u32 ent_id, sim_region *reg)
     if (!rem) {
         return rem;
     }
-    asrt(ent_ind!=INVALID_ID);
+    asrt(ent_ind != INVALID_ID);
     asrt(ent_ind < reg->ents.size);
     if (arr_swap_remove(&reg->ents, ent_ind)) {
         if (ent_ind < reg->ents.size) {

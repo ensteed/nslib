@@ -140,16 +140,7 @@ intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
     return success_count;
 }
 
-void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
-{
-    auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
-    auto tftbs = get_comp_tbl<transform>(&sr->cdb);
-    auto cam_tbl = get_comp_tbl<camera>(&sr->cdb);
-    auto mpool = get_asset_pool<material>(cg);
-    auto tex_pool = get_asset_pool<texture>(cg);
-    auto techpool = get_asset_pool<technique>(cg);
-    auto geompool = get_asset_pool<geometry>(cg);
-
+void update_materials(rmanifest *m, material_pool *mpool, texture_pool *tex_pool) {
     // Update materials that need updating
     for (auto mat_iter = asset_pool_begin(mpool); is_valid(mat_iter); mat_iter = asset_pool_next(mpool, mat_iter)) {
         auto minfo = get_slot_item(&m->rndr->materials, mat_iter.item->rhndl);
@@ -170,6 +161,19 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, mater
             update_material_data(m, mat_iter.item->rhndl, &md);
         }
     }
+}
+
+void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
+{
+    auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
+    auto tftbs = get_comp_tbl<transform>(&sr->cdb);
+    auto cam_tbl = get_comp_tbl<camera>(&sr->cdb);
+    auto mpool = get_asset_pool<material>(cg);
+    auto tex_pool = get_asset_pool<texture>(cg);
+    auto techpool = get_asset_pool<technique>(cg);
+    auto geompool = get_asset_pool<geometry>(cg);
+
+    update_materials(m, mpool, tex_pool);
 
     transform_tbl *tftb = get_comp_tbl<transform>(&sr->cdb);
     for (u32 i = 0; i < sr->ents.size; ++i) {
