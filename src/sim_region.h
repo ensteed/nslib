@@ -1,7 +1,9 @@
 #pragma once
 
 #include "math/matrix4.h"
-#include "model.h"
+#include "asset_id.h"
+#include "containers/array.h"
+#include "containers/hmap.h"
 
 namespace nslib
 {
@@ -58,23 +60,41 @@ struct static_mesh
     array<material_subgeom_mapping> mat_mapping{};
 };
 
+enum camera_proj_type : u8
+{
+    CAMERA_PROJ_TYPE_PERSPECTIVE,
+    CAMERA_PROJ_TYPE_ORTHO,
+};
+
+enum camera_fov_type : u8
+{
+    CAMERA_FOV_TYPE_VERTICAL,
+    CAMERA_FOV_TYPE_HORIZONTAL,
+};
+
 struct camera
 {
     COMP(CAMERA)
     f32 fov;
+    f32 aspect;
     vec2 near_far;
     mat4 proj;
     mat4 view;
     mat4 proj_view;
+    camera_proj_type ptype{CAMERA_PROJ_TYPE_PERSPECTIVE};
+    camera_fov_type fov_type{CAMERA_FOV_TYPE_VERTICAL};
 };
 
 pup_func(camera)
 {
     PUP_COMP_COMMON;
     pup_member(fov);
+    pup_member(aspect);
     pup_member(near_far);
     pup_member(proj);
     pup_member(view);
+    pup_enum_member(camera_proj_type, u8, ptype);
+    pup_enum_member(camera_fov_type, u8, fov_type);
 }
 
 template<typename T>
@@ -103,6 +123,11 @@ struct sim_region
     comp_db cdb;
     u32 last_id{};
 };
+
+void set_camera_fov(camera *cam, f32 fov, camera_fov_type ft = CAMERA_FOV_TYPE_VERTICAL);
+void set_camera_near_far(camera *cam, const vec2 &near_far);
+void set_camera_aspect(camera *cam, f32 ar);
+void set_camera_proj_type(camera *cam, camera_proj_type pt);
 
 void set_transform_pos(transform *tf, const vec3 &pos);
 void set_transform_orientation(transform *tf, const quat &q);

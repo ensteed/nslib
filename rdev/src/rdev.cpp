@@ -93,11 +93,11 @@ struct rdev_app_ctxt
     sim_region rgn;
     asset_cache cg;
     f64 accumulater;
-    
+
     material_handle default_mat;
-    
+
     asset_id daniel_mat;
-    asset_id maria_mat; 
+    asset_id maria_mat;
 
     input_keymap movement_km;
     input_keymap global_km;
@@ -119,17 +119,15 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     auto cam_comp = add_comp<camera>(cam);
     auto cam_tcomp = add_comp<transform>(cam);
 
-    cam_comp->fov = 60.0f;
-    cam_comp->near_far = {0.1f, 1000.0f};
-    cam_comp->view = (math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
-    cam_comp->proj = math::perspective_vfov(cam_comp->fov, 1000.0f / 800.0f, cam_comp->near_far.x, cam_comp->near_far.y);
+    set_camera_fov(cam_comp, 60.0f, CAMERA_FOV_TYPE_VERTICAL);
+    set_camera_near_far(cam_comp, {0.1f, 1000.0f});
+    set_camera_aspect(cam_comp, 1000.0f / 800.0f);
 
-    cam_tcomp->cached = math::inverse(cam_comp->view);
-    cam_tcomp->orientation = math::orientation(cam_tcomp->cached);
-    cam_tcomp->scale = math::scaling_vec(cam_tcomp->cached);
-    cam_tcomp->world_pos = math::translation_vec(cam_tcomp->cached);
+    auto cam_view = math::inverse(math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
+    set_transform_orientation(cam_tcomp, math::orientation(cam_view));
+    set_transform_scale(cam_tcomp, math::scaling_vec(cam_view));
+    set_transform_pos(cam_tcomp, math::translation_vec(cam_view));
     app->cam_id = cam->id;
-    cam_comp->view = math::inverse(cam_tcomp->cached);
 
     // Add our input trigger functions
     auto cam_turn_func = [](const input_trigger &t, void *data) {
@@ -141,7 +139,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         auto delta = t.ev->mmotion.norm_delta;
 
         vec3 right = math::right_vec(camt->orientation);
-        f32 factor = 2.5;
+        f32 factor = 4;
         vec4 horizontal = {right, -(f32)delta.y * factor};
         vec4 vertical = {{0, 0, 1}, (f32)delta.x * factor};
         set_transform_orientation(camt, math::orientation(vertical) * math::orientation(horizontal) * camt->orientation);
@@ -319,9 +317,10 @@ intern technique_item_ref create_diffuse_technique(shader_pool *spool, technique
     return tech;
 }
 
-intern void create_materials(material_pool *mat_pool, technique *tech, texture_pool *tex_pool, rdev_app_ctxt *app) {
+intern void create_materials(material_pool *mat_pool, technique *tech, texture_pool *tex_pool, rdev_app_ctxt *app)
+{
     material_item_ref default_mat = create_asset(mat_pool, "default");
-    default_mat.item->col = {1,0,0,1};
+    default_mat.item->col = {1, 0, 0, 1};
     default_mat.item->flags |= MATERIAL_FLAG_USE_COLOR;
     // Disable all culling
     default_mat.item->overrides.rmask = 0;
@@ -425,7 +424,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     for (sizet i = 0; i < tform_tbl->entries.size; ++i) {
         auto curtf = &tform_tbl->entries[i];
         if (curtf->ent_id != app->cam_id) {
-            vec4 axis_angle{(i % 3 == 0)*1.0f, (i % 3 == 2)*1.0f, (i % 3 == 1)*1.0f, (f32)dt};
+            vec4 axis_angle{(i % 3 == 0) * 1.0f, (i % 3 == 2) * 1.0f, (i % 3 == 1) * 1.0f, (f32)dt};
             set_transform_orientation(curtf, curtf->orientation * math::orientation(axis_angle));
         }
     }

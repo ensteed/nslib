@@ -225,14 +225,14 @@ template<floating_pt T>
 matrix4<T> perspective_vfov(T fov, T aspect_ratio, T z_near, T z_far)
 {
     T z_range = z_far - z_near;
-    T height = 1 / math::tan((fov * T(0.5)) * TO_RADS);
-    matrix4<T> ret;
-    ret[0][0] = height * (1 / aspect_ratio);
+    T height = T(1) / math::tan((fov * T(0.5)) * TO_RADS);
+    matrix4<T> ret{};
+    ret[0][0] = height * (T(1) / aspect_ratio);
     ret[1][1] = height;
     ret[2][2] = (z_far + z_near) / z_range;
-    ret[2][3] = -2 * z_far * z_near / z_range;
-    ret[3][2] = 1;
-    ret[3][3] = 0;
+    ret[2][3] = T(-2) * z_far * z_near / z_range;
+    ret[3][2] = T(1);
+    ret[3][3] = T(0);
     return ret;
 }
 
@@ -245,7 +245,7 @@ matrix4<T> perspective_hfov(T fov_h_deg, T aspect_ratio, T z_near, T z_far)
     ret[0][0] = fx;
     ret[1][1] = fx * aspect_ratio; // fy = fx * (w/h)
     ret[2][2] = (z_far + z_near) / z_range;
-    ret[2][3] = (-T(2) * z_far * z_near) / z_range;
+    ret[2][3] = (T(-2) * z_far * z_near) / z_range;
     ret[3][2] = T(1);
     ret[3][3] = T(0);
     return ret;

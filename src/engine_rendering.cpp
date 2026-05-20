@@ -140,7 +140,11 @@ intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
     return success_count;
 }
 
-void update_materials(rmanifest *m, material_pool *mpool, texture_pool *tex_pool) {
+void update_materials(rmanifest *m, asset_cache *cg)
+{
+    auto mpool = get_asset_pool<material>(cg);
+    auto tex_pool = get_asset_pool<texture>(cg);
+
     // Update materials that need updating
     for (auto mat_iter = asset_pool_begin(mpool); is_valid(mat_iter); mat_iter = asset_pool_next(mpool, mat_iter)) {
         auto minfo = get_slot_item(&m->rndr->materials, mat_iter.item->rhndl);
@@ -163,26 +167,14 @@ void update_materials(rmanifest *m, material_pool *mpool, texture_pool *tex_pool
     }
 }
 
-void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
+void update_transforms(rmanifest *m, sim_region *sr)
 {
-    auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
-    auto tftbs = get_comp_tbl<transform>(&sr->cdb);
-    auto cam_tbl = get_comp_tbl<camera>(&sr->cdb);
-    auto mpool = get_asset_pool<material>(cg);
-    auto tex_pool = get_asset_pool<texture>(cg);
-    auto techpool = get_asset_pool<technique>(cg);
-    auto geompool = get_asset_pool<geometry>(cg);
+    transform_tbl *tf_tbl = get_comp_tbl<transform>(&sr->cdb);
+    for (u32 i = 0; i < tf_tbl->entries.size; ++i) {
+        transform *tf = &tf_tbl->entries[i];
+        idx_t tfind = get_comp_ind(tf, tf_tbl);
 
-    update_materials(m, mpool, tex_pool);
-
-    transform_tbl *tftb = get_comp_tbl<transform>(&sr->cdb);
-    for (u32 i = 0; i < sr->ents.size; ++i) {
-        transform *tf = get_comp<transform>(sr->ents[i].id, tftb);
-        static_mesh *sm = get_comp<static_mesh>(sr->ents[i].id, smtbl);
-        camera *cam = get_comp<camera>(sr->ents[i].id, cam_tbl);
-        idx_t tfind = get_comp_ind(tf, tftb);
-
-        if (test_flags(tf->flags, COMP_FLAG_DIRTY)) {
+        if (is_comp_dirty(*tf)) {
             tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
             tf->flags &= ~COMP_FLAG_DIRTY;
         }
@@ -190,48 +182,99 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, mater
         if (tf->rfif_dirty > 0) {
             tf->cached_prev = tf->cached;
             tf->cached = math::model_tform(tf->world_pos, tf->orientation, tf->scale);
-            if (cam) {
-                cam->view = math::inverse(tf->cached);
-                cam->proj_view = cam->proj * cam->view;
-            }
-
             instance_ssbo_data update_d{};
             update_d.model = tf->cached;
             update_d.prev_model = tf->cached_prev;
             update_instance_data(m, tfind, &update_d);
             --tf->rfif_dirty;
         }
+    }
+}
 
-        if (sm) {
-            geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
-            if (!is_valid(gref)) {
-                // TODO: Probably have a default mesh?
-                wlog("No geometry found for %s", ls(sr->ents[i].name));
-                continue;
+void update_cameras(rmanifest *m, sim_region *sr)
+{
+    camera_tbl *cam_tbl = get_comp_tbl<camera>(&sr->cdb);
+    transform_tbl *tf_tbl = get_comp_tbl<transform>(&sr->cdb);
+
+    for (u32 i = 0; i < cam_tbl->entries.size; ++i) {
+        camera *cam = &cam_tbl->entries[i];
+        auto tf = get_comp(cam->ent_id, tf_tbl);
+
+        if (is_comp_dirty(*cam)) {
+            if (cam->ptype == CAMERA_PROJ_TYPE_PERSPECTIVE) {
+                cam->proj = cam->fov_type == CAMERA_FOV_TYPE_VERTICAL
+                                ? math::perspective_vfov(cam->fov, cam->aspect, cam->near_far.x, cam->near_far.y)
+                                : math::perspective_hfov(cam->fov, cam->aspect, cam->near_far.x, cam->near_far.y);
             }
-            
-            for (u32 mi = 0; mi < sm->mat_mapping.size; ++mi) {
-                material_item_ref mref = find_asset<material>(mpool, sm->mat_mapping[mi].mat_id);
-                material *mat = is_valid(mref) ? mref.item : def_material;
+            else {
+                wlog("Not implemented");
+            }
+        }
 
-                for (u32 bpi = 0; bpi < mat->bp_techniques.size; ++bpi) {
-                    if (mat->bp_techniques[bpi].bpid == m->rbp.item->id) {
-                        technique_item_ref tref = find_asset<technique>(techpool, mat->bp_techniques[bpi].tech_id);
-                        asrt(is_valid(tref));
+        // We compute this on every frame - likely cheaper than looking up to see if each transform has a cam comp and
+        // marking it dirty if it does
+        cam->view = math::inverse(tf->cached);
+        cam->proj_view = cam->proj * cam->view;
+    }
+}
 
-                        mdraw_params dp{};
-                        dp.geom = gref.item->rhndl;
-                        dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
-                        dp.mat = mat->rhndl;
-                        dp.tech = tref.item->rhndl;
-                        dp.inst = tfind;
-                        asrt(tref.item->passes.size > 0);
-                        push_draw(m, dp);
-                    }
+void enqueue_draws(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
+{
+    auto tf_tbl = get_comp_tbl<transform>(&sr->cdb);
+    auto sm_tbl = get_comp_tbl<static_mesh>(&sr->cdb);
+    auto techpool = get_asset_pool<technique>(cg);
+    auto geompool = get_asset_pool<geometry>(cg);
+    auto mpool = get_asset_pool<material>(cg);
+
+    for (u32 i = 0; i < sm_tbl->entries.size; ++i) {
+        static_mesh *sm = &sm_tbl->entries[i];
+        transform *tf = get_comp(sm->ent_id, tf_tbl);
+        idx_t tfind = get_comp_ind(tf, tf_tbl);
+
+        geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
+        if (!is_valid(gref)) {
+            // TODO: Probably have a default mesh?
+            wlog("No geometry found for %s", ls(sr->ents[i].name));
+            continue;
+        }
+
+        for (u32 mi = 0; mi < sm->mat_mapping.size; ++mi) {
+            material_item_ref mref = find_asset<material>(mpool, sm->mat_mapping[mi].mat_id);
+            material *mat = is_valid(mref) ? mref.item : def_material;
+
+            for (u32 bpi = 0; bpi < mat->bp_techniques.size; ++bpi) {
+                if (mat->bp_techniques[bpi].bpid == m->rbp.item->id) {
+                    technique_item_ref tref = find_asset<technique>(techpool, mat->bp_techniques[bpi].tech_id);
+                    asrt(is_valid(tref));
+
+                    mdraw_params dp{};
+                    dp.geom = gref.item->rhndl;
+                    dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
+                    dp.mat = mat->rhndl;
+                    dp.tech = tref.item->rhndl;
+                    dp.inst = tfind;
+                    asrt(tref.item->passes.size > 0);
+                    push_draw(m, dp);
                 }
             }
         }
     }
+}
+
+void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
+{
+    // auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
+    // auto tftbs = get_comp_tbl<transform>(&sr->cdb);
+    // auto cam_tbl = get_comp_tbl<camera>(&sr->cdb);
+    // auto mpool = get_asset_pool<material>(cg);
+    // auto tex_pool = get_asset_pool<texture>(cg);
+    // auto techpool = get_asset_pool<technique>(cg);
+    // auto geompool = get_asset_pool<geometry>(cg);
+
+    update_materials(m, cg);
+    update_transforms(m, sr);
+    update_cameras(m, sr);
+    enqueue_draws(m, sr, cg, def_material);
 }
 
 u32 setup_geometry_stream_group(renderer *rndr)

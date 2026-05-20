@@ -3,6 +3,31 @@
 namespace nslib
 {
 
+void set_camera_fov(camera *cam, f32 fov, camera_fov_type ft)
+{
+    cam->fov = fov;
+    cam->fov_type = ft;
+    mark_comp_dirty(cam);
+}
+
+void set_camera_near_far(camera *cam, const vec2 &near_far)
+{
+    cam->near_far = near_far;
+    mark_comp_dirty(cam);
+}
+
+void set_camera_aspect(camera *cam, f32 ar)
+{
+    cam->aspect = ar;
+    mark_comp_dirty(cam);
+}
+
+void set_camera_proj_type(camera *cam, camera_proj_type pt)
+{
+    cam->ptype = pt;
+    mark_comp_dirty(cam);
+}
+
 void set_transform_pos(transform *tf, const vec3 &pos)
 {
     tf->world_pos = pos;
