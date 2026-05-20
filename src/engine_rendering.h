@@ -49,7 +49,7 @@ struct material_ssbo_data {
     idx_t tex_pool_idx;
     idx_t sampler_idx;
     idx_t tex_layer;
-    uint use_col;
+    u32 use_col;
     vec4 col;
 };
 
