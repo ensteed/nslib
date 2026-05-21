@@ -169,11 +169,11 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     set_input_trigger(&app->stack, "move-left", {move_left_action, app});
 
     set_keymap_entry(&app->global_km, KMCODE_MMOTION, 0, MBUTTON_MASK_MIDDLE, {"cam-turn"});
-
     set_keymap_entry(&app->movement_km, KMCODE_KEY_W, 0, 0, {"move-forward", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
     set_keymap_entry(&app->movement_km, KMCODE_KEY_S, 0, 0, {"move-back", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
     set_keymap_entry(&app->movement_km, KMCODE_KEY_D, 0, 0, {"move-right", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
     set_keymap_entry(&app->movement_km, KMCODE_KEY_A, 0, 0, {"move-left", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
+
 
     // Make our movement keymap not care about any modifiers at all - we always move no matter what
     app->movement_km.kmod_mask = KEYMOD_NONE;

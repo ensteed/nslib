@@ -111,12 +111,18 @@ entity *get_entity(u32 ent_id, sim_region *reg)
 bool remove_entity(u32 ent_id, sim_region *reg)
 {
     sizet ent_ind{};
+    
     auto rem = hmap_remove(&reg->entmap, ent_id, &ent_ind);
     if (!rem) {
         return rem;
     }
     asrt(ent_ind != INVALID_ID);
     asrt(ent_ind < reg->ents.size);
+    // Remove all components for this entity
+    for (u32 cti = 0; cti < reg->cdb.comp_tables.size; ++cti) {
+        reg->cdb.comp_tables[cti].rem_func(ent_id, &reg->cdb);
+    }
+    // Remove the entity
     if (arr_swap_remove(&reg->ents, ent_ind)) {
         if (ent_ind < reg->ents.size) {
             // Update the entry for this entity that has been swapped to have the correct index in to the entity array

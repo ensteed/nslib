@@ -104,8 +104,13 @@ struct comp_table
     hmap<u32, sizet> entc_hm;
 };
 
-struct comp_table_entry {
+struct comp_db;
+using remove_func = bool(u32 ent_id, comp_db *cdb);
+
+struct comp_table_entry
+{
     void *tbl;
+    remove_func *rem_func;
 };
 
 struct comp_db
@@ -152,6 +157,9 @@ void terminate_comp_tbl(comp_table<T> *tbl)
 }
 
 template<typename T>
+bool remove_comp(u32 ent_id, comp_db *cdb);
+
+template<typename T>
 comp_table<T> *add_comp_tbl(comp_db *cdb, sizet initial_capacity = 64)
 {
     if ((T::type_id + 1) > cdb->comp_tables.size) {
@@ -161,6 +169,7 @@ comp_table<T> *add_comp_tbl(comp_db *cdb, sizet initial_capacity = 64)
         auto ctbl = mem_calloc<comp_table<T>>(1, cdb->comp_tables.arena);
         init_comp_tbl(ctbl, cdb->comp_tables.arena, initial_capacity);
         cdb->comp_tables[T::type_id].tbl = ctbl;
+        cdb->comp_tables[T::type_id].rem_func = remove_comp<T>;
     }
     return (comp_table<T> *)cdb->comp_tables[T::type_id].tbl;
 }
@@ -240,7 +249,7 @@ template<typename T>
 T *get_comp(u32 ent_id, comp_db *cdb)
 {
     auto ctbl = get_comp_tbl<T>(cdb);
-    return get_comp<T>(ent_id, ctbl);
+    return get_comp(ent_id, ctbl);
 }
 
 template<typename T>
@@ -259,6 +268,35 @@ template<typename T>
 sizet get_comp_ind(const T *comp, const comp_db *cdb)
 {
     return get_comp_ind(comp, get_comp_tbl<T>(cdb));
+}
+
+template<typename T>
+bool remove_comp(u32 ent_id, comp_table<T> *ctbl)
+{
+    auto fiter = hmap_find(&ctbl->entc_hm, ent_id);
+    if (!fiter) return false;
+    if (arr_swap_remove(&ctbl->entries, fiter->val)) {
+        if (fiter->val < ctbl->entries.size) {
+            mark_comp_dirty(&ctbl->entries[fiter->val]);
+            hmap_set(&ctbl->entc_hm, ctbl->entries[fiter->val].ent_id, fiter->val);
+        }
+        hmap_erase(&ctbl->entc_hm, fiter);
+        return true;
+    }
+    return false;
+}
+
+template<typename T>
+bool remove_comp(u32 ent_id, comp_db *cdb)
+{
+    auto ctbl = get_comp_tbl<T>(cdb);
+    return remove_comp(ent_id, ctbl);
+}
+
+template<typename T>
+bool remove_comp(entity *ent)
+{
+    return remove_comp<T>(ent->id, ent->cdb);
 }
 
 template<typename T>
