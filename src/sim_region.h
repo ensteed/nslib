@@ -104,9 +104,13 @@ struct comp_table
     hmap<u32, sizet> entc_hm;
 };
 
+struct comp_table_entry {
+    void *tbl;
+};
+
 struct comp_db
 {
-    array<void *> comp_tables;
+    array<comp_table_entry> comp_tables;
 };
 
 struct entity
@@ -153,19 +157,19 @@ comp_table<T> *add_comp_tbl(comp_db *cdb, sizet initial_capacity = 64)
     if ((T::type_id + 1) > cdb->comp_tables.size) {
         arr_resize(&cdb->comp_tables, T::type_id + 1);
     }
-    if (!cdb->comp_tables[T::type_id]) {
+    if (!cdb->comp_tables[T::type_id].tbl) {
         auto ctbl = mem_calloc<comp_table<T>>(1, cdb->comp_tables.arena);
         init_comp_tbl(ctbl, cdb->comp_tables.arena, initial_capacity);
-        cdb->comp_tables[T::type_id] = ctbl;
+        cdb->comp_tables[T::type_id].tbl = ctbl;
     }
-    return (comp_table<T> *)cdb->comp_tables[T::type_id];
+    return (comp_table<T> *)cdb->comp_tables[T::type_id].tbl;
 }
 
 template<typename T>
 comp_table<T> *get_comp_tbl(comp_db *cdb)
 {
     if (T::type_id < cdb->comp_tables.size) {
-        return (comp_table<T> *)cdb->comp_tables[T::type_id];
+        return (comp_table<T> *)cdb->comp_tables[T::type_id].tbl;
     }
     return nullptr;
 }
@@ -174,7 +178,7 @@ template<typename T>
 const comp_table<T> *get_comp_tbl(const comp_db *cdb)
 {
     if (T::type_id < cdb->comp_tables.size) {
-        return (comp_table<T> *)cdb->comp_tables[T::type_id];
+        return (comp_table<T> *)cdb->comp_tables[T::type_id].tbl;
     }
     return nullptr;
 }
