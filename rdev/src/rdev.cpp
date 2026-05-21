@@ -119,10 +119,10 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     auto cam_comp = add_comp<camera>(cam);
     auto cam_tcomp = add_comp<transform>(cam);
 
-    set_camera_fov(cam_comp, 60.0f, CAMERA_FOV_TYPE_VERTICAL);
+    set_camera_fov(cam_comp, 90.0f, nslib::CAMERA_FOV_TYPE_HORIZONTAL);
     set_camera_near_far(cam_comp, {0.1f, 1000.0f});
     set_camera_aspect(cam_comp, 1000.0f / 800.0f);
-    set_camera_proj_type(cam_comp, CAMERA_PROJ_TYPE_ORTHO);
+    //set_camera_proj_type(cam_comp, CAMERA_PROJ_TYPE_ORTHO);
 
     auto cam_view = math::inverse(math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
     set_transform_orientation(cam_tcomp, math::orientation(cam_view));
@@ -148,11 +148,15 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        app->movement.y += (t.ev->key.action - 1) * (-2) + 1;
+        auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
+        f32 amnt = (t.ev->key.action - 1) * -2 + 1;
+        (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) ? app->movement.y += amnt : app->movement.y -= amnt;
     };
     auto move_back_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        app->movement.y -= (t.ev->key.action - 1) * (-2) + 1;
+        auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
+        f32 amnt = (t.ev->key.action - 1) * -2 + 1;
+        (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) ? app->movement.y -= amnt : app->movement.y += amnt;
     };
     auto move_right_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
@@ -163,18 +167,26 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         app->movement.x -= (t.ev->key.action - 1) * (-2) + 1;
     };
 
+    auto ortho_zoom_action = [](const input_trigger &t, void *data) {
+        auto app = (rdev_app_ctxt *)data;
+        auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
+        if (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) return;
+        set_camera_fov(cam, cam->fov * (1.0f - t.ev->mwheel.delta.y * 0.1f));
+    };
+
     set_input_trigger(&app->stack, "cam-turn", {cam_turn_func, app});
     set_input_trigger(&app->stack, "move-forward", {move_forward_action, app});
     set_input_trigger(&app->stack, "move-back", {move_back_action, app});
     set_input_trigger(&app->stack, "move-right", {move_right_action, app});
     set_input_trigger(&app->stack, "move-left", {move_left_action, app});
+    set_input_trigger(&app->stack, "ortho-zoom", {ortho_zoom_action, app});
 
     set_keymap_entry(&app->global_km, KMCODE_MMOTION, 0, MBUTTON_MASK_MIDDLE, {"cam-turn"});
+    set_keymap_entry(&app->global_km, KMCODE_MWHEEL, 0, 0, {"ortho-zoom"});
     set_keymap_entry(&app->movement_km, KMCODE_KEY_W, 0, 0, {"move-forward", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
     set_keymap_entry(&app->movement_km, KMCODE_KEY_S, 0, 0, {"move-back", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
     set_keymap_entry(&app->movement_km, KMCODE_KEY_D, 0, 0, {"move-right", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
     set_keymap_entry(&app->movement_km, KMCODE_KEY_A, 0, 0, {"move-left", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
-
 
     // Make our movement keymap not care about any modifiers at all - we always move no matter what
     app->movement_km.kmod_mask = KEYMOD_NONE;
@@ -413,13 +425,9 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     if (app->movement != svec2{}) {
         auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
         auto right = math::right_vec(cam_tform->orientation);
-        if (cam->ptype == CAMERA_PROJ_TYPE_ORTHO) {
-            set_transform_pos(cam_tform, cam_tform->world_pos + right * app->movement.x * (f32)dt * 10);
-            set_camera_fov(cam, cam->fov * (1.0f - app->movement.y * (f32)dt * 2.0f));
-        } else {
-            auto target = math::target_vec(cam_tform->orientation);
-            set_transform_pos(cam_tform, cam_tform->world_pos + (right * app->movement.x + target * app->movement.y) * (f32)dt * 10);
-        }
+        vec3 forward_or_up =
+            cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->orientation) : math::target_vec(cam_tform->orientation);
+        set_transform_pos(cam_tform, cam_tform->world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
