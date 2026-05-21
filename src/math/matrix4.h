@@ -214,10 +214,10 @@ matrix4<T> ortho(T left, T right, T top, T bottom, T nearz, T farz)
     T z = (farz + nearz) / p;
 
     matrix4<T> ret;
-    set_mat_column(&ret, 3, {-x, -y, -z, 1});
+    set_mat_column(&ret, 3, vector4<T>{-x, -y, -z, 1});
     ret[0][0] = 2 / w;
     ret[1][1] = 2 / h;
-    ret[2][2] = -2 / p;
+    ret[2][2] = 2 / p;
     return ret;
 }
 

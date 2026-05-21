@@ -207,7 +207,16 @@ void update_cameras(rmanifest *m, sim_region *sr)
                                 : math::perspective_hfov(cam->fov, cam->aspect, cam->near_far.x, cam->near_far.y);
             }
             else {
-                wlog("Not implemented");
+                f32 half_h, half_w;
+                if (cam->fov_type == CAMERA_FOV_TYPE_VERTICAL) {
+                    half_h = cam->fov * 0.5f;
+                    half_w = half_h * cam->aspect;
+                }
+                else {
+                    half_w = cam->fov * 0.5f;
+                    half_h = half_w / cam->aspect;
+                }
+                cam->proj = math::ortho(-half_w, half_w, half_h, -half_h, cam->near_far.x, cam->near_far.y);
             }
         }
 

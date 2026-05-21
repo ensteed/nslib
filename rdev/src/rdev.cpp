@@ -122,6 +122,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     set_camera_fov(cam_comp, 60.0f, CAMERA_FOV_TYPE_VERTICAL);
     set_camera_near_far(cam_comp, {0.1f, 1000.0f});
     set_camera_aspect(cam_comp, 1000.0f / 800.0f);
+    //set_camera_proj_type(cam_comp, CAMERA_PROJ_TYPE_ORTHO);
 
     auto cam_view = math::inverse(math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
     set_transform_orientation(cam_tcomp, math::orientation(cam_view));
