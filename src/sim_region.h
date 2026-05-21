@@ -75,6 +75,7 @@ enum camera_fov_type : u8
 struct camera
 {
     COMP(CAMERA)
+    // Degrees for perspective. For ortho, world-space size (half-height or half-width depending on fov_type) — change this to zoom in/out.
     f32 fov;
     f32 aspect;
     vec2 near_far;

@@ -413,8 +413,13 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     if (app->movement != svec2{}) {
         auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
         auto right = math::right_vec(cam_tform->orientation);
-        auto target = math::target_vec(cam_tform->orientation);
-        set_transform_pos(cam_tform, cam_tform->world_pos + (right * app->movement.x + target * app->movement.y) * dt * 10);
+        if (cam->ptype == CAMERA_PROJ_TYPE_ORTHO) {
+            set_transform_pos(cam_tform, cam_tform->world_pos + right * app->movement.x * (f32)dt * 10);
+            set_camera_fov(cam, cam->fov * (1.0f - app->movement.y * (f32)dt * 2.0f));
+        } else {
+            auto target = math::target_vec(cam_tform->orientation);
+            set_transform_pos(cam_tform, cam_tform->world_pos + (right * app->movement.x + target * app->movement.y) * (f32)dt * 10);
+        }
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
