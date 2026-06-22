@@ -510,7 +510,6 @@ bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_aren
     rtechnique_pass_desc *tmp_passes = mem_alloc<rtechnique_pass_desc>(scratch, tdesc.pass_count);
     for (u32 i = 0; i < tech->passes.size; ++i) {
         set_technique_pass_desc(&tmp_passes[i], tech->passes[i], sp, bp);
-        ++i;
     }
     tdesc.passes = tmp_passes;
     tech->rhndl = create_rtechnique(rndr, tdesc);

@@ -286,8 +286,8 @@ intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, r
 
 intern void create_geometry(geometry_pool *geom_pool, geometry **rect, geometry **cube)
 {
-    auto cube_geom = create_asset(geom_pool, "rect");
-    auto rect_geom = create_asset(geom_pool, "cube");
+    auto cube_geom = create_asset(geom_pool, "cube");
+    auto rect_geom = create_asset(geom_pool, "rect");
     make_unit_rect(rect_geom.item);
     make_unit_cube(cube_geom.item);
     *rect = rect_geom.item;
@@ -300,11 +300,11 @@ intern void create_textures(texture_pool *tex_pool)
     auto maria_face = create_asset(tex_pool, "maria-face");
     cstr err = load_texture(maria_face.item, "import/maria.png");
     if (err) {
-        wlog("Couldn't load texture: %s", ls(daniel_face.item->name), err);
+        wlog("Couldn't load texture: %s", ls(maria_face.item->name), err);
     }
     err = load_texture(daniel_face.item, "import/daniel.png");
     if (err) {
-        wlog("Couldn't load texture %s: %s", ls(maria_face.item->name), err);
+        wlog("Couldn't load texture %s: %s", ls(daniel_face.item->name), err);
     }
 }
 
