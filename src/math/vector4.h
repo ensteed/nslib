@@ -131,12 +131,10 @@ inline __m128 _sse_dp(const __m128 &left, const __m128 &right)
 #endif
 }
 
-template<>
 inline float dot(const vector4<float> &lhs, const vector4<float> &rhs)
 {
     return _mm_cvtss_f32(_sse_dp(lhs._v4, rhs._v4));
 }
-
 #endif
 
 } // namespace math
@@ -186,10 +184,10 @@ inline vector4<float> operator/(vector4<float> lhs, T rhs)
 #endif
 
 
-using i8vec4 = vector4<s8>;
-using i16vec4 = vector4<s16>;
-using ivec4 = vector4<s32>;
-using i64vec4 = vector4<s64>;
+using s8vec4 = vector4<s8>;
+using s16vec4 = vector4<s16>;
+using svec4 = vector4<s32>;
+using s64vec4 = vector4<s64>;
 using u8vec4 = vector4<u8>;
 using u16vec4 = vector4<u16>;
 using uvec4 = vector4<u32>;

@@ -13,8 +13,19 @@ set(NSLIB_VERSION_PATCH 0)
 
 set(NSLIB_TARGET_NAME noblesteed-${NSLIB_VERSION_MAJOR}.${NSLIB_VERSION_MINOR}.${NSLIB_VERSION_PATCH})
 set(NSLIB_SRC_DIR ${CMAKE_SOURCE_DIR}/src)
-set(SAMPLES_DIR ${CMAKE_SOURCE_DIR}/samples)
+set(TESTS_DIR ${CMAKE_SOURCE_DIR}/tests)
 set(DEPS_DIR ${CMAKE_SOURCE_DIR}/deps)
+
+message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
+message(STATUS "CXX Compiler: ${CMAKE_CXX_COMPILER}")
+
+if(EXISTS "/proc/device-tree/model")
+    file(READ "/proc/device-tree/model" DEVICE_MODEL)
+    if(DEVICE_MODEL MATCHES "Raspberry Pi")
+        message(STATUS "Building on ${DEVICE_MODEL}")
+        set(IS_RPI TRUE)
+    endif()
+endif()
 
 if(${CMAKE_BUILD_TYPE} STREQUAL Release)
   set(BUILD_DIR ${CMAKE_SOURCE_DIR}/build/release)
@@ -46,6 +57,8 @@ set_target_properties(${NSLIB_TARGET_NAME} PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY $<1:${CMAKE_BINARY_DIR}/lib>
   WINDOWS_EXPORT_ALL_SYMBOLS ON)
 target_compile_definitions(${NSLIB_TARGET_NAME} PUBLIC
+  USE_IMGUI
+  # PROFILING_ENABLED
   NSLIB_VERSION_MAJOR=${NSLIB_VERSION_MAJOR}
   NSLIB_VERSION_MINOR=${NSLIB_VERSION_MINOR}
   NSLIB_VERSION_PATCH=${NSLIB_VERSION_PATCH})
@@ -76,6 +89,8 @@ else() # Unix
   target_compile_options(${NSLIB_TARGET_NAME} PUBLIC -Wno-nullability-completeness)
   if(APPLE)
     message("Apple build detected")
+  elseif(IS_RPI)
+    message("R-pi build detected")
   else()
     message("Linux build detected")
     target_compile_options(${NSLIB_TARGET_NAME} PUBLIC -msse4.1)
@@ -83,8 +98,11 @@ else() # Unix
   endif()
 endif()
 
-# Add samples
-add_subdirectory(${SAMPLES_DIR})
+# Add tests
+add_subdirectory(${TESTS_DIR})
+
+# Add rdev
+add_subdirectory(${CMAKE_SOURCE_DIR}/rdev)
 
 
 # target_link_libraries(${TARGET_NAME} lib1 lib2 ... libn)

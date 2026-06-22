@@ -1,13 +1,12 @@
 #pragma once
 
 #include "archive_common.h"
-
-#include "rid.h"
 #include "containers/cjson.h"
 #include "containers/string.h"
 #include "containers/hset.h"
 #include "containers/hmap.h"
 #include "logging.h"
+#include "asset_id.h"
 
 #define js(p) str_cstr(to_json(p))
 
@@ -36,10 +35,10 @@ void terminate_jsa(json_archive *jsa);
 
 string jsa_to_json_string(const json_archive &jsa, bool pretty_format);
 
-inline void pack_unpack_begin(json_archive *ar, rid &id, const pack_var_info &vinfo)
+inline void pack_unpack_begin(json_archive *ar, asset_id &id, const pack_var_info &vinfo)
 {}
 
-inline void pack_unpack_end(json_archive *ar, rid &id, const pack_var_info &vinfo)
+inline void pack_unpack_end(json_archive *ar, asset_id &id, const pack_var_info &vinfo)
 {}
 
 // Special packing/unpacking for bool - the end and begin arithmetic functions are fine though
@@ -265,6 +264,32 @@ void pack_unpack(json_archive *ar, T (&val)[N], const pack_var_info &vinfo)
     }
 }
 
+
+template<sizet N>
+void pack_unpack_begin(json_archive *ar, char (&val)[N], const pack_var_info &vinfo)
+{
+}
+
+template<sizet N>
+void pack_unpack_end(json_archive *ar, char (&val)[N], const pack_var_info &vinfo)
+{
+}
+
+template<sizet N>
+void pack_unpack(json_archive *ar, char (&val)[N], const pack_var_info &vinfo)
+{
+    auto create_func = [](const void *val) -> json_obj * { return json_create_string((const char*)val); };
+    auto check_func = [](void *val, json_obj *item) -> bool {
+        if (item && json_is_string(item)) {
+            strcpy((char*)val, item->valuestring);
+            return true;
+        }
+        return false;
+    };
+    pack_unpack_helper(ar, val, vinfo, check_func, create_func);
+}
+
+
 // Static arrays
 template<class T, sizet N>
 void pack_unpack_begin(json_archive *ar, static_array<T, N> &val, const pack_var_info &vinfo)
@@ -457,7 +482,7 @@ void pack_unpack(json_archive *ar, hset<T> &val, const pack_var_info &vinfo)
         for (int i = 0; i < count; ++i) {
             T item;
             pup_var(ar, item, {});
-            hset_set(&val, item);
+            hset_insert(&val, item);
             ++ar->stack[frame_ind].cur_arr_ind;
         }
     }
@@ -499,14 +524,14 @@ void pack_unpack(json_archive *ar, hmap<string, T> &val, const pack_var_info &vi
 // Hashmaps can use the default begin/end functions as they will just be json objects with each member var name as a key
 // and member var value as a value. We have special cases for string convertable
 template<class T>
-void pack_unpack(json_archive *ar, hmap<rid, T> &val, const pack_var_info &vinfo)
+void pack_unpack(json_archive *ar, hmap<asset_id, T> &val, const pack_var_info &vinfo)
 {
     if (ar->opmode == archive_opmode::UNPACK) {
         jsa_stack_frame *cur_frame = arr_back(&ar->stack);
         asrt(cur_frame);
         auto obj = cur_frame->current->child;
         while (obj) {
-            auto key = make_rid(obj->string);
+            auto key = make_asset_id(obj->string);
             auto item = hmap_find_or_insert(&val, key);
             pup_var(ar, item->val, {obj->string});
             obj = obj->next;
@@ -515,7 +540,7 @@ void pack_unpack(json_archive *ar, hmap<rid, T> &val, const pack_var_info &vinfo
     else {
         auto iter = hmap_begin(&val);
         while (iter) {
-            pup_var(ar, iter->val, {str_cstr(iter->key.str)});
+            pup_var(ar, iter->val, {str_cstr(to_str(iter->key))});
             iter = hmap_next(&val, iter);
         }
     }

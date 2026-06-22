@@ -1,4 +1,4 @@
-*  Noble Steed Libraries (nslib)
+* Noble Steed Libraries (nslib)
 Collection of various libraries I've created and found useful over the years.
 
 * Download
@@ -8,9 +8,31 @@ git submodule init
 git submodule update
 
 * Install Dependencies
-** Vulkan
+
+** glslc and/or 
 #+begin_src bash
-sudo apt install libvulkan-dev vulkan-tools vulkan-validationlayers-dev spirv-tools
+sudo apt install glslc glslang-tools 
+#+end_src
+
+** SDL
+#+begin_src bash
+sudo apt update && sudo apt install -y \
+  libwayland-dev \
+  libx11-dev \
+  libxkbcommon-dev \
+  libegl1-mesa-dev \
+  libgles2-mesa-dev \
+  libdbus-1-dev \
+  libibus-1.0-dev \
+  libudev-dev
+#+end_src
+
+** Vulkan
+For linux/mac/windows, download SDK and follow directions.
+
+For RPI:
+#+begin_src bash
+sudo apt install libvulkan-dev vulkan-tools
 #+end_src
 
 * Build

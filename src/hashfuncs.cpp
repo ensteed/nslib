@@ -163,7 +163,7 @@ u64 murmurhash3(const void *key, sizet len, u32 seed)
     u32 c3 = 0x38b34ae5;
     u32 c4 = 0xa1e38b93;
     const u32 *blocks = (const u32 *)(data + nblocks * 16);
-    for (sizet i = -1*nblocks; i; i++) {
+    for (sizet i = -1 * nblocks; i; i++) {
         u32 k1 = blocks[i * 4 + 0];
         u32 k2 = blocks[i * 4 + 1];
         u32 k3 = blocks[i * 4 + 2];
@@ -277,11 +277,11 @@ u64 murmurhash3(const void *key, sizet len, u32 seed)
     return (((u64)h2) << 32) | h1;
 }
 
-#define XXH_PRIME_1 11400714785074694791ULL
-#define XXH_PRIME_2 14029467366897019727ULL
-#define XXH_PRIME_3 1609587929392839161ULL
-#define XXH_PRIME_4 9650029242287828579ULL
-#define XXH_PRIME_5 2870177450012600261ULL
+#define XXH_PRIME64_1 11400714785074694791ULL
+#define XXH_PRIME64_2 14029467366897019727ULL
+#define XXH_PRIME64_3 1609587929392839161ULL
+#define XXH_PRIME64_4 9650029242287828579ULL
+#define XXH_PRIME64_5 2870177450012600261ULL
 
 intern u64 XXH_read64(const void *memptr)
 {
@@ -297,12 +297,12 @@ intern u32 XXH_read32(const void *memptr)
     return val;
 }
 
-intern u64 XXH_rotl64(u64 x, sizet r)
+intern u64 XXH_rotl64(u64 x, int r)
 {
     return (x << r) | (x >> (64 - r));
 }
 
-u64 xxhash3(const void *data, sizet len, u64 seed)
+u64 xxh64(const void *data, size_t len, u64 seed)
 {
     const u8 *p = (const u8 *)data;
     const u8 *const end = p + len;
@@ -310,92 +310,168 @@ u64 xxhash3(const void *data, sizet len, u64 seed)
 
     if (len >= 32) {
         const u8 *const limit = end - 32;
-        u64 v1 = seed + XXH_PRIME_1 + XXH_PRIME_2;
-        u64 v2 = seed + XXH_PRIME_2;
+        u64 v1 = seed + XXH_PRIME64_1 + XXH_PRIME64_2;
+        u64 v2 = seed + XXH_PRIME64_2;
         u64 v3 = seed + 0;
-        u64 v4 = seed - XXH_PRIME_1;
+        u64 v4 = seed - XXH_PRIME64_1;
 
         do {
-            v1 += XXH_read64(p) * XXH_PRIME_2;
-            v1 = XXH_rotl64(v1, 31);
-            v1 *= XXH_PRIME_1;
+            v1 += XXH_read64(p) * XXH_PRIME64_2;
+            v1 = XXH_rotl64(v1, 31) * XXH_PRIME64_1;
+            p += 8;
 
-            v2 += XXH_read64(p + 8) * XXH_PRIME_2;
-            v2 = XXH_rotl64(v2, 31);
-            v2 *= XXH_PRIME_1;
+            v2 += XXH_read64(p) * XXH_PRIME64_2;
+            v2 = XXH_rotl64(v2, 31) * XXH_PRIME64_1;
+            p += 8;
 
-            v3 += XXH_read64(p + 16) * XXH_PRIME_2;
-            v3 = XXH_rotl64(v3, 31);
-            v3 *= XXH_PRIME_1;
+            v3 += XXH_read64(p) * XXH_PRIME64_2;
+            v3 = XXH_rotl64(v3, 31) * XXH_PRIME64_1;
+            p += 8;
 
-            v4 += XXH_read64(p + 24) * XXH_PRIME_2;
-            v4 = XXH_rotl64(v4, 31);
-            v4 *= XXH_PRIME_1;
-
-            p += 32;
+            v4 += XXH_read64(p) * XXH_PRIME64_2;
+            v4 = XXH_rotl64(v4, 31) * XXH_PRIME64_1;
+            p += 8;
         } while (p <= limit);
 
+        // This is the specific convergence logic for the 4 lanes
         h64 = XXH_rotl64(v1, 1) + XXH_rotl64(v2, 7) + XXH_rotl64(v3, 12) + XXH_rotl64(v4, 18);
 
-        v1 *= XXH_PRIME_2;
+        // Merge v1
+        v1 *= XXH_PRIME64_2;
         v1 = XXH_rotl64(v1, 31);
-        v1 *= XXH_PRIME_1;
+        v1 *= XXH_PRIME64_1;
         h64 ^= v1;
-        h64 = h64 * XXH_PRIME_1 + XXH_PRIME_4;
+        h64 = h64 * XXH_PRIME64_1 + XXH_PRIME64_4;
 
-        v2 *= XXH_PRIME_2;
+        // Merge v2
+        v2 *= XXH_PRIME64_2;
         v2 = XXH_rotl64(v2, 31);
-        v2 *= XXH_PRIME_1;
+        v2 *= XXH_PRIME64_1;
         h64 ^= v2;
-        h64 = h64 * XXH_PRIME_1 + XXH_PRIME_4;
+        h64 = h64 * XXH_PRIME64_1 + XXH_PRIME64_4;
 
-        v3 *= XXH_PRIME_2;
+        // Merge v3
+        v3 *= XXH_PRIME64_2;
         v3 = XXH_rotl64(v3, 31);
-        v3 *= XXH_PRIME_1;
+        v3 *= XXH_PRIME64_1;
         h64 ^= v3;
-        h64 = h64 * XXH_PRIME_1 + XXH_PRIME_4;
+        h64 = h64 * XXH_PRIME64_1 + XXH_PRIME64_4;
 
-        v4 *= XXH_PRIME_2;
+        // Merge v4
+        v4 *= XXH_PRIME64_2;
         v4 = XXH_rotl64(v4, 31);
-        v4 *= XXH_PRIME_1;
+        v4 *= XXH_PRIME64_1;
         h64 ^= v4;
-        h64 = h64 * XXH_PRIME_1 + XXH_PRIME_4;
+        h64 = h64 * XXH_PRIME64_1 + XXH_PRIME64_4;
     }
     else {
-        h64 = seed + XXH_PRIME_5;
+        h64 = seed + XXH_PRIME64_5;
     }
 
     h64 += (u64)len;
 
+    // Process remaining 8-byte chunks
     while (p + 8 <= end) {
         u64 k1 = XXH_read64(p);
-        k1 *= XXH_PRIME_2;
+        k1 *= XXH_PRIME64_2;
         k1 = XXH_rotl64(k1, 31);
-        k1 *= XXH_PRIME_1;
+        k1 *= XXH_PRIME64_1;
         h64 ^= k1;
-        h64 = XXH_rotl64(h64, 27) * XXH_PRIME_1 + XXH_PRIME_4;
+        h64 = XXH_rotl64(h64, 27) * XXH_PRIME64_1 + XXH_PRIME64_4;
         p += 8;
     }
 
+    // Process remaining 4-byte chunk
     if (p + 4 <= end) {
-        h64 ^= (u64)(XXH_read32(p)) * XXH_PRIME_1;
-        h64 = XXH_rotl64(h64, 23) * XXH_PRIME_2 + XXH_PRIME_3;
+        h64 ^= (u64)(XXH_read32(p))*XXH_PRIME64_1;
+        h64 = XXH_rotl64(h64, 23) * XXH_PRIME64_2 + XXH_PRIME64_3;
         p += 4;
     }
 
+    // Process remaining bytes
     while (p < end) {
-        h64 ^= (*p) * XXH_PRIME_5;
-        h64 = XXH_rotl64(h64, 11) * XXH_PRIME_1;
+        h64 ^= (*p) * XXH_PRIME64_5;
+        h64 = XXH_rotl64(h64, 11) * XXH_PRIME64_1;
         p++;
     }
 
+    // The Avalanche
     h64 ^= h64 >> 33;
-    h64 *= XXH_PRIME_2;
+    h64 *= XXH_PRIME64_2;
     h64 ^= h64 >> 29;
-    h64 *= XXH_PRIME_3;
+    h64 *= XXH_PRIME64_3;
     h64 ^= h64 >> 32;
 
     return h64;
+}
+
+// XXH3 Constants
+static const u64 XXH3_PRIME64_1 = 0x9E3779B185EBCA87ULL;
+static const u64 XXH3_PRIME64_2 = 0xC2B2AE3D27D4EB4FULL;
+static const u64 XXH3_PRIME64_3 = 0x165667B19E3779F9ULL;
+
+// A simplified 64-bit "secret" key (standard XXH3 uses a 192-byte secret,
+// but we can use a simplified version for a basic internal asset hash)
+static const u64 XXH3_SECRET[4] = {0xbe45453e28e3291dULL, 0x66b92c22c159a442ULL, 0x3af49fa2e9f0415cULL, 0x47e583c27633526cULL};
+
+inline u64 xxh3_mul128_fold64(u64 lhs, u64 rhs)
+{
+#if defined(_MSC_VER) && defined(_M_X64)
+    u64 high;
+    u64 low = _umul128(lhs, rhs, &high);
+    return low ^ high;
+#else
+    __uint128_t product = (__uint128_t)lhs * (__uint128_t)rhs;
+    return (u64)product ^ (u64)(product >> 64);
+#endif
+}
+
+u64 xxh3(const char *input, sizet len)
+{
+    u64 acc = len * XXH3_PRIME64_1;
+
+    // Process input in 16-byte chunks (Scalar version)
+    const char *ptr = input;
+    size_t remaining = len;
+
+    while (remaining >= 16) {
+        // Read 16 bytes and normalize path (simplified normalization here)
+        u64 lane1, lane2;
+        memcpy(&lane1, ptr, 8);
+        memcpy(&lane2, ptr + 8, 8);
+
+        acc ^= xxh3_mul128_fold64(lane1 ^ XXH3_SECRET[0], lane2 ^ XXH3_SECRET[1]);
+        acc *= XXH3_PRIME64_2;
+
+        ptr += 16;
+        remaining -= 16;
+    }
+
+    // Handle tail bytes
+    if (remaining > 0) {
+        u64 tail_lo = 0;
+        u64 tail_hi = 0;
+        sizet tail_lo_size = remaining;
+        if (tail_lo_size > sizeof(u64)) {
+            tail_lo_size = sizeof(u64);
+        }
+        memcpy(&tail_lo, ptr, tail_lo_size);
+        if (remaining > sizeof(u64)) {
+            sizet tail_hi_size = remaining - sizeof(u64);
+            memcpy(&tail_hi, ptr + sizeof(u64), tail_hi_size);
+        }
+        acc ^= xxh3_mul128_fold64(tail_lo ^ XXH3_SECRET[2], tail_hi ^ XXH3_SECRET[3]);
+        acc *= XXH3_PRIME64_3;
+    }
+
+    // Final avalanche
+    acc ^= acc >> 33;
+    acc *= XXH3_PRIME64_2;
+    acc ^= acc >> 29;
+    acc *= XXH3_PRIME64_3;
+    acc ^= acc >> 32;
+
+    return acc;
 }
 
 /*
@@ -469,7 +545,6 @@ void crc32(const void *key, sizet len, u32 seed, void *out)
     *(u32 *)out = crc;
 }
 
-
 u64 hash_ptr_sip(const void *data, sizet len, u64 seed0, u64 seed1)
 {
     return siphash((u8 *)data, len, seed0, seed1);
@@ -480,15 +555,34 @@ u64 hash_ptr_murmur(const void *data, sizet len, u64 seed0, u64)
     return murmurhash3(data, len, (u32)seed0);
 }
 
-u64 hash_ptr_xxhash3(const void *data, sizet len, u64 seed0, u64)
+u64 hash_ptr_xxh64(const void *data, sizet len, u64 seed0, u64 seed1)
 {
-    return xxhash3(data, len, seed0);
+    return xxh64(data, len, seed0);
 }
 
-u64 hash_type(const cstr &key, u64 seed0, u64 seed1)
+u64 hash_ptr_xxh3(const void *data, sizet len)
 {
-    u64 ret = hash_ptr_murmur(key, strlen(key), seed0, seed1);
-    return ret;
+    return xxh3((const char *)data, len);
+}
+
+u64 hash_type(const void *data, sizet sz)
+{
+    return hash_ptr_xxh3(data, sz);
+}
+
+u64 hash_type(const void *data, sizet sz, u64, u64)
+{
+    return hash_ptr_xxh3(data, sz);
+}
+
+u64 hash_type(const cstr &key, u64, u64)
+{
+    return xxh3(key, strlen(key));
+}
+
+u64 hash_type(const cstr &key)
+{
+    return xxh3(key, strlen(key));
 }
 
 } // namespace nslib

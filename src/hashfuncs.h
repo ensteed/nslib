@@ -43,7 +43,9 @@ u64 murmurhash3(const void *key, sizet len, u32 seed);
 //
 // xxHash3
 //-----------------------------------------------------------------------------
-u64 xxhash3(const void *data, sizet len, u64 seed);
+u64 xxh64(const void *data, sizet len, u64 seed);
+
+u64 xxh3(const char *input, sizet len);
 
 void crc32(const void *key, int len, u32 seed, void *out);
 
@@ -53,8 +55,14 @@ u64 hash_ptr_sip(const void *data, sizet len, u64 seed0, u64 seed1);
 // hashmap_murmur returns a hash value for `data` using Murmur3_86_128.
 u64 hash_ptr_murmur(const void *data, sizet len, u64 seed0, u64 seed1);
 
-// hashmap_xxhash3 returns a hash value for `data` using xxhash algorithm
-u64 hash_ptr_xxhash3(const void *data, sizet len, u64 seed0, u64 seed1);
+u64 hash_ptr_xxh64(const void *data, sizet len, u64 seed0, u64 seed1);
+
+u64 hash_ptr_xxh3(const void *data, sizet len);
+
+inline void hash_combine(u64 *h, u64 v)
+{
+    *h ^= v + 0x9e3779b97f4a7c15ull + (*h << 6) + (*h >> 2);
+} 
 
 // Hash strings
 
@@ -64,9 +72,19 @@ inline u64 hash_type(const T &key, u64, u64) {
     return (T)key;
 }
 
-u64 hash_type(const void*, u64, u64);
+template<integral T>
+inline u64 hash_type(const T &key) {
+    return (T)key;
+}
+
+u64 hash_type(const void*, sizet sz, u64, u64);
+
+u64 hash_type(const void*, sizet sz);
 
 u64 hash_type(const cstr&, u64, u64);
+
+u64 hash_type(const cstr&);
+
 
 
 } // namespace nslib

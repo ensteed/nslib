@@ -6,8 +6,8 @@
 
 namespace nslib::math
 {
-inline constexpr float PI = 3.14159265359f;
-inline constexpr float FLOAT_EPS = 0.001f;
+inline constexpr f32 PI = 3.14159265359f;
+inline constexpr f32 FLOAT_EPS = 0.001f;
 inline constexpr char PRINT_MAT_DELIMITER = '\n';
 inline constexpr char PRINT_MAT_START = '\n';
 inline constexpr char PRINT_MAT_END = '\n';
@@ -16,8 +16,8 @@ inline constexpr char PRINT_START_VEC = '[';
 inline constexpr char PRINT_END_VEC = ']';
 inline constexpr s8 ROUND_TO_DEC = 4;
 
-inline constexpr float TO_DEGREES = (180.0f / PI);
-inline constexpr float TO_RADS = (PI / 180.0f);
+inline constexpr f32 TO_DEGREES = (180.0f / PI);
+inline constexpr f32 TO_RADS = (PI / 180.0f);
 
 s8 count_digits(s32 number);
 
@@ -71,18 +71,18 @@ inline T rsqrt(T val)
 
 #if NOBLE_STEED_SIMD & NOBLE_STEED_USE_SSE
 #if NOBLE_STEED_SIMD & NOBLE_STEED_SSE_SQRT_BIT
-inline float sqrt(float val)
+inline f32 sqrt(f32 val)
 {
     return _mm_cvtss_f32(_mm_sqrt_ss(_mm_set_ss(val)));
 }
 #endif
-inline float rsqrt(float val)
+inline f32 rsqrt(f32 val)
 {
     return _mm_cvtss_f32(_mm_rsqrt_ss(_mm_set_ss(val)));
 }
 #endif
 
-float random_float(float high_ = 1.0f, float low_ = 0.0f);
+f32 random_float(f32 high_ = 1.0f, f32 low_ = 0.0f);
 
 double round_decimal(double to_round, s8 decimal_places);
 
@@ -100,8 +100,9 @@ auto convert_elements(const T &veca)
 {
     using other_type = typename T::template container_type<U>;
     other_type ret;
-    for (u8 i{0}; i < T::size_; ++i)
+    for (u8 i{0}; i < T::size_; ++i) {
         ret[i] = (U)veca[i];
+    }
     return ret;
 }
 
@@ -129,7 +130,7 @@ inline auto length(const T &veca)
 template<holds_integral T>
 inline auto length(const T &veca)
 {
-    return math::sqrt((float)length_sq(veca));
+    return math::sqrt((f32)length_sq(veca));
 }
 
 template<vec_or_quat_type T>
@@ -161,7 +162,7 @@ requires holds_integral<T>
 auto angle(const T &veca, const T &vecb)
 {
     auto dot_p = dot(veca, vecb);
-    float l = math::sqrt((float)(length_sq(veca) * length_sq(vecb)));
+    f32 l = math::sqrt((f32)(length_sq(veca) * length_sq(vecb)));
     if (l < FLOAT_EPS)
         return l;
     return math::acos(dot_p / l);
@@ -185,7 +186,7 @@ void project(T *a, const T &b)
     Type denom = math::dot(b, b);
     if (denom == 0)
         return;
-    *a = (math::dot(*a, b) / (float)denom) * b;
+    *a = (math::dot(*a, b) / (f32)denom) * b;
 }
 
 template<vec_type T>

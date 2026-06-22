@@ -69,6 +69,14 @@ struct vector3
 
         struct
         {
+            T w;
+            T h;
+            T layers;
+        };
+        
+
+        struct
+        {
             T rad;
             T theta;
             T phi;
@@ -106,15 +114,12 @@ namespace math
 {
 
 #if NOBLE_STEED_SIMD
-
-template<>
 inline float dot(const vector3<float> &lhs, const vector3<float> &rhs)
 {
     __m128 l = _mm_set_ps(0.0f, lhs.z, lhs.y, lhs.x);
     __m128 r = _mm_set_ps(0.0f, rhs.z, rhs.y, rhs.x);
     return _mm_cvtss_f32(_sse_dp(l, r));
 }
-
 #endif
 
 template<arithmetic_type T>
@@ -195,10 +200,10 @@ vector3<T> cartesian_to_spherical(const vector3<T> &cartesian)
 }
 } // namespace math
 
-using i8vec3 = vector3<s8>;
-using i16vec3 = vector3<s16>;
-using ivec3 = vector3<s32>;
-using i64vec3 = vector3<s64>;
+using s8vec3 = vector3<s8>;
+using s16vec3 = vector3<s16>;
+using svec3 = vector3<s32>;
+using s64vec3 = vector3<s64>;
 using u8vec3 = vector3<u8>;
 using u16vec3 = vector3<u16>;
 using uvec3 = vector3<u32>;

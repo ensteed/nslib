@@ -12,6 +12,16 @@
 namespace nslib
 {
 
+void *default_upstream_alloc_func(sizet size, void *)
+{
+    return platform_alloc(size);
+}
+
+void default_upstream_free_func(void *ptr, void *)
+{
+    platform_free(ptr);
+}
+
 intern mem_arena *g_fl_arena{};
 intern mem_arena *g_stack_arena{};
 intern mem_arena *g_frame_linear_arena{};
@@ -45,6 +55,22 @@ intern sizet calc_padding_with_header(sizet base_addr, sizet alignment, sizet he
     return padding;
 }
 
+intern b32 mul_overflow_sizet(const sizet &a, const sizet &b, sizet *out)
+{
+    if (a == 0 || b == 0) {
+        *out = 0;
+        return false;
+    }
+
+    sizet max_val = (sizet)-1;
+    if (a > (max_val / b)) {
+        return true;
+    }
+
+    *out = a * b;
+    return false;
+}
+
 intern void find_first(mem_free_list *mfl, sizet size, sizet alignment, sizet *padding, mem_node **prev_node, mem_node **found_node)
 {
     // Iterate list and return the first free block with a size >= than given size
@@ -68,18 +94,24 @@ intern void find_best(mem_free_list *mfl, sizet size, sizet alignment, sizet *pa
     // Iterate WHOLE list keeping a pointer to the best fit
     sizet smallest_diff = std::numeric_limits<sizet>::max();
     mem_node *best_block = nullptr;
+    mem_node *best_prev = nullptr;
+    sizet best_padding = 0;
     mem_node *it = mfl->free_list.head, *it_prev = nullptr;
     while (it != nullptr) {
-        *padding = calc_padding_with_header((sizet)it, alignment, sizeof(alloc_header));
-        sizet required_space = size + *padding;
+        sizet cur_padding = calc_padding_with_header((sizet)it, alignment, sizeof(alloc_header));
+        sizet required_space = size + cur_padding;
         if (it->data.block_size >= required_space && (it->data.block_size - required_space < smallest_diff)) {
             best_block = it;
+            best_prev = it_prev;
+            best_padding = cur_padding;
+            smallest_diff = it->data.block_size - required_space;
         }
         it_prev = it;
         it = it->next;
     }
-    *prev_node = it_prev;
+    *prev_node = best_prev;
     *found_node = best_block;
+    *padding = best_padding;
 }
 
 intern void find(mem_free_list *mfl, sizet size, sizet alignment, sizet *padding, mem_node **prev_node, mem_node **found_node)
@@ -114,9 +146,6 @@ intern void *mem_free_list_alloc(mem_arena *arena, sizet size, sizet alignment_p
         size = sizeof(mem_node);
     }
     sizet alignment(alignment_p);
-    if (alignment < DEFAULT_MIN_ALIGNMENT) {
-        alignment = DEFAULT_MIN_ALIGNMENT;
-    }
 
     // Padding is the amount of padding we need considering the passed in alignment and the size of our header address
     sizet padding{};
@@ -136,9 +165,13 @@ intern void *mem_free_list_alloc(mem_arena *arena, sizet size, sizet alignment_p
     // don't need
     sizet rest = affected_node->data.block_size - required_size;
 
-    // If the remainder is less than the header size, it is too small to be used as another block.. we need to add it to
-    // our required size or else
-    if (rest > (sizeof(alloc_header))) {
+    // Only split if the remainder can satisfy a minimal allocation (node + header with padding) - use default min
+    // alignment as that is the smallest alignment that can be used with this allocator (and the user size must at least
+    // be sizeof mem_node to be added to free list)
+    sizet min_padding = calc_padding_with_header((sizet)affected_node + required_size, DEFAULT_MIN_ALIGNMENT, sizeof(alloc_header));
+    sizet min_required = sizeof(mem_node) + min_padding;
+
+    if (rest >= min_required) {
         // We have to split the block into the data block and a free block of size 'rest'
         mem_node *new_free_node = (mem_node *)((sizet)affected_node + required_size);
         new_free_node->data.block_size = rest;
@@ -230,6 +263,9 @@ intern void mem_free_list_free(mem_arena *arena, void *ptr)
         it_prev = it;
         it = it->next;
     }
+    if (it == nullptr) {
+        ll_insert(&arena->mfl.free_list, it_prev, free_node);
+    }
 
     arena->used -= free_node->data.block_size;
 #if DO_DEBUG_FL_ALLOC
@@ -280,6 +316,7 @@ intern void *mem_stack_alloc(mem_arena *arena, sizet size, sizet alignment)
     sizet header_addr = next_addr - sizeof(stack_alloc_header);
     auto hdr = (stack_alloc_header *)header_addr;
     hdr->padding = padding;
+    hdr->block_size = padding + size;
 
     // Set the prev in the header so we can set the arena->mstack.prev when freeing this node
     hdr->prev = arena->mstack.prev;
@@ -327,7 +364,7 @@ intern void *mem_linear_alloc(mem_arena *arena, sizet size, sizet alignment)
     sizet block_addr = (sizet)arena->start + arena->mlin.offset;
 
     // Alignment is required. Find the next aligned memory address and update offset
-    if ((alignment != 0) && (((arena->mlin.offset + header_size) % alignment) != 0)) {
+    if ((alignment != 0) && (((block_addr + header_size) % alignment) != 0)) {
         padding = calc_padding_with_header(block_addr, alignment, header_size);
     }
 
@@ -358,6 +395,14 @@ intern void mem_linear_free(mem_arena *, void *)
 
 void *mem_alloc(sizet bytes, mem_arena *arena, sizet alignment)
 {
+    asrt(arena);
+    if (bytes == 0) {
+        return nullptr;
+    }
+    if (alignment < DEFAULT_MIN_ALIGNMENT) {
+        alignment = DEFAULT_MIN_ALIGNMENT;
+    }
+
     void *ret{nullptr};
     if (arena) {
         switch (arena->alloc_type) {
@@ -366,7 +411,7 @@ void *mem_alloc(sizet bytes, mem_arena *arena, sizet alignment)
             break;
         case (mem_alloc_type::POOL):
             bytes = (bytes >= sizeof(mem_node)) ? bytes : sizeof(mem_node);
-            asrt(bytes == arena->mpool.chunk_size);
+            asrt((bytes == arena->mpool.chunk_size) && "Requested byte size must match pool block size");
             ret = mem_pool_alloc(arena);
             break;
         case (mem_alloc_type::STACK):
@@ -377,49 +422,42 @@ void *mem_alloc(sizet bytes, mem_arena *arena, sizet alignment)
             break;
         }
     }
-    else {
-        ret = platform_alloc(bytes);
-    }
     return ret;
 }
 
 void *mem_calloc(sizet nmemb, sizet memb, mem_arena *arena, sizet alignment)
 {
-    sizet bytes = nmemb*memb;
+    sizet bytes{};
+    asrt(!mul_overflow_sizet(nmemb, memb, &bytes) && "Mult overflow");
     auto ret = mem_alloc(bytes, arena, alignment);
-    memset(ret, 0, bytes);
+    if (ret) {
+        memset(ret, 0, bytes);
+    }
     return ret;
 }
 
 void *mem_realloc(void *ptr, sizet new_size, mem_arena *arena, sizet alignment, bool free_ptr_after_copy)
 {
-    if (arena) {
-        // Create a new block and copy the mem to it from the old block (we use the lesser of the block sizes)
-        auto new_block = mem_alloc(new_size, arena, alignment);
-        sizet old_block_size{0};
+    asrt(arena);
+    // Create a new block and copy the mem to it from the old block (we use the lesser of the block sizes)
+    auto new_block = mem_alloc(new_size, arena, alignment);
+    if (ptr && new_block) {
+        sizet old_block_size = mem_block_user_size(ptr, arena);
+        sizet block_size{new_size};
+        asrt(old_block_size > 0);
 
-        if (ptr) {
-            old_block_size = mem_block_user_size(ptr, arena);
-            sizet block_size{new_size};
-            asrt(old_block_size > 0);
-
-            // We only want to copy the lesser size of the blocks bytes
-            if (new_size > old_block_size) {
-                block_size = old_block_size;
-            }
-
-            memcpy(new_block, ptr, block_size);
-            if (free_ptr_after_copy) {
-                mem_free(ptr, arena);
-            }
+        // We only want to copy the lesser size of the blocks bytes
+        if (new_size > old_block_size) {
+            block_size = old_block_size;
         }
-        return new_block;
-    }
-    else {
-        return platform_realloc(ptr, new_size);
-    }
-}
 
+        memcpy(new_block, ptr, block_size);
+    }
+    if (free_ptr_after_copy) {
+        mem_free(ptr, arena);
+    }
+    return new_block;
+}
 
 sizet mem_block_size(void *ptr, mem_arena *arena)
 {
@@ -428,6 +466,11 @@ sizet mem_block_size(void *ptr, mem_arena *arena)
     }
     else if (arena->alloc_type == mem_alloc_type::POOL) {
         return mem_pool_block_size(arena, ptr);
+    }
+    else if (arena->alloc_type == mem_alloc_type::STACK) {
+        auto header_addr = (sizet)ptr - sizeof(stack_alloc_header);
+        auto header = (stack_alloc_header *)header_addr;
+        return header->block_size;
     }
     return 0;
 }
@@ -440,15 +483,18 @@ sizet mem_block_user_size(void *ptr, mem_arena *arena)
     else if (arena->alloc_type == mem_alloc_type::POOL) {
         return mem_pool_block_size(arena, ptr);
     }
+    else if (arena->alloc_type == mem_alloc_type::STACK) {
+        auto header_addr = (sizet)ptr - sizeof(stack_alloc_header);
+        auto header = (stack_alloc_header *)header_addr;
+        return header->block_size - header->padding;
+    }
     return 0;
 }
 
 void mem_free(void *ptr, mem_arena *arena)
 {
-    if (!ptr)
-        return;
-
-    if (arena) {
+    asrt(arena);
+    if (ptr) {
         switch (arena->alloc_type) {
         case (mem_alloc_type::FREE_LIST):
             mem_free_list_free(arena, ptr);
@@ -464,18 +510,16 @@ void mem_free(void *ptr, mem_arena *arena)
             break;
         }
     }
-    else {
-        platform_free(ptr);
-    }
 }
 
-void mem_reset_arena(mem_arena *arena)
+void reset_arena(mem_arena *arena)
 {
     arena->used = 0;
     arena->peak = 0;
 
     switch (arena->alloc_type) {
     case (mem_alloc_type::POOL): {
+        arena->mpool.free_list.head = nullptr;
         // Create a linked-list with all free positions
         sizet nchunks = arena->total_size / arena->mpool.chunk_size;
         for (sizet i = 0; i < nchunks; ++i) {
@@ -494,6 +538,7 @@ void mem_reset_arena(mem_arena *arena)
     } break;
     case (mem_alloc_type::STACK): {
         arena->mstack.offset = 0;
+        arena->mstack.prev = nullptr;
     } break;
     case (mem_alloc_type::LINEAR): {
         arena->mlin.offset = 0;
@@ -501,72 +546,93 @@ void mem_reset_arena(mem_arena *arena)
     }
 }
 
-void mem_init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_arena *upstream, const char *name)
+void init_arena(mem_arena *arena,
+                sizet total_size,
+                mem_alloc_type mtype,
+                mem_arena *upstream,
+                const char *name,
+                bool skip_log,
+                const pf_alloc_funcs &pf_funcs)
 {
+    arena->pf_funcs.alloc = pf_funcs.alloc ? pf_funcs.alloc : default_upstream_alloc_func;
+    arena->pf_funcs.free = pf_funcs.free ? pf_funcs.free : default_upstream_free_func;
+    arena->pf_funcs.user = pf_funcs.user;
+
     arena->total_size = total_size;
     arena->alloc_type = mtype;
     arena->upstream_allocator = upstream;
-    arena->name = name;
-    ilog("Initializing %s (%s) arena with %lu available", name, mem_arena_type_str(arena->alloc_type), arena->total_size);
+    strncpy(arena->name, name, SMALL_STR_LEN-1);
+
+    if (!skip_log) {
+        ilog("Initializing %s (%s) arena with %lu available", name, arena_type_str(arena->alloc_type), arena->total_size);
+    }
 
     // Make sure user filled out a size before passsing in
     asrt(arena->total_size != 0);
 
     // If pool allocator total size must be multiple of chunk size, and chunk size must not be zero
     asrt(arena->alloc_type != mem_alloc_type::POOL ||
-           (((arena->total_size % arena->mpool.chunk_size) == 0) && (arena->mpool.chunk_size >= DEFAULT_MIN_ALIGNMENT)));
+         (((arena->total_size % arena->mpool.chunk_size) == 0) && (arena->mpool.chunk_size >= DEFAULT_MIN_ALIGNMENT)));
 
     if (!arena->upstream_allocator) {
-        arena->start = platform_alloc(arena->total_size);
+        arena->start = arena->pf_funcs.alloc(arena->total_size, arena->pf_funcs.user);
     }
     else {
         arena->start = mem_alloc(arena->total_size, arena->upstream_allocator);
     }
 
-    mem_reset_arena(arena);
+    reset_arena(arena);
 }
 
-void mem_init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name)
+void init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name);
+    init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name, skip_log, pf_funcs);
 }
 
-void mem_init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name)
+void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name);
+    init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name, skip_log, pf_funcs);
 }
 
-void mem_init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name)
+void init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
 {
-    mem_init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name);
+    init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name, skip_log, pf_funcs);
 }
 
-void mem_init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name)
+void init_pool_arena(mem_arena *arena,
+                     sizet chunk_size,
+                     sizet chunk_count,
+                     mem_arena *upstream,
+                     const char *name,
+                     bool skip_log,
+                     const pf_alloc_funcs &pf_funcs)
 {
     auto min_sz = sizeof(mem_node);
-    arena->mpool.chunk_size = chunk_size >= min_sz ? chunk_size : min_sz; 
-    mem_init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name);
+    arena->mpool.chunk_size = chunk_size >= min_sz ? chunk_size : min_sz;
+    init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, skip_log, pf_funcs);
 }
 
-void mem_terminate_arena(mem_arena *arena)
+void terminate_arena(mem_arena *arena, bool skip_log)
 {
-    ilog("Terminating %s (%s) arena with %lu used of %lu allocated and %lu peak",
-         arena->name,
-         mem_arena_type_str(arena->alloc_type),
-         arena->used,
-         arena->total_size,
-         arena->peak);
-    mem_reset_arena(arena);
+    if (!skip_log) {
+        ilog("Terminating %s (%s) arena with %lu used of %lu allocated and %lu peak",
+             arena->name,
+             arena_type_str(arena->alloc_type),
+             arena->used,
+             arena->total_size,
+             arena->peak);
+    }
+    reset_arena(arena);
     if (arena->upstream_allocator) {
         mem_free(arena->start, arena->upstream_allocator);
     }
     else {
-        platform_free(arena->start);
+        arena->pf_funcs.free(arena->start, arena->pf_funcs.user);
     }
     arena->start = nullptr;
 }
 
-const char *mem_arena_type_str(mem_alloc_type atype)
+const char *arena_type_str(mem_alloc_type atype)
 {
     switch (atype) {
     case (mem_alloc_type::FREE_LIST):
@@ -582,12 +648,12 @@ const char *mem_arena_type_str(mem_alloc_type atype)
     }
 }
 
-mem_arena *mem_global_arena()
+mem_arena *get_global_arena()
 {
     return g_fl_arena;
 }
 
-void mem_set_global_arena(mem_arena *arena)
+void set_global_arena(mem_arena *arena)
 {
     if (arena) {
         asrt(arena->alloc_type == mem_alloc_type::FREE_LIST);
@@ -595,12 +661,12 @@ void mem_set_global_arena(mem_arena *arena)
     g_fl_arena = arena;
 }
 
-mem_arena *mem_global_stack_arena()
+mem_arena *get_global_stack_arena()
 {
     return g_stack_arena;
 }
 
-void mem_set_global_stack_arena(mem_arena *arena)
+void set_global_stack_arena(mem_arena *arena)
 {
     if (arena) {
         asrt(arena->alloc_type == mem_alloc_type::STACK);
@@ -608,12 +674,12 @@ void mem_set_global_stack_arena(mem_arena *arena)
     g_stack_arena = arena;
 }
 
-mem_arena *mem_global_frame_lin_arena()
+mem_arena *get_global_frame_lin_arena()
 {
     return g_frame_linear_arena;
 }
 
-void mem_set_global_frame_lin_arena(mem_arena *arena)
+void set_global_frame_lin_arena(mem_arena *arena)
 {
     if (arena) {
         asrt(arena->alloc_type == mem_alloc_type::LINEAR);

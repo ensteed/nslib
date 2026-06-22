@@ -8,6 +8,7 @@ namespace nslib
 {
 void str_set_capacity(string *str, sizet new_cap)
 {
+    asrt(str);
     // We should never shrink to less than the static array size
     if (new_cap < string::SMALL_STR_SIZE) {
         new_cap = string::SMALL_STR_SIZE;
@@ -16,6 +17,9 @@ void str_set_capacity(string *str, sizet new_cap)
     sizet dyn_cap = 0;
     sizet prev_sz = str->buf.size;
     sizet prev_cap = str->buf.capacity;
+    sizet max_sz = new_cap > 0 ? new_cap - 1 : 0;
+    sizet new_sz = (prev_sz > max_sz) ? max_sz : prev_sz;
+    bool prev_small = (prev_cap <= string::SMALL_STR_SIZE) && !str->buf.data;
 
     if (new_cap > string::SMALL_STR_SIZE) {
         dyn_cap = new_cap;
@@ -23,28 +27,32 @@ void str_set_capacity(string *str, sizet new_cap)
     else if (str->buf.data) {
         // If the new capacity is within our small string range and the dynamic buffer is non null, copy the dynamic
         // buffer data to our small string
-        memcpy(str->sos, str->buf.data, (new_cap < prev_sz) ? new_cap : prev_sz);
+        memcpy(str->sos, str->buf.data, new_sz + 1);
     }
 
     // This will set allocate our dynamic buffer if new cap is over small string amount, otherwise it will free the
     // dynamic buffer mem
+    if (prev_small) {
+        str->buf.size = 0;
+    }
     arr_set_capacity(&str->buf, dyn_cap);
     str->buf.capacity = new_cap;
-    str->buf.size = (new_cap < prev_sz) ? new_cap : prev_sz;
+    str->buf.size = new_sz;
 
     // If we are moving from the small string buffer to a dynamic buffer, copy the small string
     // to the dynamic string buffer
     if (prev_cap <= string::SMALL_STR_SIZE && str->buf.data) {
-        memcpy(str->buf.data, str->sos, prev_sz);
+        memcpy(str->buf.data, str->sos, new_sz + 1);
     }
+    str_data(str)[str->buf.size] = 0;
 }
 
-string::string()
+string::string(mem_arena *arena)
 {
-    str_init(this);
+    str_init(this, arena);
 }
 
-string::string(const string &copy)
+string::string(const string &copy, mem_arena *arena)
 {
     str_init(this, copy.buf.arena);
     str_copy(this, copy);
@@ -52,9 +60,6 @@ string::string(const string &copy)
 
 string::string(const char *copy, mem_arena *arena)
 {
-    if (!arena) {
-        arena = mem_global_arena();
-    }
     str_init(this, arena);
     str_copy(this, copy);
 }
@@ -64,9 +69,9 @@ string::~string()
     str_terminate(this);
 }
 
-string &string::operator=(string rhs)
+string &string::operator=(const string& rhs)
 {
-    swap(this, &rhs);
+    str_copy(this, rhs);
     return *this;
 }
 
@@ -170,7 +175,7 @@ bool str_remove(string *str, sizet ind)
 
     // Copy the items back one spot
     for (sizet i = ind + 1; i < str_len(str); ++i) {
-        str[i - 1] = str[i];
+        (*str)[i - 1] = (*str)[i];
     }
 
     // Pop the last item
@@ -180,10 +185,23 @@ bool str_remove(string *str, sizet ind)
 
 sizet str_remove(string *str, char c)
 {
-    auto iter = std::remove(str_begin(str), str_end(str), c);
-    sizet ret = str_end(str) - iter;
-    str_resize(str, str_len(str) - ret);
-    return ret;
+    sizet removed{};
+    sizet write_ind{};
+    sizet len = str_len(str);
+    for (sizet read_ind = 0; read_ind < len; ++read_ind) {
+        char cur = (*str)[read_ind];
+        if (cur == c) {
+            ++removed;
+        }
+        else {
+            if (write_ind != read_ind) {
+                (*str)[write_ind] = cur;
+            }
+            ++write_ind;
+        }
+    }
+    str_resize(str, len - removed);
+    return removed;
 }
 
 bool str_empty(const string &str)
@@ -194,7 +212,9 @@ bool str_empty(const string &str)
 void swap(string *lhs, string *rhs)
 {
     for (sizet i = 0; i < string::SMALL_STR_SIZE; ++i) {
-        std::swap(lhs->sos[i], rhs->sos[i]);
+        auto tmp = lhs->sos[i];
+        lhs->sos[i] = rhs->sos[i];
+        rhs->sos[i] = tmp;
     }
     swap(&lhs->buf, &rhs->buf);
 }
@@ -219,7 +239,18 @@ string *str_copy(string *dest, const string &src)
 
 string *str_copy(string *dest, const char *src)
 {
-    str_resize(dest, strlen(src));
+    asrt(src);
+    return str_copy(dest, src, strlen(src));
+}
+
+string *str_copy(string *dest, const char *src, sizet src_len)
+{
+    asrt(dest);
+    if (!src || src_len == 0) {
+        str_resize(dest, 0);
+        return dest;
+    }
+    str_resize(dest, src_len);
     memcpy(str_data(dest), src, dest->buf.size);
     return dest;
 }
@@ -229,13 +260,14 @@ string *str_resize(string *str, sizet new_size, char c)
     sizet prev_size = str_len(str);
     str_resize(str, new_size);
     if (new_size > prev_size) {
-        memset((str_data(str) + prev_size), c, new_size);
+        memset((str_data(str) + prev_size), c, new_size - prev_size);
     }
     return str;
 }
 
 string *str_resize(string *str, sizet new_size)
 {
+    asrt(str);
     if (str_len(*str) == new_size) {
         return str;
     }
@@ -253,6 +285,7 @@ string *str_resize(string *str, sizet new_size)
         }
         str_set_capacity(str, cap);
     }
+    asrt(str_capacity(str) > new_size);
     str_data(str)[new_size] = 0;
     str->buf.size = new_size;
     return str;
@@ -283,6 +316,7 @@ string *str_shrink_to_fit(string *str)
 
 string *str_push_back(string *str, char c)
 {
+    asrt(str);
     sizet sz = str_len(str);
     str_resize(str, sz + 1);
     (*str)[sz] = c;
@@ -291,12 +325,17 @@ string *str_push_back(string *str, char c)
 
 string *str_pop_back(string *str)
 {
+    asrt(str);
+    if (str_len(str) == 0) {
+        return str;
+    }
     str_resize(str, str_len(str) - 1);
     return str;
 }
 
 string *str_append(string *str, const string &to_append)
 {
+    asrt(str);
     sizet sz = str_len(*str);
     sizet append_len = str_len(to_append);
     str_resize(str, sz + append_len);
@@ -306,10 +345,22 @@ string *str_append(string *str, const string &to_append)
 
 string *str_append(string *str, const char *to_append)
 {
+    asrt(str);
+    if (!to_append) {
+        return str;
+    }
+    return str_append(str, to_append, strlen(to_append));
+}
+
+string *str_append(string *str, const char *to_append, sizet to_append_len)
+{
+    asrt(str);
+    if (!to_append || to_append_len == 0) {
+        return str;
+    }
     sizet sz = str_len(*str);
-    sizet append_len = strlen(to_append);
-    str_resize(str, sz + append_len);
-    memcpy(str_data(str) + sz, to_append, append_len);
+    str_resize(str, sz + to_append_len);
+    memcpy(str_data(str) + sz, to_append, to_append_len);
     return str;
 }
 

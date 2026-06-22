@@ -6,7 +6,7 @@
 namespace nslib
 {
 
-#define to_cstr(...) str_cstr(to_str(__VA_ARGS__))
+#define ls(...) str_cstr(to_str(__VA_ARGS__))
 struct string
 {
     using iterator = char *;
@@ -16,12 +16,12 @@ struct string
     char sos[SMALL_STR_SIZE]{};
     array<char> buf{};
 
-    string();
-    string(const string &copy);
-    string(const char *copy, mem_arena *arena = nullptr);
+    string(mem_arena *arena = get_global_arena());
+    string(const string &copy, mem_arena *arena = get_global_arena());
+    string(const char *copy, mem_arena *arena = get_global_arena());
     ~string();
 
-    string &operator=(string rhs);
+    string &operator=(const string &rhs);
     string &operator+=(const string &rhs);
     const char &operator[](sizet ind) const;
     char &operator[](sizet ind);
@@ -75,7 +75,7 @@ inline sizet str_capacity(const string *str)
 
 void swap(string *lhs, string *rhs);
 
-void str_init(string *str, mem_arena *arena = mem_global_arena());
+void str_init(string *str, mem_arena *arena = get_global_arena());
 
 void str_terminate(string *str);
 
@@ -94,6 +94,8 @@ bool str_empty(const string &str);
 string *str_copy(string *dest, const string &src);
 
 string *str_copy(string *dest, const char *src);
+
+string *str_copy(string *dest, const char *src, sizet src_len);
 
 string *str_resize(string *str, sizet new_size, char c);
 
@@ -121,10 +123,12 @@ string *str_append(string *str, const string &to_append);
 
 string *str_append(string *str, const char *to_append);
 
+string *str_append(string *str, const char *to_append, sizet to_append_len);
+
 template<class... Args>
 string *str_printf(string *dest, const char *format_txt, Args &&...args)
 {
-    sizet needed_space = snprintf(nullptr, 0, format_txt, std::forward<Args>(args)...);
+    sizet needed_space = snprintf(nullptr, 0, format_txt, static_cast<Args &&>(args)...);
     sizet sz = str_len(*dest);
     str_resize(dest, sz + needed_space);
     snprintf(str_data(dest) + sz, needed_space + 1, format_txt, args...);
@@ -134,20 +138,20 @@ string *str_printf(string *dest, const char *format_txt, Args &&...args)
 template<class... Args>
 void str_scanf(const char* src, const char *format_txt, Args &&...args)
 {
-    sscanf(src, format_txt, std::forward<Args>(args)...);
+    sscanf(src, format_txt, static_cast<Args &&>(args)...);
 }
 
 template<class... Args>
 void str_scanf(const string &src, const char *format_txt, Args &&...args)
 {
-    str_scanf(str_cstr(src), format_txt, std::forward<Args>(args)...);
+    str_scanf(str_cstr(src), format_txt, static_cast<Args &&>(args)...);
 }
 
 template<class... Args>
 string to_str(const char *format_txt, Args &&...args)
 {
     string ret{};
-    sizet needed_space = snprintf(nullptr, 0, format_txt, std::forward<Args>(args)...);
+    sizet needed_space = snprintf(nullptr, 0, format_txt, static_cast<Args &&>(args)...);
     sizet sz = str_len(ret);
     str_resize(&ret, sz + needed_space);
     snprintf(str_data(&ret) + sz, needed_space + 1, format_txt, args...);
@@ -233,18 +237,18 @@ void pack_unpack(ArchiveT *ar, string &val, const pack_var_info &vinfo)
     pup_var(ar, size, {"size"});
     str_resize(&val, size);
     for (sizet i = 0; i < size; ++i) {
-        pup_var(ar, val[i], {to_cstr("[%d]", i)});
+        pup_var(ar, val[i], {ls("[%d]", i)});
     }
 }
 
-// We have to put our array func here rather than in array because of the to_cstr call
+// We have to put our array func here rather than in array because of the ls call
 template<class ArchiveT, class T>
 void pack_unpack(ArchiveT *ar, array<T> &val, const pack_var_info &vinfo)
 {
     pup_var(ar, val.size, {"size"});
     arr_resize(&val, val.size);
     for (int i = 0; i < val.size; ++i) {
-        pup_var(ar, val[i], {to_cstr("[%d]", i)});
+        pup_var(ar, val[i], {ls("[%d]", i)});
     }
 }
 

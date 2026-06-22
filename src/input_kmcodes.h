@@ -271,22 +271,41 @@ enum input_kmcode : u16
     KMCODE_KEY_RHYPER             // Extended key Right Hyper
 };
 
+#define SDL_KMOD_NONE   0x0000u /**< no modifier is applicable. */
+#define SDL_KMOD_LSHIFT 0x0001u /**< the left Shift key is down. */
+#define SDL_KMOD_RSHIFT 0x0002u /**< the right Shift key is down. */
+#define SDL_KMOD_LEVEL5 0x0004u /**< the Level 5 Shift key is down. */
+#define SDL_KMOD_LCTRL  0x0040u /**< the left Ctrl (Control) key is down. */
+#define SDL_KMOD_RCTRL  0x0080u /**< the right Ctrl (Control) key is down. */
+#define SDL_KMOD_LALT   0x0100u /**< the left Alt key is down. */
+#define SDL_KMOD_RALT   0x0200u /**< the right Alt key is down. */
+#define SDL_KMOD_LGUI   0x0400u /**< the left GUI key (often the Windows key) is down. */
+#define SDL_KMOD_RGUI   0x0800u /**< the right GUI key (often the Windows key) is down. */
+#define SDL_KMOD_NUM    0x1000u /**< the Num Lock key (may be located on an extended keypad) is down. */
+#define SDL_KMOD_CAPS   0x2000u /**< the Caps Lock key is down. */
+#define SDL_KMOD_MODE   0x4000u /**< the !AltGr key is down. */
+#define SDL_KMOD_SCROLL 0x8000u /**< the Scroll Lock key is down. */
+#define SDL_KMOD_CTRL   (SDL_KMOD_LCTRL | SDL_KMOD_RCTRL)   /**< Any Ctrl key is down. */
+#define SDL_KMOD_SHIFT  (SDL_KMOD_LSHIFT | SDL_KMOD_RSHIFT) /**< Any Shift key is down. */
+#define SDL_KMOD_ALT    (SDL_KMOD_LALT | SDL_KMOD_RALT)     /**< Any Alt key is down. */
+#define SDL_KMOD_GUI    (SDL_KMOD_LGUI | SDL_KMOD_RGUI)     /**< Any GUI key is down. */
+
 // Modifier Masks
 enum keymod : u16
 {
     KEYMOD_NONE,
-    KEYMOD_LSHIFT = 1u << 0,
-    KEYMOD_RSHIFT = 1u << 1,
-    KEYMOD_LEVEL5 = 1u << 2,
-    KEYMOD_LCTRL = 1u << 3,
-    KEYMOD_RCTRL = 1u << 4,
-    KEYMOD_LALT = 1u << 5,
-    KEYMOD_RALT = 1u << 6,
-    KEYMOD_LGUI = 1u << 7,
-    KEYMOD_RGUI = 1u << 8,
-    KEYMOD_NUM = 1u << 9,
-    KEYMOD_CAPS = 1u << 10,
-    KEYMOD_MODE = 1u << 11,
+    KEYMOD_LSHIFT = 0x0001u,
+    KEYMOD_RSHIFT = 0x0002u,
+    KEYMOD_LEVEL5 = 0x0004u,
+    KEYMOD_LCTRL = 0x0040u,
+    KEYMOD_RCTRL = 0x0080u,
+    KEYMOD_LALT = 0x0100u,
+    KEYMOD_RALT = 0x0200u,
+    KEYMOD_LGUI = 0x0400u,
+    KEYMOD_RGUI = 0x0800u,
+    KEYMOD_NUM = 0x1000u,
+    KEYMOD_CAPS = 0x2000u,
+    KEYMOD_MODE = 0x4000u,
     KEYMOD_CTRL = KEYMOD_LCTRL | KEYMOD_RCTRL,
     KEYMOD_SHIFT = KEYMOD_LSHIFT | KEYMOD_RSHIFT,
     KEYMOD_ALT = KEYMOD_LALT | KEYMOD_RALT,

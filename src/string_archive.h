@@ -1,7 +1,7 @@
 #pragma once
 
+#include "asset_common.h"
 #include "archive_common.h"
-#include "rid.h"
 #include "containers/string.h"
 #include "containers/hmap.h"
 #include "containers/hset.h"
@@ -59,8 +59,8 @@ void pack_unpack_end(string_archive *ar, string &, const pack_var_info &vinfo);
 void pack_unpack(string_archive *ar, string &val, const pack_var_info &vinfo);
 
 // Make rids not register as their own object (we only pup the str member)
-inline void pack_unpack_begin(string_archive *ar, rid &id, const pack_var_info &vinfo) {}
-inline void pack_unpack_end(string_archive *ar, rid &id, const pack_var_info &vinfo) {}
+inline void pack_unpack_begin(string_archive *ar, asset_id &id, const pack_var_info &vinfo) {}
+inline void pack_unpack_end(string_archive *ar, asset_id &id, const pack_var_info &vinfo) {}
 
 // Static arrays (actual ones)
 template<class T, sizet N>
@@ -158,18 +158,18 @@ void pack_unpack(string_archive *ar, hmap<string, T> &val, const pack_var_info &
 {
     auto iter = hmap_begin(&val);
     while (iter) {
-        pup_var(ar, iter->val, {str_cstr(iter->key)});
+        pup_var(ar, iter->val, {ls(iter->key)});
         iter = hmap_next(&val, iter);
     }
 }
 
 // Hashmap with rid key
 template<class T>
-void pack_unpack(string_archive *ar, hmap<rid, T> &val, const pack_var_info &vinfo)
+void pack_unpack(string_archive *ar, hmap<asset_id, T> &val, const pack_var_info &vinfo)
 {
     auto iter = hmap_begin(&val);
     while (iter) {
-        pup_var(ar, iter->val, {str_cstr(iter->key.str)});
+        pup_var(ar, iter->val, {ls(iter->key)});
         iter = hmap_next(&val, iter);
     }
 }
@@ -180,7 +180,7 @@ void pack_unpack(string_archive *ar, hmap<K, T> &val, const pack_var_info &vinfo
 {
     auto iter = hmap_begin(&val);
     while (iter) {
-        pup_var(ar, iter->val, {to_cstr(iter->key)});
+        pup_var(ar, iter->val, {ls(iter->key)});
         iter = hmap_next(&val, iter);
     }
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "containers/linked_list.h"
 #include "containers/string.h"
 #include "containers/hmap.h"
 #include "input_kmcodes.h"
@@ -108,14 +107,8 @@ bool add_keymap_entry(input_keymap *km, input_kmcode kmcode, u16 keymods, u8 mbu
 
 // Find keymap entry by key and return it - return null if no match is found
 input_keymap_entry *find_keymap_entry(input_keymap *km, u32 id);
-
-// Find keymap entry by key and return it - return null if no match is found
 const input_keymap_entry *find_keymap_entry(const input_keymap *km, u32 id);
-
-// Find the keymap entry with name and return it - return null if no match is found
 input_keymap_entry *find_keymap_entry(input_keymap *km, const char *name);
-
-// Find the keymap entry with name and return it - return null if no match is found
 const input_keymap_entry *find_keymap_entry(const input_keymap *km, const char *name);
 
 // Remove a keymap entry - returns true if removed
@@ -148,10 +141,10 @@ void init_keymap_stack(input_keymap_stack *stack, mem_arena *arena);
 void terminate_keymap_stack(input_keymap_stack *stack);
 
 // Add a trigger func under key "name". If one exists return false, otherwise return true.
-bool add_input_trigger_func(input_keymap_stack *stack, const char *name, const input_trigger_cb &cb);
+bool add_input_trigger(input_keymap_stack *stack, const char *name, const input_trigger_cb &cb);
 // Set the trigger func at "name" overwriting it if it exists.
-void set_input_trigger_func(input_keymap_stack *stack, const char *name, const input_trigger_cb &cb);
+void set_input_trigger(input_keymap_stack *stack, const char *name, const input_trigger_cb &cb);
 // Remove the trigger func entry under "name". Returns true if one was found/removed.
-bool remove_input_trigger_func(input_keymap_stack *stack, const char *name);
+bool remove_input_trigger(input_keymap_stack *stack, const char *name);
 
 } // namespace nslib

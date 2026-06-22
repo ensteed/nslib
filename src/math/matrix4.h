@@ -211,30 +211,45 @@ matrix4<T> ortho(T left, T right, T top, T bottom, T nearz, T farz)
 
     T x = (right + left) / w;
     T y = (top + bottom) / h;
-    T z = (farz + nearz) / p;
 
     matrix4<T> ret;
-    set_mat_column(&ret, 3, {-x, -y, -z, 1});
+    set_mat_column(&ret, 3, vector4<T>{-x, -y, -nearz / p, 1});
     ret[0][0] = 2 / w;
     ret[1][1] = 2 / h;
-    ret[2][2] = -2 / p;
+    ret[2][2] = 1 / p;
     return ret;
 }
 
 template<floating_pt T>
-matrix4<T> perspective(T fov, T aspect_ratio, T z_near, T z_far)
+matrix4<T> perspective_vfov(T fov, T aspect_ratio, T z_near, T z_far)
 {
     T z_range = z_far - z_near;
-    T height = 1 / math::tan((fov * T(0.5)) * TO_RADS);
-    matrix4<T> ret;
-    ret[0][0] = height * (1 / aspect_ratio);
+    T height = T(1) / math::tan((fov * T(0.5)) * TO_RADS);
+    matrix4<T> ret{};
+    ret[0][0] = height * (T(1) / aspect_ratio);
     ret[1][1] = height;
-    ret[2][2] = (z_far + z_near) / z_range;
-    ret[2][3] = -2 * z_far * z_near / z_range;
-    ret[3][2] = 1;
-    ret[3][3] = 0;
+    ret[2][2] = z_far / z_range;
+    ret[2][3] = -z_far * z_near / z_range;
+    ret[3][2] = T(1);
+    ret[3][3] = T(0);
     return ret;
 }
+
+template<floating_pt T>
+matrix4<T> perspective_hfov(T fov_h_deg, T aspect_ratio, T z_near, T z_far)
+{
+    const T z_range = z_far - z_near;
+    const T fx = T(1) / math::tan((fov_h_deg * T(0.5)) * TO_RADS);
+    matrix4<T> ret{};
+    ret[0][0] = fx;
+    ret[1][1] = fx * aspect_ratio; // fy = fx * (w/h)
+    ret[2][2] = z_far / z_range;
+    ret[2][3] = -z_far * z_near / z_range;
+    ret[3][2] = T(1);
+    ret[3][3] = T(0);
+    return ret;
+}
+
 
 template<floating_pt T>
 matrix4<T> look_at(const vector3<T> &eye_pos, const vector3<T> &target_pos, const vector3<T> &up_dir = {0, 1, 0})
@@ -681,10 +696,10 @@ inline matrix3<float> operator-(const matrix3<float> &lhs, const matrix3<float> 
 
 #endif
 
-using i8mat4 = matrix4<s8>;
-using i16mat4 = matrix4<s16>;
-using imat4 = matrix4<s32>;
-using i64mat4 = matrix4<s64>;
+using s8mat4 = matrix4<s8>;
+using s16mat4 = matrix4<s16>;
+using smat4 = matrix4<s32>;
+using s64mat4 = matrix4<s64>;
 using u8mat4 = matrix4<u8>;
 using u16mat4 = matrix4<u16>;
 using umat4 = matrix4<u32>;

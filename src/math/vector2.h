@@ -66,14 +66,12 @@ struct is_vec<vector2<U>>
 namespace math
 {
 #if NOBLE_STEED_SIMD
-template<>
 inline float dot(const vector2<float> &lhs, const vector2<float> &rhs)
 {
     __m128 l = _mm_set_ps(0.0f, 0.0f, lhs.y, lhs.x);
     __m128 r = _mm_set_ps(0.0f, 0.0f, rhs.y, rhs.x);
     return _mm_cvtss_f32(_sse_dp(l, r));
 }
-
 #endif
 
 template<floating_pt T>
@@ -97,10 +95,10 @@ vector2<T> cartesian_to_polar(const vector2<T> &cartesian)
 } // namespace math
 
 // Math typedefs
-using i8vec2 = vector2<s8>;
-using i16vec2 = vector2<s16>;
-using ivec2 = vector2<s32>;
-using i64vec2 = vector2<s64>;
+using s8vec2 = vector2<s8>;
+using s16vec2 = vector2<s16>;
+using svec2 = vector2<s32>;
+using s64vec2 = vector2<s64>;
 using u8vec2 = vector2<u8>;
 using u16vec2 = vector2<u16>;
 using uvec2 = vector2<u32>;

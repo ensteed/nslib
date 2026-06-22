@@ -7,5 +7,6 @@ CMakeLists.txt.user
 .cache
 .dir-locals.el
 .emacs
+.envrc
 .projectile
 nohup.out
