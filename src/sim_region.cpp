@@ -30,19 +30,19 @@ void set_camera_proj_type(camera *cam, camera_proj_type pt)
 
 void set_transform_pos(transform *tf, const vec3 &pos)
 {
-    tf->world_pos = pos;
+    tf->current.world_pos = pos;
     mark_comp_dirty(tf);
 }
 
 void set_transform_orientation(transform *tf, const quat &q)
 {
-    tf->orientation = q;
+    tf->current.orientation = q;
     mark_comp_dirty(tf);
 }
 
 void set_transform_scale(transform *tf, const vec3 &s)
 {
-    tf->scale = s;
+    tf->current.scale = s;
     mark_comp_dirty(tf);
 }
 

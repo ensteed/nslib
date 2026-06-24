@@ -122,7 +122,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     set_camera_fov(cam_comp, 90.0f, nslib::CAMERA_FOV_TYPE_HORIZONTAL);
     set_camera_near_far(cam_comp, {0.1f, 1000.0f});
     set_camera_aspect(cam_comp, 1000.0f / 800.0f);
-    //set_camera_proj_type(cam_comp, CAMERA_PROJ_TYPE_ORTHO);
+    // set_camera_proj_type(cam_comp, CAMERA_PROJ_TYPE_ORTHO);
 
     auto cam_view = math::inverse(math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
     set_transform_orientation(cam_tcomp, math::orientation(cam_view));
@@ -139,11 +139,11 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
         auto delta = t.ev->mmotion.norm_delta;
 
-        vec3 right = math::right_vec(camt->orientation);
+        vec3 right = math::right_vec(camt->current.orientation);
         f32 factor = 4;
         vec4 horizontal = {right, -(f32)delta.y * factor};
         vec4 vertical = {{0, 0, 1}, (f32)delta.x * factor};
-        set_transform_orientation(camt, math::orientation(vertical) * math::orientation(horizontal) * camt->orientation);
+        set_transform_orientation(camt, math::orientation(vertical) * math::orientation(horizontal) * camt->current.orientation);
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
@@ -424,10 +424,11 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
     if (app->movement != svec2{}) {
         auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
-        auto right = math::right_vec(cam_tform->orientation);
-        vec3 forward_or_up =
-            cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->orientation) : math::target_vec(cam_tform->orientation);
-        set_transform_pos(cam_tform, cam_tform->world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
+        auto right = math::right_vec(cam_tform->current.orientation);
+        vec3 forward_or_up = cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->current.orientation)
+                                                                  : math::target_vec(cam_tform->current.orientation);
+        set_transform_pos(cam_tform,
+                          cam_tform->current.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
@@ -439,7 +440,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
         auto curtf = &tform_tbl->entries[i];
         if (curtf->ent_id != app->cam_id) {
             vec4 axis_angle{(i % 3 == 0) * 1.0f, (i % 3 == 2) * 1.0f, (i % 3 == 1) * 1.0f, (f32)dt};
-            set_transform_orientation(curtf, curtf->orientation * math::orientation(axis_angle));
+            set_transform_orientation(curtf, curtf->current.orientation * math::orientation(axis_angle));
         }
     }
 }
