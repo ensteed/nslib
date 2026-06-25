@@ -180,11 +180,9 @@ void update_transforms(rmanifest *m, sim_region *sr)
         }
 
         if (tf->rfif_dirty > 0) {
-            tf->cached_prev = tf->cached;
-            tf->cached = math::model_tform(tf->world_pos, tf->orientation, tf->scale);
+            tf->cached = math::model_tform(tf->current.world_pos, tf->current.orientation, tf->current.scale);
             instance_ssbo_data update_d{};
             update_d.model = tf->cached;
-            update_d.prev_model = tf->cached_prev;
             update_instance_data(m, tfind, &update_d);
             --tf->rfif_dirty;
         }

@@ -36,14 +36,19 @@ enum transform_flag : u32
     pup_member(ent_id);                                                                                                                    \
     pup_member(flags)
 
-struct transform
-{
-    COMP(TRANSFORM)
-    mat4 cached_prev;
-    mat4 cached;
+
+struct transform_trs {
     vec3 world_pos;
     quat orientation;
     vec3 scale{1};
+};
+
+struct transform
+{
+    COMP(TRANSFORM)
+    transform_trs prev;
+    transform_trs current;
+    mat4 cached;
     u32 rfif_dirty;
 };
 
