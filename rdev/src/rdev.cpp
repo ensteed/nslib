@@ -493,6 +493,8 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     update_and_draw_region(m, &app->rgn, &app->cg, default_mat);
 }
 
+const f32 FIXED_DT = 0.01666;
+
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     PROFILE_BEGIN_FRAME();
@@ -502,11 +504,11 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     map_input_frame(&app->stack, &ctxt->feventq);
 
     PROFILE_BEGIN("simulate");
-    while (app->accumulater >= 0.01666) {
-        simulate(ctxt, app, 0.01666);
-        app->accumulater -= 0.01666;
+    while (app->accumulater >= FIXED_DT) {
+        simulate(ctxt, app, FIXED_DT);
+        app->accumulater -= FIXED_DT;
     }
-    f64 alpha = app->accumulater / 0.010;
+    f64 alpha = app->accumulater / FIXED_DT;
     PROFILE_END();
 
     frame_ubo_data fdata{};
