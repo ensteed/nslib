@@ -12,18 +12,19 @@ enum comp_type
     COMP_TYPE_TRANSFORM,
     COMP_TYPE_CAMERA,
     COMP_TYPE_STATIC_MESH,
-    COMP_TYPE_USER
+    COMP_TYPE_USER_BASE,
 };
 
-enum comp_flag : u32
+enum comp_bits : u8
 {
-    COMP_FLAG_DIRTY = make_flag(0),
-    COMP_FLAG_USER_BASE = make_flag(1),
+    COMP_DIRTY_BIT,
+    COMP_USER_BASE_BIT
 };
 using comp_flags = u64;
 
-enum transform_flag : u32
+enum tform_bits : u8
 {
+    TFORM_ACTIVE_SET_BIT = COMP_TYPE_USER_BASE
 };
 
 #define COMP(type)                                                                                                                         \
@@ -50,6 +51,11 @@ struct transform
     transform_trs current;
     mat4 cached;
     u32 rfif_dirty;
+};
+
+struct transform_system
+{
+    array<u32> active_set;
 };
 
 struct material_subgeom_mapping
@@ -103,9 +109,13 @@ pup_func(camera)
     pup_enum_member(camera_fov_type, u8, fov_type);
 }
 
-template<typename T>
+template<typename T, typename SysData>
 struct comp_table
 {
+    using CompType = T;
+    using SysType = SysData;
+
+    SysData sys;
     array<T> entries;
     hmap<u32, sizet> entc_hm;
 };
@@ -131,6 +141,9 @@ struct entity
     comp_db *cdb;
 };
 
+struct null_system_type
+{};
+
 struct sim_region
 {
     array<entity> ents;
@@ -144,64 +157,64 @@ void set_camera_near_far(camera *cam, const vec2 &near_far);
 void set_camera_aspect(camera *cam, f32 ar);
 void set_camera_proj_type(camera *cam, camera_proj_type pt);
 
-void set_transform_pos(transform *tf, const vec3 &pos);
-void set_transform_orientation(transform *tf, const quat &q);
-void set_transform_scale(transform *tf, const vec3 &s);
+void update_transform_pos(transform *tf, transform_system *tfs,const vec3 &pos);
+void update_transform_orientation(transform *tf, transform_system *tfs, const quat &q);
+void update_transform_scale(transform *tf, transform_system *tfs, const vec3 &s);
 
-template<typename T>
-void init_comp_tbl(comp_table<T> *tbl, mem_arena *arena, sizet initial_capacity)
+template<typename T, typename SysData>
+void init_comp_tbl(comp_table<T, SysData> *tbl, mem_arena *arena, sizet initial_capacity)
 {
     arr_init(&tbl->entries, arena, initial_capacity);
     hmap_init(&tbl->entc_hm, hash_type, arena);
 }
 
-template<typename T>
-void terminate_comp_tbl(comp_table<T> *tbl)
+template<typename T, typename SysData>
+void terminate_comp_tbl(comp_table<T, SysData> *tbl)
 {
     hmap_terminate(&tbl->entc_hm);
     arr_terminate(&tbl->entries);
 }
 
-template<typename T>
+template<typename T, typename SysData>
 bool remove_comp(u32 ent_id, comp_db *cdb);
 
-template<typename T>
-comp_table<T> *add_comp_tbl(comp_db *cdb, sizet initial_capacity = 64)
+template<typename T, typename SysData>
+comp_table<T, SysData> *add_comp_tbl(comp_db *cdb, sizet initial_capacity = 64)
 {
     if ((T::type_id + 1) > cdb->comp_tables.size) {
         arr_resize(&cdb->comp_tables, T::type_id + 1);
     }
     if (!cdb->comp_tables[T::type_id].tbl) {
-        auto ctbl = mem_calloc<comp_table<T>>(1, cdb->comp_tables.arena);
+        auto ctbl = mem_calloc<comp_table<T, SysData>>(1, cdb->comp_tables.arena);
         init_comp_tbl(ctbl, cdb->comp_tables.arena, initial_capacity);
         cdb->comp_tables[T::type_id].tbl = ctbl;
-        cdb->comp_tables[T::type_id].rem_func = remove_comp<T>;
+        cdb->comp_tables[T::type_id].rem_func = remove_comp<T, SysData>;
     }
-    return (comp_table<T> *)cdb->comp_tables[T::type_id].tbl;
+    return (comp_table<T, SysData> *)cdb->comp_tables[T::type_id].tbl;
 }
 
-template<typename T>
-comp_table<T> *get_comp_tbl(comp_db *cdb)
+template<typename T, typename SysData>
+comp_table<T, SysData> *get_comp_tbl(comp_db *cdb)
 {
     if (T::type_id < cdb->comp_tables.size) {
-        return (comp_table<T> *)cdb->comp_tables[T::type_id].tbl;
+        return (comp_table<T, SysData> *)cdb->comp_tables[T::type_id].tbl;
     }
     return nullptr;
 }
 
-template<typename T>
-const comp_table<T> *get_comp_tbl(const comp_db *cdb)
+template<typename T, typename SysData>
+const comp_table<T, SysData> *get_comp_tbl(const comp_db *cdb)
 {
     if (T::type_id < cdb->comp_tables.size) {
-        return (comp_table<T> *)cdb->comp_tables[T::type_id].tbl;
+        return (const comp_table<T, SysData> *)cdb->comp_tables[T::type_id].tbl;
     }
     return nullptr;
 }
 
-template<typename T>
+template<typename T, typename SysData>
 bool remove_comp_tbl(comp_db *cdb)
 {
-    auto ctbl = get_comp_tbl<T>(cdb);
+    auto ctbl = get_comp_tbl<T, SysData>(cdb);
     if (ctbl) {
         terminate_comp_tbl(ctbl);
         mem_free(ctbl, cdb->comp_tables.arena);
@@ -211,11 +224,8 @@ bool remove_comp_tbl(comp_db *cdb)
     return false;
 }
 
-void init_comp_db(comp_db *cdb, mem_arena *arena);
-void terminate_comp_db(comp_db *cdb);
-
-template<typename T>
-T *add_comp(u32 ent_id, comp_table<T> *ctbl, const T &copy = {})
+template<typename T, typename SysData>
+T *add_comp(u32 ent_id, comp_table<T, SysData> *ctbl, const T &copy = {})
 {
     T *ret{};
     sizet cid = ctbl->entries.size;
@@ -228,21 +238,21 @@ T *add_comp(u32 ent_id, comp_table<T> *ctbl, const T &copy = {})
     return ret;
 }
 
-template<typename T>
+template<typename T, typename SysData>
 T *add_comp(u32 ent_id, comp_db *cdb, const T &copy = {})
 {
-    auto ctbl = get_comp_tbl<T>(cdb);
-    return add_comp<T>(ent_id, ctbl, copy);
+    auto ctbl = get_comp_tbl<T, SysData>(cdb);
+    return add_comp<T, SysData>(ent_id, ctbl, copy);
 }
 
-template<typename T>
+template<typename T, typename SysData>
 T *add_comp(entity *ent, const T &copy = {})
 {
-    return add_comp<T>(ent->id, ent->cdb, copy);
+    return add_comp<T, SysData>(ent->id, ent->cdb, copy);
 }
 
-template<typename T>
-T *get_comp(u32 ent_id, comp_table<T> *ctbl)
+template<typename T, typename SysData>
+T *get_comp(u32 ent_id, comp_table<T, SysData> *ctbl)
 {
     auto fiter = hmap_find(&ctbl->entc_hm, ent_id);
     if (!fiter) {
@@ -251,33 +261,33 @@ T *get_comp(u32 ent_id, comp_table<T> *ctbl)
     return &ctbl->entries[fiter->val];
 }
 
-template<typename T>
+template<typename T, typename SysData>
 T *get_comp(u32 ent_id, comp_db *cdb)
 {
-    auto ctbl = get_comp_tbl<T>(cdb);
+    auto ctbl = get_comp_tbl<T, SysData>(cdb);
     return get_comp(ent_id, ctbl);
 }
 
-template<typename T>
+template<typename T, typename SysData>
 T *get_comp(entity *ent)
 {
-    return get_comp<T>(ent->id, ent->cdb);
+    return get_comp<T, SysData>(ent->id, ent->cdb);
 }
 
-template<typename T>
-sizet get_comp_ind(const T *comp, const comp_table<T> *ctbl)
+template<typename T, typename SysData>
+sizet get_comp_ind(const T *comp, const comp_table<T, SysData> *ctbl)
 {
     return (comp - ctbl->entries.data);
 }
 
-template<typename T>
+template<typename T, typename SysData>
 sizet get_comp_ind(const T *comp, const comp_db *cdb)
 {
-    return get_comp_ind(comp, get_comp_tbl<T>(cdb));
+    return get_comp_ind(comp, get_comp_tbl<T, SysData>(cdb));
 }
 
-template<typename T>
-bool remove_comp(u32 ent_id, comp_table<T> *ctbl)
+template<typename T, typename SysData>
+bool remove_comp(u32 ent_id, comp_table<T, SysData> *ctbl)
 {
     auto fiter = hmap_find(&ctbl->entc_hm, ent_id);
     if (!fiter) return false;
@@ -292,34 +302,97 @@ bool remove_comp(u32 ent_id, comp_table<T> *ctbl)
     return false;
 }
 
-template<typename T>
+template<typename T, typename SysData>
 bool remove_comp(u32 ent_id, comp_db *cdb)
 {
-    auto ctbl = get_comp_tbl<T>(cdb);
+    auto ctbl = get_comp_tbl<T, SysData>(cdb);
     return remove_comp(ent_id, ctbl);
 }
 
-template<typename T>
+template<typename T, typename SysData>
 bool remove_comp(entity *ent)
 {
-    return remove_comp<T>(ent->id, ent->cdb);
+    return remove_comp<T, SysData>(ent->id, ent->cdb);
 }
 
 template<typename T>
 void mark_comp_dirty(T *comp)
 {
-    set_flags(comp->flags, COMP_FLAG_DIRTY);
+    set_flags(comp->flags, make_flag(COMP_DIRTY_BIT));
 }
 
 template<typename T>
 bool is_comp_dirty(const T &comp)
 {
-    return test_flags(comp.flags, COMP_FLAG_DIRTY);
+    return test_flags(comp.flags, make_flag(COMP_DIRTY_BIT));
 }
 
-using transform_tbl = comp_table<transform>;
-using camera_tbl = comp_table<camera>;
-using static_mesh_tbl = comp_table<static_mesh>;
+#define DEFINE_COMP_TBL_TYPE(comp_name, system_t)                                                                                          \
+    using comp_name##_tbl = comp_table<comp_name, system_t>;                                                                               \
+    inline comp_name##_tbl *add_##comp_name##_tbl(comp_db *cdb, sizet initial_capacity = 64)                                               \
+    {                                                                                                                                      \
+        return add_comp_tbl<comp_name, system_t>(cdb, initial_capacity);                                                                   \
+    }                                                                                                                                      \
+    inline comp_name##_tbl *get_##comp_name##_tbl(comp_db *cdb)                                                                            \
+    {                                                                                                                                      \
+        return get_comp_tbl<comp_name, system_t>(cdb);                                                                                     \
+    }                                                                                                                                      \
+    inline const comp_name##_tbl *get_##comp_name##_tbl(const comp_db *cdb)                                                                \
+    {                                                                                                                                      \
+        return get_comp_tbl<comp_name, system_t>(cdb);                                                                                     \
+    }                                                                                                                                      \
+    inline bool remove_##comp_name##_tbl(comp_db *cdb)                                                                                     \
+    {                                                                                                                                      \
+        return remove_comp_tbl<comp_name, system_t>(cdb);                                                                                  \
+    }                                                                                                                                      \
+    inline comp_name *add_##comp_name(u32 ent_id, comp_name##_tbl *ctbl, const comp_name &copy = {})                                       \
+    {                                                                                                                                      \
+        return add_comp<comp_name, system_t>(ent_id, ctbl, copy);                                                                          \
+    }                                                                                                                                      \
+    inline comp_name *add_##comp_name(u32 ent_id, comp_db *cdb, const comp_name &copy = {})                                                \
+    {                                                                                                                                      \
+        return add_comp<comp_name, system_t>(ent_id, cdb, copy);                                                                           \
+    }                                                                                                                                      \
+    inline comp_name *add_##comp_name(entity *ent, const comp_name &copy = {})                                                             \
+    {                                                                                                                                      \
+        return add_comp<comp_name, system_t>(ent, copy);                                                                                   \
+    }                                                                                                                                      \
+    inline comp_name *get_##comp_name(u32 ent_id, comp_name##_tbl *ctbl)                                                                   \
+    {                                                                                                                                      \
+        return get_comp<comp_name, system_t>(ent_id, ctbl);                                                                                \
+    }                                                                                                                                      \
+    inline comp_name *get_##comp_name(u32 ent_id, comp_db *cdb)                                                                            \
+    {                                                                                                                                      \
+        return get_comp<comp_name, system_t>(ent_id, cdb);                                                                                 \
+    }                                                                                                                                      \
+    inline comp_name *get_##comp_name(entity *ent)                                                                                         \
+    {                                                                                                                                      \
+        return get_comp<comp_name, system_t>(ent);                                                                                         \
+    }                                                                                                                                      \
+    inline sizet get_##comp_name##_ind(const comp_name *comp, const comp_name##_tbl *ctbl)                                                 \
+    {                                                                                                                                      \
+        return get_comp_ind<comp_name, system_t>(comp, ctbl);                                                                              \
+    }                                                                                                                                      \
+    inline sizet get_##comp_name##_ind(const comp_name *comp, const comp_db *cdb)                                                          \
+    {                                                                                                                                      \
+        return get_comp_ind<comp_name, system_t>(comp, cdb);                                                                               \
+    }                                                                                                                                      \
+    inline bool remove_##comp_name(u32 ent_id, comp_name##_tbl *ctbl)                                                                      \
+    {                                                                                                                                      \
+        return remove_comp<comp_name, system_t>(ent_id, ctbl);                                                                             \
+    }                                                                                                                                      \
+    inline bool remove_##comp_name(u32 ent_id, comp_db *cdb)                                                                               \
+    {                                                                                                                                      \
+        return remove_comp<comp_name, system_t>(ent_id, cdb);                                                                              \
+    }                                                                                                                                      \
+    inline bool remove_##comp_name(entity *ent)                                                                                            \
+    {                                                                                                                                      \
+        return remove_comp<comp_name, system_t>(ent);                                                                                      \
+    }
+
+DEFINE_COMP_TBL_TYPE(transform, transform_system);
+DEFINE_COMP_TBL_TYPE(camera, null_system_type);
+DEFINE_COMP_TBL_TYPE(static_mesh, null_system_type);
 
 void init_static_model(static_mesh *sm, mem_arena *arena);
 void terminate_static_model(static_mesh *sm);

@@ -48,54 +48,52 @@ intern const u32 RECT_INDS_TRI_LIST[] = {
 };
 
 // 24 verts (4 per face). UVs are (0,0) bottom-left, (1,1) top-right per face.
-intern gvert CUBE_VERTS[] =
-{
+intern gvert CUBE_VERTS[] = {
     // +Z (front)
-    {{-0.5f, -0.5f,  0.5f}, {0,0,1}, {1,0,0}, {0,0}, 0xffffffff},
-    {{ 0.5f, -0.5f,  0.5f}, {0,0,1}, {1,0,0}, {1,0}, 0xffffffff},
-    {{-0.5f,  0.5f,  0.5f}, {0,0,1}, {1,0,0}, {0,1}, 0xffffffff},
-    {{ 0.5f,  0.5f,  0.5f}, {0,0,1}, {1,0,0}, {1,1}, 0xffffffff},
+    {{-0.5f, -0.5f, 0.5f}, {0, 0, 1}, {1, 0, 0}, {0, 0}, 0xffffffff},
+    {{0.5f, -0.5f, 0.5f}, {0, 0, 1}, {1, 0, 0}, {1, 0}, 0xffffffff},
+    {{-0.5f, 0.5f, 0.5f}, {0, 0, 1}, {1, 0, 0}, {0, 1}, 0xffffffff},
+    {{0.5f, 0.5f, 0.5f}, {0, 0, 1}, {1, 0, 0}, {1, 1}, 0xffffffff},
 
     // -Z (back)
-    {{ 0.5f, -0.5f, -0.5f}, {0,0,-1}, {-1,0,0}, {0,0}, 0xffffffff},
-    {{-0.5f, -0.5f, -0.5f}, {0,0,-1}, {-1,0,0}, {1,0}, 0xffffffff},
-    {{ 0.5f,  0.5f, -0.5f}, {0,0,-1}, {-1,0,0}, {0,1}, 0xffffffff},
-    {{-0.5f,  0.5f, -0.5f}, {0,0,-1}, {-1,0,0}, {1,1}, 0xffffffff},
+    {{0.5f, -0.5f, -0.5f}, {0, 0, -1}, {-1, 0, 0}, {0, 0}, 0xffffffff},
+    {{-0.5f, -0.5f, -0.5f}, {0, 0, -1}, {-1, 0, 0}, {1, 0}, 0xffffffff},
+    {{0.5f, 0.5f, -0.5f}, {0, 0, -1}, {-1, 0, 0}, {0, 1}, 0xffffffff},
+    {{-0.5f, 0.5f, -0.5f}, {0, 0, -1}, {-1, 0, 0}, {1, 1}, 0xffffffff},
 
     // +X (right)
-    {{ 0.5f, -0.5f,  0.5f}, {1,0,0}, {0,0,-1}, {0,0}, 0xffffffff},
-    {{ 0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0,-1}, {1,0}, 0xffffffff},
-    {{ 0.5f,  0.5f,  0.5f}, {1,0,0}, {0,0,-1}, {0,1}, 0xffffffff},
-    {{ 0.5f,  0.5f, -0.5f}, {1,0,0}, {0,0,-1}, {1,1}, 0xffffffff},
+    {{0.5f, -0.5f, 0.5f}, {1, 0, 0}, {0, 0, -1}, {0, 0}, 0xffffffff},
+    {{0.5f, -0.5f, -0.5f}, {1, 0, 0}, {0, 0, -1}, {1, 0}, 0xffffffff},
+    {{0.5f, 0.5f, 0.5f}, {1, 0, 0}, {0, 0, -1}, {0, 1}, 0xffffffff},
+    {{0.5f, 0.5f, -0.5f}, {1, 0, 0}, {0, 0, -1}, {1, 1}, 0xffffffff},
 
     // -X (left)
-    {{-0.5f, -0.5f, -0.5f}, {-1,0,0}, {0,0,1}, {0,0}, 0xffffffff},
-    {{-0.5f, -0.5f,  0.5f}, {-1,0,0}, {0,0,1}, {1,0}, 0xffffffff},
-    {{-0.5f,  0.5f, -0.5f}, {-1,0,0}, {0,0,1}, {0,1}, 0xffffffff},
-    {{-0.5f,  0.5f,  0.5f}, {-1,0,0}, {0,0,1}, {1,1}, 0xffffffff},
+    {{-0.5f, -0.5f, -0.5f}, {-1, 0, 0}, {0, 0, 1}, {0, 0}, 0xffffffff},
+    {{-0.5f, -0.5f, 0.5f}, {-1, 0, 0}, {0, 0, 1}, {1, 0}, 0xffffffff},
+    {{-0.5f, 0.5f, -0.5f}, {-1, 0, 0}, {0, 0, 1}, {0, 1}, 0xffffffff},
+    {{-0.5f, 0.5f, 0.5f}, {-1, 0, 0}, {0, 0, 1}, {1, 1}, 0xffffffff},
 
     // +Y (top)
-    {{-0.5f,  0.5f,  0.5f}, {0,1,0}, {1,0,0}, {0,0}, 0xffffffff},
-    {{ 0.5f,  0.5f,  0.5f}, {0,1,0}, {1,0,0}, {1,0}, 0xffffffff},
-    {{-0.5f,  0.5f, -0.5f}, {0,1,0}, {1,0,0}, {0,1}, 0xffffffff},
-    {{ 0.5f,  0.5f, -0.5f}, {0,1,0}, {1,0,0}, {1,1}, 0xffffffff},
+    {{-0.5f, 0.5f, 0.5f}, {0, 1, 0}, {1, 0, 0}, {0, 0}, 0xffffffff},
+    {{0.5f, 0.5f, 0.5f}, {0, 1, 0}, {1, 0, 0}, {1, 0}, 0xffffffff},
+    {{-0.5f, 0.5f, -0.5f}, {0, 1, 0}, {1, 0, 0}, {0, 1}, 0xffffffff},
+    {{0.5f, 0.5f, -0.5f}, {0, 1, 0}, {1, 0, 0}, {1, 1}, 0xffffffff},
 
     // -Y (bottom)
-    {{-0.5f, -0.5f, -0.5f}, {0,-1,0}, {1,0,0}, {0,0}, 0xffffffff},
-    {{ 0.5f, -0.5f, -0.5f}, {0,-1,0}, {1,0,0}, {1,0}, 0xffffffff},
-    {{-0.5f, -0.5f,  0.5f}, {0,-1,0}, {1,0,0}, {0,1}, 0xffffffff},
-    {{ 0.5f, -0.5f,  0.5f}, {0,-1,0}, {1,0,0}, {1,1}, 0xffffffff},
+    {{-0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 0, 0}, {0, 0}, 0xffffffff},
+    {{0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 0, 0}, {1, 0}, 0xffffffff},
+    {{-0.5f, -0.5f, 0.5f}, {0, -1, 0}, {1, 0, 0}, {0, 1}, 0xffffffff},
+    {{0.5f, -0.5f, 0.5f}, {0, -1, 0}, {1, 0, 0}, {1, 1}, 0xffffffff},
 };
 
 // 36 indices (2 tris per face)
-intern u32 CUBE_INDS_TRI_LIST[] =
-{
-     0,  1,  2,   2,  1,  3,   // +Z
-     4,  5,  6,   6,  5,  7,   // -Z
-     8,  9, 10,  10,  9, 11,   // +X
-    12, 13, 14,  14, 13, 15,   // -X
-    16, 17, 18,  18, 17, 19,   // +Y
-    20, 21, 22,  22, 21, 23,   // -Y
+intern u32 CUBE_INDS_TRI_LIST[] = {
+    0,  1,  2,  2,  1,  3,  // +Z
+    4,  5,  6,  6,  5,  7,  // -Z
+    8,  9,  10, 10, 9,  11, // +X
+    12, 13, 14, 14, 13, 15, // -X
+    16, 17, 18, 18, 17, 19, // +Y
+    20, 21, 22, 22, 21, 23, // -Y
 };
 
 void init_asset(texture *tex)
@@ -113,7 +111,7 @@ void terminate_asset(texture *tex)
 
 u32 get_texture_pixel_count(const texture *tex)
 {
-    return tex->dims.w * tex->dims.h * (test_flags(tex->flags, TEXTURE_FLAG_CUBEMAP) ? 6 : 1);
+    return tex->dims.w * tex->dims.h * (test_flags(tex->flags, make_flag(TEXTURE_CUBEMAP_BIT)) ? 6 : 1);
 }
 
 u8 get_pixel_byte_size(texture_usage usage)
@@ -228,7 +226,7 @@ void terminate_asset(technique *tech)
 
 void init_asset(material *mat)
 {
-    mat->flags |= ASSET_FLAG_DIRTY;
+    mat->flags |= make_flag(ASSET_DIRTY_BIT);
 }
 
 void terminate_asset(material *mat)

@@ -14,7 +14,8 @@ enum mat_sampler_slot
     MAT_SAMPLER_SLOT_COUNT
 };
 
-enum mat_sampler_type {
+enum mat_sampler_type
+{
     MAT_SAMPLER_TYPE_LINEAR_REPEAT,
     MAT_SAMPLER_TYPE_COUNT
 };
@@ -37,9 +38,9 @@ enum struct texture_usage : u8
     HDR,
 };
 
-enum texture_flag : u32
+enum texture_bits : u32
 {
-    TEXTURE_FLAG_CUBEMAP = make_flag_base(ASSET_FLAG_USER_BASE, 0),
+    TEXTURE_CUBEMAP_BIT = ASSET_USER_BASE_BIT
 };
 
 struct texture
@@ -181,9 +182,9 @@ struct mat_blueprint_mapping
     asset_id tech_id;
 };
 
-enum material_flag
+enum material_bits
 {
-    MATERIAL_FLAG_USE_COLOR = make_flag_base(ASSET_FLAG_USER_BASE, 0),
+    MATERIAL_USE_COLOR_BIT = ASSET_USER_BASE_BIT,
 };
 
 struct texture_info

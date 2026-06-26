@@ -19,9 +19,7 @@
 #define set_flag_from_bool(bitmask, flag, boolval) ((boolval) ? set_flags(bitmask, flag) : unset_flags(bitmask, flag))
 
 // Zero base
-#define make_flag(val) (1 << val)
-// 
-#define make_flag_base(base, val) (base << val)
+#define make_flag(bit) (1 << bit)
 
 #define ARR_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 

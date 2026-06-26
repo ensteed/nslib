@@ -148,7 +148,7 @@ void update_materials(rmanifest *m, asset_cache *cg)
     // Update materials that need updating
     for (auto mat_iter = asset_pool_begin(mpool); is_valid(mat_iter); mat_iter = asset_pool_next(mpool, mat_iter)) {
         auto minfo = get_slot_item(&m->rndr->materials, mat_iter.item->rhndl);
-        if (test_flags(mat_iter.item->flags, ASSET_FLAG_DIRTY)) {
+        if (test_flags(mat_iter.item->flags, make_flag(ASSET_DIRTY_BIT))) {
             minfo->fif_dirty = MAX_FRAMES_IN_FLIGHT;
         }
         if (minfo->fif_dirty > 0) {
@@ -157,7 +157,7 @@ void update_materials(rmanifest *m, asset_cache *cg)
 
             material_ssbo_data md{};
             md.col = mat_iter.item->col;
-            md.use_col = (u32)test_flags(mat_iter.item->flags, MATERIAL_FLAG_USE_COLOR);
+            md.use_col = (u32)test_flags(mat_iter.item->flags, make_flag(MATERIAL_USE_COLOR_BIT));
             md.sampler_idx = get_rsampler(mat_iter.item->textures[MAT_SAMPLER_SLOT_ALBEDO].sampler);
             auto diffuse = find_asset(tex_pool, mat_iter.item->textures[MAT_SAMPLER_SLOT_ALBEDO].id);
             md.tex_pool_idx = is_valid(diffuse) ? diffuse.item->rhndl.pool_idx : INVALID_IDX;
@@ -169,14 +169,14 @@ void update_materials(rmanifest *m, asset_cache *cg)
 
 void update_transforms(rmanifest *m, sim_region *sr)
 {
-    transform_tbl *tf_tbl = get_comp_tbl<transform>(&sr->cdb);
+    transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
     for (u32 i = 0; i < tf_tbl->entries.size; ++i) {
         transform *tf = &tf_tbl->entries[i];
         idx_t tfind = get_comp_ind(tf, tf_tbl);
 
         if (is_comp_dirty(*tf)) {
             tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
-            tf->flags &= ~COMP_FLAG_DIRTY;
+            tf->flags &= ~make_flag(COMP_DIRTY_BIT);
         }
 
         if (tf->rfif_dirty > 0) {
@@ -191,8 +191,8 @@ void update_transforms(rmanifest *m, sim_region *sr)
 
 void update_cameras(rmanifest *m, sim_region *sr)
 {
-    camera_tbl *cam_tbl = get_comp_tbl<camera>(&sr->cdb);
-    transform_tbl *tf_tbl = get_comp_tbl<transform>(&sr->cdb);
+    camera_tbl *cam_tbl = get_camera_tbl(&sr->cdb);
+    transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
 
     for (u32 i = 0; i < cam_tbl->entries.size; ++i) {
         camera *cam = &cam_tbl->entries[i];
@@ -227,8 +227,8 @@ void update_cameras(rmanifest *m, sim_region *sr)
 
 void enqueue_draws(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
 {
-    auto tf_tbl = get_comp_tbl<transform>(&sr->cdb);
-    auto sm_tbl = get_comp_tbl<static_mesh>(&sr->cdb);
+    auto tf_tbl = get_transform_tbl(&sr->cdb);
+    auto sm_tbl = get_static_mesh_tbl(&sr->cdb);
     auto techpool = get_asset_pool<technique>(cg);
     auto geompool = get_asset_pool<geometry>(cg);
     auto mpool = get_asset_pool<material>(cg);
@@ -395,7 +395,7 @@ u32 upload_geometries(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geom_
 
 intern rtexture_flags get_rtexture_flags(asset_flags flags)
 {
-    return test_flags(flags, TEXTURE_FLAG_CUBEMAP) ? RTEXTURE_FLAG_CUBEMAP : RTEXTURE_FLAG_NONE;
+    return test_flags(flags, make_flag(TEXTURE_CUBEMAP_BIT)) ? RTEXTURE_FLAG_CUBEMAP : RTEXTURE_FLAG_NONE;
 }
 
 intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp, render_blueprint_ref bp)

@@ -20,14 +20,13 @@ enum asset_type : u32
     ASSET_TYPE_USER,
 };
 
-enum asset_flag : u32
+enum asset_bits : u32
 {
-    ASSET_FLAG_DIRTY = make_flag(0),
-    ASSET_FLAG_LOADED = make_flag(1),
-    ASSET_FLAG_USER_BASE = make_flag(2),
+    ASSET_DIRTY_BIT,
+    ASSET_LOADED_BIT,
+    ASSET_USER_BASE_BIT,
 };
 using asset_flags = u32;
-
 
 const sizet ASSET_POOL_MEMORY_BUDGETS[ASSET_TYPE_USER] = {
     1 * MB_SIZE,

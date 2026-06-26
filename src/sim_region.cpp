@@ -28,27 +28,19 @@ void set_camera_proj_type(camera *cam, camera_proj_type pt)
     mark_comp_dirty(cam);
 }
 
-intern void handle_dirty_proc(transform *tf)
-{
-    if (!is_comp_dirty(tf)) {
-        tf->prev = tf->current;
-        mark_comp_dirty(tf);
-    }
-}
-
-void set_transform_pos(transform *tf, const vec3 &pos)
+void update_transform_pos(transform *tf, transform_system *tfs,const vec3 &pos)
 {
     handle_dirty_proc(tf);
     tf->current.world_pos = pos;
 }
 
-void set_transform_orientation(transform *tf, const quat &q)
+void update_transform_orientation(transform *tf, transform_system *tfs, const quat &q)
 {
     handle_dirty_proc(tf);
     tf->current.orientation = q;
 }
 
-void set_transform_scale(transform *tf, const vec3 &s)
+void update_transform_scale(transform *tf, transform_system *tfs, const vec3 &s)
 {
     mark_comp_dirty(tf);
     tf->current.scale = s;
@@ -64,12 +56,12 @@ void terminate_static_model(static_mesh *sm)
     arr_terminate(&sm->mat_mapping);
 }
 
-void init_comp_db(comp_db *cdb, mem_arena *arena)
+intern void init_comp_db(comp_db *cdb, mem_arena *arena)
 {
     arr_init(&cdb->comp_tables, arena);
 }
 
-void terminate_comp_db(comp_db *cdb)
+intern void terminate_comp_db(comp_db *cdb)
 {
     arr_terminate(&cdb->comp_tables);
 }
@@ -152,16 +144,16 @@ void init_sim_region(sim_region *reg, mem_arena *arena)
     init_comp_db(&reg->cdb, arena);
     hmap_init(&reg->entmap, hash_type, arena);
 
-    add_comp_tbl<static_mesh>(&reg->cdb);
-    add_comp_tbl<camera>(&reg->cdb, 64);
-    add_comp_tbl<transform>(&reg->cdb, 5000);
+    add_static_mesh_tbl(&reg->cdb);
+    add_camera_tbl(&reg->cdb, 64);
+    add_transform_tbl(&reg->cdb, 5000);
 }
 
 void terminate_sim_region(sim_region *reg)
 {
-    remove_comp_tbl<transform>(&reg->cdb);
-    remove_comp_tbl<camera>(&reg->cdb);
-    remove_comp_tbl<static_mesh>(&reg->cdb);
+    remove_transform_tbl(&reg->cdb);
+    remove_camera_tbl(&reg->cdb);
+    remove_static_mesh_tbl(&reg->cdb);
 
     hmap_terminate(&reg->entmap);
     terminate_comp_db(&reg->cdb);

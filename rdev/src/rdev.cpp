@@ -116,8 +116,9 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     // Create camera
     auto sz = get_window_pixel_size(ctxt->win_hndl);
     auto cam = add_entity("Editor_Cam", &app->rgn);
-    auto cam_comp = add_comp<camera>(cam);
-    auto cam_tcomp = add_comp<transform>(cam);
+    auto cam_comp = add_camera(cam);
+    auto cam_tcomp = add_transform(cam);
+    auto tf_sys = &get_transform_tbl(cam->cdb)->sys;
 
     set_camera_fov(cam_comp, 90.0f, nslib::CAMERA_FOV_TYPE_HORIZONTAL);
     set_camera_near_far(cam_comp, {0.1f, 1000.0f});
@@ -125,17 +126,18 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     // set_camera_proj_type(cam_comp, CAMERA_PROJ_TYPE_ORTHO);
 
     auto cam_view = math::inverse(math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
-    set_transform_orientation(cam_tcomp, math::orientation(cam_view));
-    set_transform_scale(cam_tcomp, math::scaling_vec(cam_view));
-    set_transform_pos(cam_tcomp, math::translation_vec(cam_view));
+    update_transform_orientation(cam_tcomp, tf_sys, math::orientation(cam_view));
+    update_transform_scale(cam_tcomp, tf_sys, math::scaling_vec(cam_view));
+    update_transform_pos(cam_tcomp, tf_sys, math::translation_vec(cam_view));
     app->cam_id = cam->id;
 
     // Add our input trigger functions
     auto cam_turn_func = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
         auto cam_ent = get_entity(app->cam_id, &app->rgn);
-        auto camc = get_comp<camera>(cam_ent);
-        auto camt = get_comp<transform>(cam_ent);
+        auto tf_sys = &get_transform_tbl(cam_ent->cdb)->sys;
+        auto camc = get_camera(cam_ent);
+        auto camt = get_transform(cam_ent);
 
         auto delta = t.ev->mmotion.norm_delta;
 
@@ -143,18 +145,18 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         f32 factor = 4;
         vec4 horizontal = {right, -(f32)delta.y * factor};
         vec4 vertical = {{0, 0, 1}, (f32)delta.x * factor};
-        set_transform_orientation(camt, math::orientation(vertical) * math::orientation(horizontal) * camt->current.orientation);
+        update_transform_orientation(camt, tf_sys, math::orientation(vertical) * math::orientation(horizontal) * camt->orientation);
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
+        auto cam = get_camera(app->cam_id, &app->rgn.cdb);
         f32 amnt = (t.ev->key.action - 1) * -2 + 1;
         (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) ? app->movement.y += amnt : app->movement.y -= amnt;
     };
     auto move_back_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
+        auto cam = get_camera(app->cam_id, &app->rgn.cdb);
         f32 amnt = (t.ev->key.action - 1) * -2 + 1;
         (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) ? app->movement.y -= amnt : app->movement.y += amnt;
     };
@@ -169,7 +171,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     auto ortho_zoom_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
+        auto cam = get_camera(app->cam_id, &app->rgn.cdb);
         if (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) return;
         set_camera_fov(cam, cam->fov * (1.0f - t.ev->mwheel.delta.y * 0.1f));
     };
@@ -199,14 +201,14 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
     int len = 5, width = 5, height = 5;
     auto ent_offset = add_entities(len * width * height, region);
 
-    auto tf_tbl = get_comp_tbl<transform>(&region->cdb);
+    auto tf_tbl = get_transform_tbl(&region->cdb);
     for (sizet zind = 0; zind < height; ++zind) {
         for (sizet yind = 0; yind < len; ++yind) {
             for (sizet xind = 0; xind < width; ++xind) {
                 sizet ent_ind = zind * (width * len) + yind * width + xind + ent_offset;
                 auto ent = &region->ents[ent_ind];
-                auto tfcomp = add_comp<transform>(ent->id, tf_tbl);
-                auto sc = add_comp<static_mesh>(ent);
+                auto tfcomp = add_transform(ent->id, tf_tbl);
+                auto sc = add_static_mesh(ent);
                 if (xind % 2) {
                     sc->geom_id = cube_geom.id;
                     arr_emplace_back(&sc->mat_mapping, app->daniel_mat, 0);
@@ -217,7 +219,7 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
                     arr_emplace_back(&sc->mat_mapping, app->maria_mat, 0);
                     ent->name = to_str("rect-%d", ent_ind);
                 }
-                set_transform_pos(tfcomp, vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f});
+                update_transform_pos(tfcomp, &tf_tbl->sys, vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f});
             }
         }
     }
@@ -334,7 +336,7 @@ intern void create_materials(material_pool *mat_pool, technique *tech, texture_p
 {
     material_item_ref default_mat = create_asset(mat_pool, "default");
     default_mat.item->col = {1, 0, 0, 1};
-    default_mat.item->flags |= MATERIAL_FLAG_USE_COLOR;
+    default_mat.item->flags |= make_flag(MATERIAL_USE_COLOR_BIT);
     // Disable all culling
     default_mat.item->overrides.rmask = 0;
     default_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
@@ -421,26 +423,27 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 {
     // Move the cam if needed
-    auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
+    auto cam = get_camera(app->cam_id, &app->rgn.cdb);
+    auto tf_sys = &get_transform_tbl(&app->rgn.cdb)->sys;
     if (app->movement != svec2{}) {
-        auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
-        auto right = math::right_vec(cam_tform->current.orientation);
-        vec3 forward_or_up = cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->current.orientation)
-                                                                  : math::target_vec(cam_tform->current.orientation);
-        set_transform_pos(cam_tform,
-                          cam_tform->current.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
+        auto cam_tform = get_transform(app->cam_id, &app->rgn.cdb);
+        auto right = math::right_vec(cam_tform->orientation);
+        vec3 forward_or_up =
+            cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->orientation) : math::target_vec(cam_tform->orientation);
+        update_transform_pos(
+            cam_tform, tf_sys, cam_tform->world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
 
-    auto tform_tbl = get_comp_tbl<transform>(&app->rgn.cdb);
+    auto tform_tbl = get_transform_tbl(&app->rgn.cdb);
     auto mat_cache = get_asset_pool<material>(&app->cg);
     auto geom_cache = get_asset_pool<geometry>(&app->cg);
     for (sizet i = 0; i < tform_tbl->entries.size; ++i) {
         auto curtf = &tform_tbl->entries[i];
         if (curtf->ent_id != app->cam_id) {
             vec4 axis_angle{(i % 3 == 0) * 1.0f, (i % 3 == 2) * 1.0f, (i % 3 == 1) * 1.0f, (f32)dt};
-            set_transform_orientation(curtf, curtf->current.orientation * math::orientation(axis_angle));
+            update_transform_orientation(curtf, tf_sys, curtf->orientation * math::orientation(axis_angle));
         }
     }
 }
@@ -470,8 +473,8 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     idx_t imgui_id = push_pass(m, {.rbpp = imgui_pass});
     push_slot_assignment(m, imgui_id, MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0f, 1.0f, 1.0f, 1.0f)));
 
-    auto cam = get_comp<camera>(app->cam_id, &app->rgn.cdb);
-    auto cam_tform = get_comp<transform>(app->cam_id, &app->rgn.cdb);
+    auto cam = get_camera(app->cam_id, &app->rgn.cdb);
+    auto cam_tform = get_transform(app->cam_id, &app->rgn.cdb);
 
     view_ssbo_data vdata{};
     vdata.view = cam->view;
