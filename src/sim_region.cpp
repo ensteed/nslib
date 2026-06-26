@@ -28,22 +28,30 @@ void set_camera_proj_type(camera *cam, camera_proj_type pt)
     mark_comp_dirty(cam);
 }
 
+intern void handle_dirty_proc(transform *tf)
+{
+    if (!is_comp_dirty(tf)) {
+        tf->prev = tf->current;
+        mark_comp_dirty(tf);
+    }
+}
+
 void set_transform_pos(transform *tf, const vec3 &pos)
 {
+    handle_dirty_proc(tf);
     tf->current.world_pos = pos;
-    mark_comp_dirty(tf);
 }
 
 void set_transform_orientation(transform *tf, const quat &q)
 {
+    handle_dirty_proc(tf);
     tf->current.orientation = q;
-    mark_comp_dirty(tf);
 }
 
 void set_transform_scale(transform *tf, const vec3 &s)
 {
-    tf->current.scale = s;
     mark_comp_dirty(tf);
+    tf->current.scale = s;
 }
 
 void init_static_model(static_mesh *sm, mem_arena *arena)
@@ -111,7 +119,7 @@ entity *get_entity(u32 ent_id, sim_region *reg)
 bool remove_entity(u32 ent_id, sim_region *reg)
 {
     sizet ent_ind{};
-    
+
     auto rem = hmap_remove(&reg->entmap, ent_id, &ent_ind);
     if (!rem) {
         return rem;

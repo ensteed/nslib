@@ -507,6 +507,8 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     PROFILE_BEGIN("simulate");
     while (app->accumulater >= FIXED_DT) {
         simulate(ctxt, app, FIXED_DT);
+        
+        
         app->accumulater -= FIXED_DT;
     }
     f64 alpha = app->accumulater / FIXED_DT;
