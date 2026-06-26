@@ -22,11 +22,6 @@ enum comp_bits : u8
 };
 using comp_flags = u64;
 
-enum tform_bits : u8
-{
-    TFORM_ACTIVE_SET_BIT = COMP_TYPE_USER_BASE
-};
-
 #define COMP(type)                                                                                                                         \
     static constexpr const char *type_str = #type;                                                                                         \
     static constexpr const u32 type_id = COMP_TYPE_##type;                                                                                 \
@@ -51,12 +46,17 @@ struct transform
     transform_trs current;
     mat4 cached;
     u32 rfif_dirty;
+    // If in the active set, this will be the index in to the array
+    idx_t active_idx{INVALID_IDX};
 };
 
 struct transform_system
 {
     array<u32> active_set;
 };
+
+void init_comp_system(transform_system *sys, mem_arena *arena, sizet initial_capacity);
+void terminate_comp_system(transform_system *sys);
 
 struct material_subgeom_mapping
 {
@@ -161,16 +161,32 @@ void update_transform_pos(transform *tf, transform_system *tfs,const vec3 &pos);
 void update_transform_orientation(transform *tf, transform_system *tfs, const quat &q);
 void update_transform_scale(transform *tf, transform_system *tfs, const vec3 &s);
 
+transform_trs interpolate_trs(const transform_trs &prev, const transform_trs &current, f32 alpha);
+mat4 build_mat4_from_trs(const transform_trs &trs);
+mat4 interpolate_tranform(const transform &tf, f32 alpha);
+
+template<typename SysData>
+void init_comp_system(SysData *sys, mem_arena *arena, sizet initial_capacity) {
+    // Do nothing by default
+}
+
+template<typename SysData>
+void terminate_comp_system(SysData *sys) {
+    // Do nothing by default
+}
+
 template<typename T, typename SysData>
 void init_comp_tbl(comp_table<T, SysData> *tbl, mem_arena *arena, sizet initial_capacity)
 {
     arr_init(&tbl->entries, arena, initial_capacity);
     hmap_init(&tbl->entc_hm, hash_type, arena);
+    init_comp_system(&tbl->sys, arena, initial_capacity);
 }
 
 template<typename T, typename SysData>
 void terminate_comp_tbl(comp_table<T, SysData> *tbl)
 {
+    terminate_comp_system(&tbl->sys);
     hmap_terminate(&tbl->entc_hm);
     arr_terminate(&tbl->entries);
 }

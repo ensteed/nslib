@@ -28,22 +28,63 @@ void set_camera_proj_type(camera *cam, camera_proj_type pt)
     mark_comp_dirty(cam);
 }
 
-void update_transform_pos(transform *tf, transform_system *tfs,const vec3 &pos)
+void handle_dirty_proc(transform *tf, transform_system *tfs)
 {
-    handle_dirty_proc(tf);
+    if (!is_comp_dirty(*tf)) {
+        tf->prev = tf->current;
+        mark_comp_dirty(tf);
+    }
+    if (!is_valid(tf->active_idx)) {
+        tf->active_idx = (idx_t)tfs->active_set.size;
+        arr_push_back(&tfs->active_set, tf->ent_id);
+    }
+}
+
+void update_transform_pos(transform *tf, transform_system *tfs, const vec3 &pos)
+{
+    handle_dirty_proc(tf, tfs);
     tf->current.world_pos = pos;
 }
 
 void update_transform_orientation(transform *tf, transform_system *tfs, const quat &q)
 {
-    handle_dirty_proc(tf);
+    handle_dirty_proc(tf, tfs);
     tf->current.orientation = q;
 }
 
 void update_transform_scale(transform *tf, transform_system *tfs, const vec3 &s)
 {
-    mark_comp_dirty(tf);
+    handle_dirty_proc(tf, tfs);
     tf->current.scale = s;
+}
+
+transform_trs interpolate_trs(const transform_trs &prev, const transform_trs &current, f32 alpha)
+{
+    return {
+        .world_pos = math::lerp(prev.world_pos, current.world_pos, alpha),
+        .orientation = math::nlerp(prev.orientation, current.orientation, alpha),
+        .scale = math::lerp(prev.scale, current.scale, alpha),
+    };
+}
+
+mat4 build_mat4_from_trs(const transform_trs &trs)
+{
+    return math::model_tform(trs.world_pos, trs.orientation, trs.scale);
+}
+
+mat4 interpolate_tranform(const transform &tf, f32 alpha)
+{
+    return build_mat4_from_trs(interpolate_trs(tf.prev, tf.current, alpha));
+}
+
+void init_comp_system(transform_system *sys, mem_arena *arena, sizet initial_capacity)
+{
+    arr_init(&sys->active_set, arena, initial_capacity);
+}
+
+void terminate_comp_system(transform_system *sys)
+{
+    arr_terminate(&sys->active_set);
 }
 
 void init_static_model(static_mesh *sm, mem_arena *arena)

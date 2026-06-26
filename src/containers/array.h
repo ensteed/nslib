@@ -485,8 +485,8 @@ bool arr_swap_remove(T *bufobj, sizet index)
 {
     if (index >= bufobj->size)
         return false;
-
-    bufobj->data[index] = *arr_back(bufobj);
+    // Only copy the last item if we are not the last item
+    if (index != bufobj->size - 1) bufobj->data[index] = *arr_back(bufobj);
     arr_pop_back(bufobj);
     return true;
 }

@@ -17,7 +17,6 @@ struct quaternion
     quaternion(T data_[4]) : data{data_[0], data_[1], data_[2], data_[3]}
     {}
 
-
     COMMON_OPERATORS(quaternion, 4, T)
 
 #if NOBLE_STEED_SIMD
@@ -56,8 +55,7 @@ pup_func_tt(quaternion)
     pup_member(c);
     pup_member(z);
     pup_member(z);
-}    
-
+}
 
 // Enable type trait
 template<class U>
@@ -77,44 +75,83 @@ inline float dot(const quaternion<float> &lhs, const quaternion<float> &rhs)
     return _mm_cvtss_f32(_sse_dp(lhs._v4, rhs._v4));
 }
 
+inline quaternion<float> nlerp(quaternion<float> first, quaternion<float> second, float t)
+{
+    alignas(16) float tmp[4];
+    _mm_store_ps(tmp, _mm_mul_ps(first._v4, second._v4));
+    float d = tmp[0] + tmp[1] + tmp[2] + tmp[3];
+
+    if (d < 0.0f) second._v4 = _mm_xor_ps(second._v4, _mm_set1_ps(-0.0f));
+
+    __m128 vt = _mm_set1_ps(t);
+    __m128 omt = _mm_set1_ps(1.0f - t);
+
+    quaternion<float> out;
+    out._v4 = _mm_add_ps(_mm_mul_ps(first._v4, omt), _mm_mul_ps(second._v4, vt));
+
+    __m128 sq = _mm_mul_ps(out._v4, out._v4);
+    _mm_store_ps(tmp, sq);
+    float len2 = tmp[0] + tmp[1] + tmp[2] + tmp[3];
+    float inv_len = 1.0f / std::sqrt(len2);
+    out._v4 = _mm_mul_ps(out._v4, _mm_set1_ps(inv_len));
+
+    return out;
+}
+
 #endif
 
-template<class T>
-quaternion<T> slerp(quaternion<T> first, const quaternion<T> &second, const T &scaling_factor)
+template<floating_pt T>
+quaternion<T> slerp(quaternion<T> first, quaternion<T> second, T t)
 {
-    if (fequals(scaling_factor, 0))
-        return first;
+    if (fequals(t, T(0))) return first;
 
-    if (fequals(scaling_factor, 1))
-    {
-        first = second;
-        return first;
-    }
+    if (fequals(t, T(1))) return second;
+
+    // Optional if not guaranteed unit length:
+    normalize(&first);
+    normalize(&second);
 
     T cos_half_theta = dot(first, second);
 
-    if (cos_half_theta < 0)
-    {
-        second *= -1;
+    if (cos_half_theta < T(0)) {
+        second = second * T(-1);
         cos_half_theta = -cos_half_theta;
     }
 
-    if (cos_half_theta >= 1.0)
-        return first;
-
-    T half_theta = math::acos(cos_half_theta);
-    T sin_half_theta = math::sqrt(1.0 - cos_half_theta * cos_half_theta);
-
-    if (math::abs(sin_half_theta) < math::FLOAT_EPS)
-    {
-        first = 0.5 * (first + second);
+    if (cos_half_theta > T(1) - T(math::FLOAT_EPS)) {
+        first = first * (T(1) - t) + second * t;
+        normalize(&first);
         return first;
     }
 
-    T ratio_a = math::sin((1 - scaling_factor) * half_theta) / sin_half_theta;
-    T ratio_b = math::sin(scaling_factor * half_theta) / sin_half_theta;
+    T half_theta = math::acos(cos_half_theta);
+    T sin_half_theta = math::sqrt(T(1) - cos_half_theta * cos_half_theta);
+
+    if (math::abs(sin_half_theta) < T(math::FLOAT_EPS)) {
+        first = first * (T(1) - t) + second * t;
+        normalize(&first);
+        return first;
+    }
+
+    T ratio_a = math::sin((T(1) - t) * half_theta) / sin_half_theta;
+    T ratio_b = math::sin(t * half_theta) / sin_half_theta;
 
     first = first * ratio_a + second * ratio_b;
+    normalize(&first);
+    return first;
+}
+
+template<floating_pt T>
+quaternion<T> nlerp(quaternion<T> first, quaternion<T> &second, T t)
+{
+    if (fequals(t, T(0))) return first;
+
+    if (fequals(t, T(1))) return second;
+
+    // Take shortest path
+    if (dot(first, second) < T(0)) second = second * T(-1);
+
+    first = first * (T(1) - t) + second * t;
     normalize(&first);
     return first;
 }
@@ -173,14 +210,12 @@ vector4<T> axis_angle(const quaternion<T> &orientation)
     vector4<T> ret;
     ret.w = 2 * math::acos(orientation.w);
     T den = math::sqrt(1 - orientation.w * orientation.w);
-    if (den < math::FLOAT_EPS)
-    {
+    if (den < math::FLOAT_EPS) {
         ret.x = orientation.x;
         ret.y = orientation.y;
         ret.z = orientation.z;
     }
-    else
-    {
+    else {
         ret.x = orientation.x / den;
         ret.y = orientation.y / den;
         ret.z = orientation.z / den;
@@ -213,8 +248,7 @@ quaternion<T> orientation(const vector3<T> &euler, typename vector3<T>::euler_or
     s2 = math::sin(euler.y / 2);
     s3 = math::sin(euler.z / 2);
 
-    switch (order_)
-    {
+    switch (order_) {
     case (vector3<T>::XYZ): {
         ret.x = s1 * c2 * c3 + c1 * s2 * s3;
         ret.y = c1 * s2 * c3 - s1 * c2 * s3;
@@ -268,8 +302,7 @@ quaternion<T> orientation(const vector3<T> &to_vec, const vector3<T> &from_vec =
     quaternion<T> ret;
     T real = 1 + dot(from_vec, to_vec);
     vector3<T> imag = cross(from_vec, to_vec);
-    if (real < FLOAT_EPS)
-    {
+    if (real < FLOAT_EPS) {
         ret.w = 0;
         ret.x = -from_vec.z;
         ret.y = from_vec.y;

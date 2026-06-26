@@ -93,12 +93,12 @@ struct rgeom_vert_bone_weights_ids
     uvec4 bone_ids;
 };
 
-void update_materials(rmanifest *m, asset_cache *cg);
-void update_transforms(rmanifest *m, sim_region *sr);
-void update_cameras(rmanifest *m, sim_region *sr);
+void prepare_materials(rmanifest *m, asset_cache *cg);
+void prepare_transforms(rmanifest *m, sim_region *sr);
+void prepare_cameras(rmanifest *m, sim_region *sr);
 void enqueue_draws(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material);
 
-void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material);
+void prepare_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material);
 
 // Setup vert/index buffers (stream group) for this geometry type and get the runtime id for it
 u32 setup_geometry_stream_group(renderer *rndr);

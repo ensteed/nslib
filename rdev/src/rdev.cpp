@@ -145,7 +145,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         f32 factor = 4;
         vec4 horizontal = {right, -(f32)delta.y * factor};
         vec4 vertical = {{0, 0, 1}, (f32)delta.x * factor};
-        update_transform_orientation(camt, tf_sys, math::orientation(vertical) * math::orientation(horizontal) * camt->orientation);
+        update_transform_orientation(camt, tf_sys, math::orientation(vertical) * math::orientation(horizontal) * camt->current.orientation);
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
@@ -420,6 +420,35 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     return true;
 }
 
+// Loop through the scoobys
+void update_transforms(sim_region *sr)
+{
+    transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
+    auto sys = &tf_tbl->sys;
+    for (u32 i = 0; i < sys->active_set.size; ++i) {
+        auto tf = get_transform(sys->active_set[i], tf_tbl);
+
+        // Set this no matter what - even if not dirty we are in the active set which means last frame was dirty which
+        // means on this frame, we remove from active set and let settle to all frames
+        tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
+
+        // If the tform is dirty, mark it as processed and update cached, otherwise remove if from the active set
+        if (is_comp_dirty(*tf)) {
+            unset_flags(tf->flags, make_flag(COMP_DIRTY_BIT));
+            tf->cached = build_mat4_from_trs(tf->current);
+        }
+        else {
+            arr_swap_remove(&sys->active_set, tf->active_idx);
+            if (tf->active_idx < sys->active_set.size) {
+                // Get the swapped entity tform and update its active idx to the new position
+                auto other_tf = get_transform(sys->active_set[tf->active_idx], tf_tbl);
+                other_tf->active_idx = tf->active_idx;
+            }
+            tf->active_idx = INVALID_IDX;
+        }
+    }
+}
+
 intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 {
     // Move the cam if needed
@@ -427,11 +456,11 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     auto tf_sys = &get_transform_tbl(&app->rgn.cdb)->sys;
     if (app->movement != svec2{}) {
         auto cam_tform = get_transform(app->cam_id, &app->rgn.cdb);
-        auto right = math::right_vec(cam_tform->orientation);
-        vec3 forward_or_up =
-            cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->orientation) : math::target_vec(cam_tform->orientation);
+        auto right = math::right_vec(cam_tform->current.orientation);
+        vec3 forward_or_up = cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->current.orientation)
+                                                                  : math::target_vec(cam_tform->current.orientation);
         update_transform_pos(
-            cam_tform, tf_sys, cam_tform->world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
+            cam_tform, tf_sys, cam_tform->current.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
@@ -443,9 +472,11 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
         auto curtf = &tform_tbl->entries[i];
         if (curtf->ent_id != app->cam_id) {
             vec4 axis_angle{(i % 3 == 0) * 1.0f, (i % 3 == 2) * 1.0f, (i % 3 == 1) * 1.0f, (f32)dt};
-            update_transform_orientation(curtf, tf_sys, curtf->orientation * math::orientation(axis_angle));
+            update_transform_orientation(curtf, tf_sys, curtf->current.orientation * math::orientation(axis_angle));
         }
     }
+
+    update_transforms(&app->rgn);
 }
 
 intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
@@ -494,7 +525,7 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
 #endif
 
-    update_and_draw_region(m, &app->rgn, &app->cg, default_mat);
+    prepare_and_draw_region(m, &app->rgn, &app->cg, default_mat);
 }
 
 const f32 FIXED_DT = 0.01666;
@@ -510,8 +541,7 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     PROFILE_BEGIN("simulate");
     while (app->accumulater >= FIXED_DT) {
         simulate(ctxt, app, FIXED_DT);
-        
-        
+
         app->accumulater -= FIXED_DT;
     }
     f64 alpha = app->accumulater / FIXED_DT;

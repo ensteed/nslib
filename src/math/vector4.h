@@ -99,7 +99,7 @@ pup_func_tt(vector4)
     pup_member(y);
     pup_member(z);
     pup_member(w);
-}    
+}
 
 // Enable type trait
 template<class U>
@@ -114,28 +114,42 @@ namespace math
 
 inline __m128 _sse_dp(const __m128 &left, const __m128 &right)
 {
-#if NOBLE_STEED_SIMD & NOBLE_STEED_SSE41_BIT
+    #if NOBLE_STEED_SIMD & NOBLE_STEED_SSE41_BIT
     return _mm_dp_ps(left, right, 0xff);
-#elif NOBLE_STEED_SIMD & NOBLE_STEED_SSE3_BIT
+    #elif NOBLE_STEED_SIMD & NOBLE_STEED_SSE3_BIT
     __m128 mul0 = _mm_mul_ps(left, right);
     __m128 hadd0 = _mm_hadd_ps(mul0, mul0);
     __m128 hadd1 = _mm_hadd_ps(hadd0, hadd0);
     return hadd1;
-#else
+    #else
     __m128 mul0 = _mm_mul_ps(left, right);
     __m128 swp0 = _mm_shuffle_ps(mul0, mul0, _MM_SHUFFLE(2, 3, 0, 1));
     __m128 add0 = _mm_add_ps(mul0, swp0);
     mul0 = _mm_shuffle_ps(add0, add0, _MM_SHUFFLE(0, 1, 2, 3));
     add0 = _mm_add_ps(add0, mul0);
     return add0;
-#endif
+    #endif
 }
 
 inline float dot(const vector4<float> &lhs, const vector4<float> &rhs)
 {
     return _mm_cvtss_f32(_sse_dp(lhs._v4, rhs._v4));
 }
+
+inline vector4<float> lerp(const vector4<float> &a, const vector4<float> &b, float t)
+{
+    vector4<float> out{};
+    __m128 vt = _mm_set1_ps(t);
+    out._v4 = _mm_add_ps(a._v4, _mm_mul_ps(_mm_sub_ps(b._v4, a._v4), vt));
+    return out;
+}
 #endif
+
+template<arithmetic_type T>
+vector4<T> lerp(const vector4<T> &a, const vector4<T> &b, T t)
+{
+    return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
+}
 
 } // namespace math
 
@@ -176,13 +190,12 @@ inline vector4<float> operator*(vector4<float> lhs, T rhs)
 template<arithmetic_type T>
 inline vector4<float> operator/(vector4<float> lhs, T rhs)
 {
-    __m128 s = _mm_set1_ps(1.0/rhs);
+    __m128 s = _mm_set1_ps(1.0 / rhs);
     lhs._v4 = _mm_mul_ps(lhs._v4, s);
     return lhs;
 }
 
 #endif
-
 
 using s8vec4 = vector4<s8>;
 using s16vec4 = vector4<s16>;

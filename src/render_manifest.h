@@ -320,6 +320,7 @@ struct mframe_params
 
 struct rmanifest
 {
+    f32 frame_alpha;
     renderer *rndr;
     idx_t fif;
     render_blueprint_ref rbp;

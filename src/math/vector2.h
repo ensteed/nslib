@@ -14,7 +14,7 @@ struct vector2
     vector2(T x_, T y_) : data{x_, y_}
     {}
 
-    vector2(T data_[2]): data{data_[0], data_[1]}
+    vector2(T data_[2]) : data{data_[0], data_[1]}
     {}
 
     COMMON_OPERATORS(vector2, 2, T)
@@ -46,7 +46,6 @@ struct vector2
             T u;
             T v;
         };
-        
     };
 };
 
@@ -54,7 +53,7 @@ pup_func_tt(vector2)
 {
     pup_member(x);
     pup_member(y);
-}    
+}
 
 // Enable type trait
 template<class U>
@@ -72,12 +71,29 @@ inline float dot(const vector2<float> &lhs, const vector2<float> &rhs)
     __m128 r = _mm_set_ps(0.0f, 0.0f, rhs.y, rhs.x);
     return _mm_cvtss_f32(_sse_dp(l, r));
 }
+
+inline vector2<float> lerp(const vector2<float> &a, const vector2<float> &b, float t)
+{
+    __m128 va = _mm_set_ps(0.0f, 0.0f, a.y, a.x);
+    __m128 vb = _mm_set_ps(0.0f, 0.0f, b.y, b.x);
+    __m128 vt = _mm_set1_ps(t);
+    __m128 vr = _mm_add_ps(va, _mm_mul_ps(_mm_sub_ps(vb, va), vt));
+    alignas(16) float out[4];
+    _mm_store_ps(out, vr);
+    return {out[0], out[1]};
+}
 #endif
 
 template<floating_pt T>
 vector2<T> polar_to_cartesian(const vector2<T> &polar)
 {
     return {polar.x * math::cos(polar.y), polar.x * math::sin(polar.y)};
+}
+
+template<arithmetic_type T>
+vector2<T> lerp(const vector2<T> &a, const vector2<T> &b, T t)
+{
+    return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t};
 }
 
 template<integral T>

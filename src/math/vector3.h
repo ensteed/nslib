@@ -73,7 +73,6 @@ struct vector3
             T h;
             T layers;
         };
-        
 
         struct
         {
@@ -101,7 +100,7 @@ pup_func_tt(vector3)
     pup_member(x);
     pup_member(y);
     pup_member(z);
-}    
+}
 
 // Enable type trait
 template<class U>
@@ -120,6 +119,18 @@ inline float dot(const vector3<float> &lhs, const vector3<float> &rhs)
     __m128 r = _mm_set_ps(0.0f, rhs.z, rhs.y, rhs.x);
     return _mm_cvtss_f32(_sse_dp(l, r));
 }
+
+inline vector3<float> lerp(const vector3<float> &a, const vector3<float> &b, float t)
+{
+    __m128 va = _mm_set_ps(0.0f, a.z, a.y, a.x);
+    __m128 vb = _mm_set_ps(0.0f, b.z, b.y, b.x);
+    __m128 vt = _mm_set1_ps(t);
+    __m128 vr = _mm_add_ps(va, _mm_mul_ps(_mm_sub_ps(vb, va), vt));
+
+    alignas(16) float out[4];
+    _mm_store_ps(out, vr);
+    return {out[0], out[1], out[2]};
+}
 #endif
 
 template<arithmetic_type T>
@@ -136,6 +147,12 @@ vector3<T> cross(vector3<T> lhs, const vector3<T> &rhs)
 {
     cross(&lhs, rhs);
     return lhs;
+}
+
+template<arithmetic_type T>
+vector3<T> lerp(const vector3<T> &a, const vector3<T> &b, T t)
+{
+    return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
 }
 
 template<floating_pt T>
@@ -164,11 +181,9 @@ vector3<T> cartesian_to_cylindrical(const vector3<T> &cartesian)
     vector3<T> ret;
     ret.x = math::sqrt(cartesian.x * cartesian.x + cartesian.y * cartesian.y);
 
-    if (fequals(cartesian.x, 0))
-    {
+    if (fequals(cartesian.x, 0)) {
         ret.y = math::PI / 2;
-        if (fequals(cartesian.y, 0))
-            ret.y = 0;
+        if (fequals(cartesian.y, 0)) ret.y = 0;
     }
     else
         ret.y = math::atan(cartesian.y, cartesian.x);
@@ -183,11 +198,9 @@ vector3<T> cartesian_to_spherical(const vector3<T> &cartesian)
     vector3<T> ret;
     ret.x = length(cartesian);
 
-    if (fequals(cartesian.x, 0))
-    {
+    if (fequals(cartesian.x, 0)) {
         ret.y = math::PI / 2;
-        if (fequals(cartesian.y, 0))
-            ret.y = 0;
+        if (fequals(cartesian.y, 0)) ret.y = 0;
     }
     else
         ret.y = math::atan(cartesian.y, cartesian.x);

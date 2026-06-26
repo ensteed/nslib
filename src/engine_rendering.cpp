@@ -140,7 +140,7 @@ intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
     return success_count;
 }
 
-void update_materials(rmanifest *m, asset_cache *cg)
+void prepare_materials(rmanifest *m, asset_cache *cg)
 {
     auto mpool = get_asset_pool<material>(cg);
     auto tex_pool = get_asset_pool<texture>(cg);
@@ -167,29 +167,28 @@ void update_materials(rmanifest *m, asset_cache *cg)
     }
 }
 
-void update_transforms(rmanifest *m, sim_region *sr)
+void prepare_transforms(rmanifest *m, sim_region *sr)
 {
     transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
     for (u32 i = 0; i < tf_tbl->entries.size; ++i) {
         transform *tf = &tf_tbl->entries[i];
-        idx_t tfind = get_comp_ind(tf, tf_tbl);
-
-        if (is_comp_dirty(*tf)) {
-            tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
-            tf->flags &= ~make_flag(COMP_DIRTY_BIT);
-        }
 
         if (tf->rfif_dirty > 0) {
-            tf->cached = math::model_tform(tf->current.world_pos, tf->current.orientation, tf->current.scale);
             instance_ssbo_data update_d{};
-            update_d.model = tf->cached;
-            update_instance_data(m, tfind, &update_d);
+            if (!is_comp_dirty(*tf)) {
+                update_d.model = tf->cached;
+            }
+            else {
+                update_d.model = interpolate_tranform(*tf, m->frame_alpha);
+            }
+
+            update_instance_data(m, i, &update_d);
             --tf->rfif_dirty;
         }
     }
 }
 
-void update_cameras(rmanifest *m, sim_region *sr)
+void prepare_cameras(rmanifest *m, sim_region *sr)
 {
     camera_tbl *cam_tbl = get_camera_tbl(&sr->cdb);
     transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
@@ -268,7 +267,7 @@ void enqueue_draws(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_
     }
 }
 
-void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
+void prepare_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
 {
     // auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
     // auto tftbs = get_comp_tbl<transform>(&sr->cdb);
@@ -278,9 +277,9 @@ void update_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, mater
     // auto techpool = get_asset_pool<technique>(cg);
     // auto geompool = get_asset_pool<geometry>(cg);
 
-    update_materials(m, cg);
-    update_transforms(m, sr);
-    update_cameras(m, sr);
+    prepare_materials(m, cg);
+    prepare_transforms(m, sr);
+    prepare_cameras(m, sr);
     enqueue_draws(m, sr, cg, def_material);
 }
 
