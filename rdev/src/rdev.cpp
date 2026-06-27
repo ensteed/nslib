@@ -541,11 +541,10 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     PROFILE_BEGIN("simulate");
     while (app->accumulater >= FIXED_DT) {
         simulate(ctxt, app, FIXED_DT);
-
         app->accumulater -= FIXED_DT;
     }
-    f64 alpha = app->accumulater / FIXED_DT;
     PROFILE_END();
+    f32 alpha = app->accumulater / FIXED_DT;
 
     frame_ubo_data fdata{};
     fdata.frame_count = app->rndr.finished_frames;
@@ -555,6 +554,7 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     auto bp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
     rmanifest *m = begin_render_frame(&app->rndr, {.rbp = bp, .frame_sdata = &fdata});
     if (!m) return true;
+    m->frame_alpha = alpha;
 
     build_manifest(m, app);
 

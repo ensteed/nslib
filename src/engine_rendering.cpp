@@ -172,18 +172,14 @@ void prepare_transforms(rmanifest *m, sim_region *sr)
     transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
     for (u32 i = 0; i < tf_tbl->entries.size; ++i) {
         transform *tf = &tf_tbl->entries[i];
-
-        if (tf->rfif_dirty > 0) {
-            instance_ssbo_data update_d{};
-            if (!is_comp_dirty(*tf)) {
-                update_d.model = tf->cached;
-            }
-            else {
-                update_d.model = interpolate_tranform(*tf, m->frame_alpha);
-            }
-
+        if (is_valid(tf->active_idx)) {
+            instance_ssbo_data update_d{.model = interpolate_tranform(*tf, m->frame_alpha)};
             update_instance_data(m, i, &update_d);
+        }
+        else if (tf->rfif_dirty > 0) {
+            instance_ssbo_data update_d{.model = tf->cached};
             --tf->rfif_dirty;
+            update_instance_data(m, i, &update_d);
         }
     }
 }
