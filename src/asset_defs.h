@@ -1,5 +1,5 @@
 #pragma once
-#include "asset_id.h"
+#include "rid.h"
 
 namespace nslib
 {
@@ -47,7 +47,7 @@ const u32 ASSET_POOL_ITEM_BUDGETS[ASSET_TYPE_USER] = {
     static constexpr const char *type_str = #type;                                                                                         \
     static constexpr const u32 type_id = ASSET_TYPE_##type;                                                                                \
     static constexpr const char *file_ext = "." #ext;                                                                                      \
-    asset_id id;                                                                                                                           \
+    rid id;                                                                                                                           \
     string name;                                                                                                                           \
     u64 flags;                                                                                                                             \
     mem_arena *fl;                                                                                                                         \
@@ -70,7 +70,7 @@ struct asset_ref
     union
     {
         asset_handle<T> hndl;
-        asset_id id;
+        rid id;
     };
 };
 

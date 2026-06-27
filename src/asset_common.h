@@ -21,7 +21,7 @@ struct asset_pool
     mem_arena *stack{};
 
     // Asset id to slot handle
-    hmap<asset_id, asset_handle<T>> amap{};
+    hmap<rid, asset_handle<T>> amap{};
     slot_pool<T> assets{};
 };
 
@@ -160,7 +160,7 @@ asset_item_ref<T> create_asset(asset_pool<T> *pool, const char *name)
     aref.item->fl = &pool->fl;
     aref.item->frame_lin = pool->frame_linear;
     aref.item->stack = pool->stack;
-    aref.item->id = generate_asset_id();
+    aref.item->id = generate_rid();
     auto item = hmap_insert(&pool->amap, aref.item->id, aref.hndl);
     if (!item) {
         release_slot(&pool->assets, aref.hndl);
@@ -181,7 +181,7 @@ asset_item_ref<T> create_asset(asset_pool<T> *pool, const T &copy, const char *n
     asrt(pool);
     auto cpy = create_asset(pool, nullptr);
     if (is_valid(cpy)) {
-        asset_id gen_id = cpy.item->id;
+        rid gen_id = cpy.item->id;
         *cpy.item = copy;
         cpy.item->fl = &pool->fl;
         cpy.item->frame_lin = pool->frame_linear;
@@ -239,7 +239,7 @@ const T *get_asset(const asset_cache &cache, asset_handle<T> hndl)
 }
 
 template<typename T>
-asset_item_ref<T> find_asset(asset_pool<T> *pool, asset_id id)
+asset_item_ref<T> find_asset(asset_pool<T> *pool, rid id)
 {
     asrt(pool);
     asset_item_ref<T> ret{};
@@ -268,7 +268,7 @@ asset_item_ref<T> find_asset(asset_pool<T> *pool, const char *name)
 }
 
 template<typename T>
-asset_item_ref<const T> find_asset(const asset_pool<T> &pool, asset_id id)
+asset_item_ref<const T> find_asset(const asset_pool<T> &pool, rid id)
 {
     asset_item_ref<const T> ret{};
     auto item = hmap_find(&pool.amap, id);
@@ -295,7 +295,7 @@ asset_item_ref<const T> find_asset(const asset_pool<T> &pool, const char *name)
 }
 
 template<typename T>
-asset_item_ref<T> find_asset(asset_cache *cache, asset_id id)
+asset_item_ref<T> find_asset(asset_cache *cache, rid id)
 {
     asrt(cache);
     auto pool = get_asset_pool<T>(cache);
@@ -311,7 +311,7 @@ asset_item_ref<T> find_asset(asset_cache *cache, const char *name)
 }
 
 template<typename T>
-asset_item_ref<const T> find_asset(const asset_cache &cache, asset_id id)
+asset_item_ref<const T> find_asset(const asset_cache &cache, rid id)
 {
     auto pool = get_asset_pool<T>(cache);
     return pool ? find_asset(pool, id) : asset_item_ref<const T>{};

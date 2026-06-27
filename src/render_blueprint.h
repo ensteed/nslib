@@ -137,13 +137,13 @@ struct rbp_pass
 {
     // Set while building
     small_str name{};
-    rres_id id;
+    rid id;
 
     rbp_pass_type type;
     bool use_subpass_bookends{false};
     static_array<rbp_resource_slot_info, MAX_BP_PASS_SLOT_COUNT> slots{};
     static_array<rbp_subpass, MAX_BP_SUBPASS_COUNT> subpasses{};
-    rres_id geom_streams_group;
+    rid geom_streams_group;
     rmultisample_info msi;
 
     // Filled during compile
@@ -169,7 +169,7 @@ struct rbp_pass_desc
     // Which stream group does this pass use? All vert buffers within a stream group share a single indice buffer,
     // but there can be multiple groups of vert buffers. Each group of vert buffers are allocated together, and use the
     // first buffer in the group's allocation/free offsets for all of the other buffers in the group.
-    rres_id geom_streams_group;
+    rid geom_streams_group;
     // Null if no override, other wise the override settings to use
     const rmultisample_settings *override;
 };
@@ -190,9 +190,9 @@ struct rbp_resource_slot_desc
 struct render_blueprint
 {
     small_str name{};
-    rres_id id;
+    rid id;
     static_array<rbp_pass, MAX_BP_PASS_COUNT> passes{};
-    hmap<rres_id, idx_t> pass_idmap{};
+    hmap<rid, idx_t> pass_idmap{};
 };
 
 pup_func(render_blueprint)
@@ -219,13 +219,13 @@ idx_t add_rbp_resource_requirement(render_blueprint *rbp,
 idx_t add_rbp_subpass(render_blueprint *rbp, idx_t pid);
 
 idx_t add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc);
-idx_t find_rbp_pass(render_blueprint *rbp, rres_id id);
+idx_t find_rbp_pass(render_blueprint *rbp, rid id);
 
 // Renderer takes ownership of blueprint
 render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name);
 bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl);
 render_blueprint *get_render_blueprint(renderer *rndr, render_blueprint_handle hndl);
-render_blueprint_ref find_render_blueprint(renderer *rndr, rres_id bpid);
+render_blueprint_ref find_render_blueprint(renderer *rndr, rid bpid);
 
 void clean_render_blueprint(renderer *rndr, render_blueprint *rbp);
 bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp);

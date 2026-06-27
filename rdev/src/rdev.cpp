@@ -16,19 +16,19 @@ using namespace nslib;
 #endif
 
 // intern constexpr const char * MAIN_PASS_COLOR_NAME = "main-pass-color";
-// intern const rres_id MAIN_PASS_COLOR_ID = hash_type("main-pass-color");
+// intern const rid MAIN_PASS_COLOR_ID = make_rid("main-pass-color");
 
 intern constexpr const char *FWD_PBR_RBP = "fwd-pbr";
-intern const rres_id FWD_PBR_RBP_ID = hash_type(FWD_PBR_RBP);
+intern const rid FWD_PBR_RBP_ID = make_rid(FWD_PBR_RBP);
 
 intern constexpr const char *MAIN_PASS_DEPTH_NAME = "main-pass-depth";
-intern const rres_id MAIN_PASS_DEPTH_ID = hash_type(MAIN_PASS_DEPTH_NAME);
+intern const rid MAIN_PASS_DEPTH_ID = make_rid(MAIN_PASS_DEPTH_NAME);
 
 intern constexpr const char *MAIN_PASS_NAME = "main-pass";
-intern const rres_id MAIN_PASS_ID = hash_type(MAIN_PASS_NAME);
+intern const rid MAIN_PASS_ID = make_rid(MAIN_PASS_NAME);
 
 intern constexpr const char *IMGUI_PASS_NAME = "imgui-pass";
-intern const rres_id IMGUI_PASS_ID = hash_type(IMGUI_PASS_NAME);
+intern const rid IMGUI_PASS_ID = make_rid(IMGUI_PASS_NAME);
 
 intern constexpr const char *DIFFUSE_TECH = "fwd-diffuse";
 
@@ -96,8 +96,8 @@ struct rdev_app_ctxt
 
     material_handle default_mat;
 
-    asset_id daniel_mat;
-    asset_id maria_mat;
+    rid daniel_mat;
+    rid maria_mat;
 
     input_keymap movement_km;
     input_keymap global_km;
@@ -183,12 +183,12 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     set_input_trigger(&app->stack, "move-left", {move_left_action, app});
     set_input_trigger(&app->stack, "ortho-zoom", {ortho_zoom_action, app});
 
-    set_keymap_entry(&app->global_km, KMCODE_MMOTION, 0, MBUTTON_MASK_MIDDLE, {"cam-turn"});
-    set_keymap_entry(&app->global_km, KMCODE_MWHEEL, 0, 0, {"ortho-zoom"});
-    set_keymap_entry(&app->movement_km, KMCODE_KEY_W, 0, 0, {"move-forward", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
-    set_keymap_entry(&app->movement_km, KMCODE_KEY_S, 0, 0, {"move-back", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
-    set_keymap_entry(&app->movement_km, KMCODE_KEY_D, 0, 0, {"move-right", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
-    set_keymap_entry(&app->movement_km, KMCODE_KEY_A, 0, 0, {"move-left", INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
+    set_keymap_entry(&app->global_km, KMCODE_MMOTION, 0, MBUTTON_MASK_MIDDLE, {make_rid("cam-turn")});
+    set_keymap_entry(&app->global_km, KMCODE_MWHEEL, 0, 0, {make_rid("ortho-zoom")});
+    set_keymap_entry(&app->movement_km, KMCODE_KEY_W, 0, 0, {make_rid("move-forward"), INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
+    set_keymap_entry(&app->movement_km, KMCODE_KEY_S, 0, 0, {make_rid("move-back"), INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
+    set_keymap_entry(&app->movement_km, KMCODE_KEY_D, 0, 0, {make_rid("move-right"), INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
+    set_keymap_entry(&app->movement_km, KMCODE_KEY_A, 0, 0, {make_rid("move-left"), INPUT_ACTION_PRESS | INPUT_ACTION_RELEASE});
 
     // Make our movement keymap not care about any modifiers at all - we always move no matter what
     app->movement_km.kmod_mask = KEYMOD_NONE;

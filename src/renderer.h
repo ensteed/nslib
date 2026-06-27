@@ -320,7 +320,7 @@ struct geom_buffer_layout_entry
 struct geom_stream_group
 {
     // The name is stored in the stream buffer entry for indices - the id is generated from that name
-    rres_id id{INVALID_ID};
+    rid id{};
     static_array<geom_buffer_layout_entry, MAX_GEOMETRY_LAYOUT_COUNT> layouts{};
     VmaVirtualBlock indices_block{VK_NULL_HANDLE};
     stream_buffer_entry indice_stream;
@@ -384,7 +384,7 @@ struct rbuffer_target
 {
     // Set during build
     small_str name;
-    rres_id id;
+    rid id;
     vkr_buffer_cfg cfg{};
     // Filled in during compile
     rbuffer_target_fif frames[MAX_FRAMES_IN_FLIGHT];
@@ -408,7 +408,7 @@ struct rtexture_target
 {
     // Set during build
     small_str name;
-    rres_id id;
+    rid id;
     u32 flags;
     // We need to store this so we can resize the image
     vkr_image_cfg cfg{};
@@ -419,9 +419,9 @@ struct rtexture_target
 struct rresource_target_registry
 {
     slot_pool<rbuffer_target> buffers;
-    hmap<rres_id, rbuffer_target_handle> buffer_id_map;
+    hmap<rid, rbuffer_target_handle> buffer_id_map;
     slot_pool<rtexture_target> textures;
-    hmap<rres_id, rtexture_target_handle> texture_id_map;
+    hmap<rid, rtexture_target_handle> texture_id_map;
 };
 
 struct rbuffer_target_desc
@@ -554,7 +554,7 @@ struct renderer
     global_descriptor_info desc_info{};
 
     // Really a single
-    hmap<rres_id, idx_t> geom_group_id_map{};
+    hmap<rid, idx_t> geom_group_id_map{};
     static_array<geom_stream_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 
     // Transient pool for image transfers and such
@@ -572,7 +572,7 @@ struct renderer
     s32 finished_frames{0};
 
     // Render blueprints
-    hmap<rres_id, render_blueprint_handle> blueprint_id_map{};
+    hmap<rid, render_blueprint_handle> blueprint_id_map{};
     slot_pool<render_blueprint> blueprints{};
 
     rresource_target_registry rtargets{};
@@ -643,7 +643,7 @@ rformat get_swapchain_format(renderer *rnd);
 idx_t get_fif_ind(renderer *rndr);
 
 idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
-idx_t find_geometry_stream_group(renderer *rndr, rres_id group_id);
+idx_t find_geometry_stream_group(renderer *rndr, rid group_id);
 
 // Geometry group desc builder
 geometry_vert_layout_desc *push_geometry_layout(geometry_stream_group_desc *desc, u32 layout_max_vert_count);
@@ -670,11 +670,11 @@ rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);
-rtexture_target_handle find_rtexture_target(renderer *rndr, rres_id id);
+rtexture_target_handle find_rtexture_target(renderer *rndr, rid id);
 
 rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci);
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
-rbuffer_target_handle find_rbuffer_target(renderer *rndr, rres_id id);
+rbuffer_target_handle find_rbuffer_target(renderer *rndr, rid id);
 
 bool init_renderer(renderer *rndr, const renderer_cfg &p);
 void terminate_renderer(renderer *rndr);

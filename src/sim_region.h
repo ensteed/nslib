@@ -1,7 +1,7 @@
 #pragma once
 
 #include "math/matrix4.h"
-#include "asset_id.h"
+#include "rid.h"
 #include "containers/array.h"
 #include "containers/hmap.h"
 
@@ -60,14 +60,14 @@ void terminate_comp_system(transform_system *sys);
 
 struct material_subgeom_mapping
 {
-    asset_id mat_id;
+    rid mat_id;
     u32 sm_mat_slot;
 };
 
 struct static_mesh
 {
     COMP(STATIC_MESH)
-    asset_id geom_id;
+    rid geom_id;
     array<material_subgeom_mapping> mat_mapping{};
 };
 

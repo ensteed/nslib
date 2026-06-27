@@ -1,6 +1,7 @@
 #pragma once
 #include "basic_types.h"
 #include "hashfuncs.h"
+#include "rid.h"
 
 namespace nslib
 {
@@ -47,8 +48,8 @@ inline constexpr u8 MAX_BP_RESOURCE_REQUIREMENT_COUNT = 8;
 inline constexpr u8 MAX_BP_PASS_SLOT_COUNT = 16;
 
 inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
-// Cannot be constexpr since hash_type is not
-inline const u64 SWAPCHAIN_ID = hash_type("swapchain");
+// Cannot be constexpr since make_rid is not
+inline const rid SWAPCHAIN_ID = make_rid("swapchain");
 
 inline constexpr f32 DEFAULT_DEPTH_CLEAR = 1.0f;
 inline constexpr u32 DEFAULT_STENCIL_CLEAR = 0;
@@ -141,7 +142,6 @@ using render_blueprint_handle = slot_handle<render_blueprint>;
 using render_blueprint_ref = slot_item_ref<render_blueprint>;
 
 using gpu_handle = u64;
-using rres_id = u64;
 
 enum rshader_stage_type
 {

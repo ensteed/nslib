@@ -146,9 +146,9 @@ enum polygon_mode
 struct technique_pass
 {
     // Shader id
-    asset_id shader;
+    rid shader;
     // Blueprint pass id and subpass index
-    rres_id bp_pass;
+    rid bp_pass;
     idx_t bp_subpass;
     // Which layout the technique uses within the stream group. The stream group is specified in the blueprint pass.
     idx_t gsg_layout;
@@ -170,7 +170,7 @@ struct technique
 {
     ASSET(TECHNIQUE, tech);
     // Blueprint id
-    rres_id bpid;
+    rid bpid;
     // Pass per render blueprint pass
     array<technique_pass> passes;
     rtechnique_handle rhndl;
@@ -178,8 +178,8 @@ struct technique
 
 struct mat_blueprint_mapping
 {
-    rres_id bpid;
-    asset_id tech_id;
+    rid bpid;
+    rid tech_id;
 };
 
 enum material_bits
@@ -189,7 +189,7 @@ enum material_bits
 
 struct texture_info
 {
-    asset_id id{INVALID_ID};
+    rid id{};
     mat_sampler_type sampler{MAT_SAMPLER_TYPE_LINEAR_REPEAT};
 };
 

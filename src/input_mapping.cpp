@@ -17,7 +17,7 @@ constexpr const sizet DEFAULT_FUNCMAP_BUCKET_COUNT = 64;
 
 bool operator==(const input_keymap_entry &lhs, const input_keymap_entry &rhs)
 {
-    return (lhs.name == rhs.name);
+    return (lhs.trigger_id == rhs.trigger_id);
 }
 
 u32 generate_keymap_id(u16 code, u16 keymods, u8 mbutton_mask)
@@ -97,12 +97,12 @@ bool add_keymap_entry(input_keymap *km, input_kmcode kmcode, u16 keymods, u8 mbu
 
     auto id = generate_keymap_id(kmcode, keymods, mbutton_mask);
     bool ret = add_keymap_entry(km, id, entry);
-    ilog("Generating keymap entry %u (kmcode %u, keymods %u, mbutton_mask %u) for %s: %s",
+    ilog("Generating keymap entry %u (kmcode %u, keymods %u, mbutton_mask %u) for trigger_id %s: %s",
          id,
          kmcode,
          keymods,
          mbutton_mask,
-         ls(entry.name),
+         ls(entry.trigger_id),
          ret ? "true" : "false");
     return ret;
 }
@@ -127,13 +127,14 @@ const input_keymap_entry *find_keymap_entry(const input_keymap *km, u32 id)
     return nullptr;
 }
 
-input_keymap_entry *find_keymap_entry(input_keymap *km, const char *name)
+input_keymap_entry *find_first_keymap_entry(input_keymap *km, const char *trigger_name)
 {
-    asrt(name);
+    asrt(trigger_name);
     asrt(km);
+    rid nm_id = make_rid(trigger_name);
     auto iter = hmap_begin(&km->hm);
     while (iter) {
-        if (name == iter->val.name) {
+        if (iter->val.trigger_id == nm_id) {
             return &iter->val;
         }
         iter = hmap_next(&km->hm, iter);
@@ -141,13 +142,15 @@ input_keymap_entry *find_keymap_entry(input_keymap *km, const char *name)
     return nullptr;
 }
 
-const input_keymap_entry *find_keymap_entry(const input_keymap *km, const char *name)
+const input_keymap_entry *find_first_keymap_entry(const input_keymap *km, const char *trigger_name)
 {
-    asrt(name);
+    asrt(trigger_name);
     asrt(km);
+    rid nm_id = make_rid(trigger_name);
+
     auto iter = hmap_begin(&km->hm);
     while (iter) {
-        if (strcmp(name, str_cstr(iter->val.name)) == 0) {
+        if (iter->val.trigger_id == nm_id) {
             return &iter->val;
         }
         iter = hmap_next(&km->hm, iter);
@@ -216,13 +219,13 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
         auto cur_press_fiter = hmap_find(&stack->cur_pressed, t.ev->kmcode);
         if (cur_press_fiter) {
             for (sizet bind = 0; bind < cur_press_fiter->val.size; ++bind) {
-                auto cur_entry = &cur_press_fiter->val[bind];
-                t.name = str_cstr(cur_entry->kme->name);
-                if (cur_entry->cb.func) {
-                    cur_entry->cb.func(t, cur_entry->cb.user);
+                t.trigger_id = cur_press_fiter->val[bind].trigger_id;
+                auto cb_func = hmap_find(&stack->trigger_funcs, t.trigger_id);
+                if (cb_func && cb_func->val.func) {
+                    cb_func->val.func(t, cb_func->val.user);
                 }
                 else {
-                    wlog("No trigger func found for %s", t.name);
+                    wlog("No trigger func found for %s", ls(t.trigger_id));
                 }
             }
             arr_clear(&cur_press_fiter->val);
@@ -239,9 +242,10 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
             if (kentry) {
                 input_trigger_cb cb{};
                 // Find the associated input function
-                t.name = str_cstr(kentry->name);
-                u64 nkey = hash_type(t.name, 0, 0);
-                auto fiter = hmap_find(&stack->trigger_funcs, nkey);
+                t.trigger_id = kentry->trigger_id;
+                // t.name = str_cstr(kentry->name);
+                // u64 nkey = hash_type(kentry->trigger_id, 0, 0);
+                auto fiter = hmap_find(&stack->trigger_funcs, t.trigger_id);
                 if (fiter) {
                     cb = fiter->val;
                 }
@@ -252,7 +256,7 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
                 if (key_or_mbtn) {
                     if (t.ev->key.action == INPUT_ACTION_PRESS && test_flags(kentry->action_mask, INPUT_ACTION_RELEASE)) {
                         auto cur_press_item = hmap_find_or_insert(&stack->cur_pressed, t.ev->kmcode);
-                        arr_push_back(&cur_press_item->val, input_pressed_entry{.kme = kentry, .cb = cb});
+                        arr_push_back(&cur_press_item->val, {.trigger_id = t.trigger_id});
                     }
                     call_func = test_flags(kentry->action_mask, t.ev->key.action);
                 }
@@ -261,7 +265,7 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
                     cb.func(t, cb.user);
                 }
                 else if (call_func) {
-                    wlog("No trigger func found for %s", t.name);
+                    wlog("No trigger func found for trigger id %s", ls(t.trigger_id));
                 }
                 if (!test_flags(kentry->flags, KEYMAP_ENTRY_FLAG_DONT_CONSUME)) {
                     return;
@@ -291,8 +295,7 @@ bool add_input_trigger(input_keymap_stack *stack, const char *name, const input_
         wlog("Cannot add trigger func under empty name");
         return false;
     }
-    u64 nkey = hash_type(name, 0, 0);
-    auto ins = hmap_insert(&stack->trigger_funcs, nkey, cb);
+    auto ins = hmap_insert(&stack->trigger_funcs, make_rid(name), cb);
     return ins;
 }
 
@@ -303,14 +306,12 @@ void set_input_trigger(input_keymap_stack *stack, const char *name, const input_
         wlog("Cannot add trigger func under empty name");
         return;
     }
-    u64 nkey = hash_type(name, 0, 0);
-    hmap_set(&stack->trigger_funcs, nkey, cb);
+    hmap_set(&stack->trigger_funcs, make_rid(name), cb);
 }
 
 bool remove_input_trigger(input_keymap_stack *stack, const char *name)
 {
-    u64 nkey = hash_type(name, 0, 0);
-    return hmap_remove(&stack->trigger_funcs, nkey);
+    return hmap_remove(&stack->trigger_funcs, make_rid(name));
 }
 
 } // namespace nslib

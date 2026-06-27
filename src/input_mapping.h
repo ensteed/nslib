@@ -3,6 +3,7 @@
 #include "containers/string.h"
 #include "containers/hmap.h"
 #include "input_kmcodes.h"
+#include "rid.h"
 
 namespace nslib
 {
@@ -19,7 +20,7 @@ enum keymap_entry_flags
 
 struct input_trigger
 {
-    const char *name{};
+    rid trigger_id;
     u32 ev_type;
     const platform_input_event *ev;
 };
@@ -28,14 +29,17 @@ using input_event_func = void(const input_trigger &ev, void *user);
 
 struct input_keymap_entry
 {
-    string name{};
+    // string name{};
+    rid trigger_id;
     u8 action_mask{INPUT_ACTION_PRESS};
     u32 flags{};
 };
 
 pup_func(input_keymap_entry)
 {
-    pup_member(name);
+    // pup_member(name);
+    pup_member(trigger_id);
+    pup_member(action_mask);
     pup_member(flags);
 }
 
@@ -50,7 +54,7 @@ pup_func(input_trigger_cb)
     sizet fptr = (sizet)val.func;
     sizet uptr = (sizet)val.user;
     pup_var(ar, fptr, {.name = "func"});
-    pup_var(ar, fptr, {.name = "user"});
+    pup_var(ar, uptr, {.name = "user"});
 }
 
 bool operator==(const input_keymap_entry &lhs, const input_keymap_entry &rhs);
@@ -73,15 +77,14 @@ struct input_keymap
 
 struct input_pressed_entry
 {
-    const input_keymap_entry *kme;
-    input_trigger_cb cb;
+    rid trigger_id;
 };
 
 // Keymaps are owned elsewhere - likely an asset as they will just have keyboard shortcuts.... assigned to what?
 struct input_keymap_stack
 {
     static_array<input_keymap *, MAX_INPUT_CONTEXT_STACK_COUNT> kmaps{};
-    hmap<u64, input_trigger_cb> trigger_funcs;
+    hmap<rid, input_trigger_cb> trigger_funcs;
     hmap<u16, static_array<input_pressed_entry, 4>> cur_pressed;
 };
 
@@ -108,8 +111,8 @@ bool add_keymap_entry(input_keymap *km, input_kmcode kmcode, u16 keymods, u8 mbu
 // Find keymap entry by key and return it - return null if no match is found
 input_keymap_entry *find_keymap_entry(input_keymap *km, u32 id);
 const input_keymap_entry *find_keymap_entry(const input_keymap *km, u32 id);
-input_keymap_entry *find_keymap_entry(input_keymap *km, const char *name);
-const input_keymap_entry *find_keymap_entry(const input_keymap *km, const char *name);
+input_keymap_entry *find_first_keymap_entry(input_keymap *km, const char *trigger_name);
+const input_keymap_entry *find_first_keymap_entry(const input_keymap *km, const char *trigger_name);
 
 // Remove a keymap entry - returns true if removed
 bool remove_keymap_entry(input_keymap *km, u32 id);

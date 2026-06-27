@@ -14,22 +14,22 @@ namespace nslib
 
 intern const sizet ASSET_TYPE_SIZE[ASSET_TYPE_USER] = {sizeof(geometry)};
 
-asset_id make_asset_id(const string &str)
+rid make_rid(const string &str)
 {
     return {.id = hash_type(str, 0, 0)};
 }
 
-asset_id make_asset_id(const char *str)
+rid make_rid(const char *str)
 {
     return {.id = hash_type(str, 0, 0)};
 }
 
-string to_str(const asset_id &rid)
+string to_str(const rid &id)
 {
-    return to_str(rid.id);
+    return to_str(id.id);
 }
 
-asset_id generate_asset_id()
+rid generate_rid()
 {
     return {.id = generate_unique_id()};
 }

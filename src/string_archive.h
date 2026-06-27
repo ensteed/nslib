@@ -59,8 +59,8 @@ void pack_unpack_end(string_archive *ar, string &, const pack_var_info &vinfo);
 void pack_unpack(string_archive *ar, string &val, const pack_var_info &vinfo);
 
 // Make rids not register as their own object (we only pup the str member)
-inline void pack_unpack_begin(string_archive *ar, asset_id &id, const pack_var_info &vinfo) {}
-inline void pack_unpack_end(string_archive *ar, asset_id &id, const pack_var_info &vinfo) {}
+inline void pack_unpack_begin(string_archive *ar, rid &id, const pack_var_info &vinfo) {}
+inline void pack_unpack_end(string_archive *ar, rid &id, const pack_var_info &vinfo) {}
 
 // Static arrays (actual ones)
 template<class T, sizet N>
@@ -165,7 +165,7 @@ void pack_unpack(string_archive *ar, hmap<string, T> &val, const pack_var_info &
 
 // Hashmap with rid key
 template<class T>
-void pack_unpack(string_archive *ar, hmap<asset_id, T> &val, const pack_var_info &vinfo)
+void pack_unpack(string_archive *ar, hmap<rid, T> &val, const pack_var_info &vinfo)
 {
     auto iter = hmap_begin(&val);
     while (iter) {

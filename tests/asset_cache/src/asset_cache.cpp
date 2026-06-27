@@ -1,17 +1,17 @@
 #include "platform.h"
 #include "logging.h"
 #include "asset_common.h"
-#include "asset_id.h"
+#include "rid.h"
 #include "model.h"
 
 using namespace nslib;
 
-void test_asset_id_helpers()
+void test_rid_helpers()
 {
     ilog("begin");
     string name("cache_asset");
-    asset_id id_from_string = make_asset_id(name);
-    asset_id id_from_cstr = make_asset_id("cache_asset");
+    rid id_from_string = make_rid(name);
+    rid id_from_cstr = make_rid("cache_asset");
     asrt_log(id_from_string == id_from_cstr);
     asrt_log(is_valid(id_from_string));
 
@@ -19,7 +19,7 @@ void test_asset_id_helpers()
     string id_expected = to_str(id_from_string.id);
     asrt_log(id_str == id_expected);
 
-    asset_id generated = generate_asset_id();
+    rid generated = generate_rid();
     asrt_log(is_valid(generated));
     ilog("end");
 }
@@ -163,7 +163,7 @@ void test_cache_default_types()
 
 void run_asset_cache_tests(platform_ctxt *ctxt)
 {
-    test_asset_id_helpers();
+    test_rid_helpers();
     test_cache_init_terminate();
     test_direct_pool_init_and_terminate();
     test_cache_pool_api();

@@ -16,7 +16,7 @@ const u32 MAX_SKINNED_GEOM_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
 
 
 intern constexpr const char *MAIN_GEOM_STREAM_GP = "main";
-intern const rres_id MAIN_GEOM_STREAM_GP_ID = hash_type(MAIN_GEOM_STREAM_GP);
+intern const rid MAIN_GEOM_STREAM_GP_ID = make_rid(MAIN_GEOM_STREAM_GP);
 
 struct mem_arena;
 struct renderer;

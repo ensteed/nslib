@@ -192,7 +192,7 @@ idx_t add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
     asrt(ind < rbp->passes.capacity);
     rbp_pass *pass = &rbp->passes[ind];
     strncpy(pass->name, pdesc.name, SMALL_STR_LEN - 1);
-    pass->id = hash_type(pass->name);
+    pass->id = make_rid(pass->name);
     pass->use_subpass_bookends = pdesc.use_subpass_bookends;
     pass->type = pdesc.type;
     pass->subpasses.size = 1;
@@ -205,7 +205,7 @@ idx_t add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
     return ind;
 }
 
-idx_t find_rbp_pass(render_blueprint *rbp, rres_id id)
+idx_t find_rbp_pass(render_blueprint *rbp, rid id)
 {
     auto fiter = hmap_find(&rbp->pass_idmap, id);
     return fiter ? fiter->val : INVALID_IDX;
@@ -219,7 +219,7 @@ render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name)
     }
     hmap_init(&ref.item->pass_idmap, hash_type, &rndr->persist_fl);
     strncpy(ref.item->name, name, SMALL_STR_LEN - 1);
-    ref.item->id = hash_type(ref.item->name);
+    ref.item->id = make_rid(ref.item->name);
     hmap_insert(&rndr->blueprint_id_map, ref.item->id, ref.hndl);
     ilog("Created render bluepring %s with id %lu", name, ref.item->id);
     return ref;
@@ -239,7 +239,7 @@ render_blueprint *get_render_blueprint(renderer *rndr, render_blueprint_handle h
     return get_slot_item(&rndr->blueprints, hndl);
 }
 
-render_blueprint_ref find_render_blueprint(renderer *rndr, rres_id bpid)
+render_blueprint_ref find_render_blueprint(renderer *rndr, rid bpid)
 {
     render_blueprint_ref ret{};
     auto fiter = hmap_find(&rndr->blueprint_id_map, bpid);

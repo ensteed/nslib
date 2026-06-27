@@ -1,6 +1,6 @@
 #include "platform.h"
 #include "logging.h"
-#include "asset_id.h"
+#include "rid.h"
 #include "hashfuncs.h"
 #include "containers/string.h"
 #include "containers/hmap.h"
@@ -12,7 +12,7 @@ using namespace nslib;
 struct custom_type_0
 {
     int val1;
-    asset_id id;
+    rid id;
 };
 
 u64 hash_type(const custom_type_0 &item, u64 s0, u64 s1)
@@ -706,19 +706,19 @@ void test_hashmaps_string_keys()
 {
     ilog("Starting new hashmap string key test");
 
-    hmap<asset_id, string> hm1{};
+    hmap<rid, string> hm1{};
 
     hmap_init(&hm1, hash_type);
     ilog("Inserting 9 strange strings");
-    hmap_insert(&hm1, make_asset_id("scooby"), string("scooby-data"));
-    hmap_insert(&hm1, make_asset_id("sandwiches"), string("sandwiches-data"));
-    hmap_insert(&hm1, make_asset_id("alowishish"), string("alowishish-data"));
-    hmap_insert(&hm1, make_asset_id("do-the-dance"), string("do-the-dance-data"));
-    hmap_insert(&hm1, make_asset_id("booty_cake"), string("booty_cake-data"));
-    hmap_insert(&hm1, make_asset_id("gogogo300"), string("gogogo300-data"));
-    hmap_insert(&hm1, make_asset_id("67-under"), string("67-under-data"));
-    hmap_insert(&hm1, make_asset_id("kjhj"), string("kjhj-data"));
-    hmap_insert(&hm1, make_asset_id("lemar"), string("lemar-data"));
+    hmap_insert(&hm1, make_rid("scooby"), string("scooby-data"));
+    hmap_insert(&hm1, make_rid("sandwiches"), string("sandwiches-data"));
+    hmap_insert(&hm1, make_rid("alowishish"), string("alowishish-data"));
+    hmap_insert(&hm1, make_rid("do-the-dance"), string("do-the-dance-data"));
+    hmap_insert(&hm1, make_rid("booty_cake"), string("booty_cake-data"));
+    hmap_insert(&hm1, make_rid("gogogo300"), string("gogogo300-data"));
+    hmap_insert(&hm1, make_rid("67-under"), string("67-under-data"));
+    hmap_insert(&hm1, make_rid("kjhj"), string("kjhj-data"));
+    hmap_insert(&hm1, make_rid("lemar"), string("lemar-data"));
 
     ilog("Forward...");
     auto iter = hmap_begin(&hm1);
@@ -735,10 +735,10 @@ void test_hashmaps_string_keys()
     }
 
     ilog("Removing 4 entries");
-    hmap_remove(&hm1, make_asset_id("do-the-dance"));
-    hmap_remove(&hm1, make_asset_id("booty_cake"));
-    hmap_remove(&hm1, make_asset_id("gogogo300"));
-    hmap_remove(&hm1, make_asset_id("67-under"));
+    hmap_remove(&hm1, make_rid("do-the-dance"));
+    hmap_remove(&hm1, make_rid("booty_cake"));
+    hmap_remove(&hm1, make_rid("gogogo300"));
+    hmap_remove(&hm1, make_rid("67-under"));
 
     ilog("Forward...");
     iter = hmap_begin(&hm1);
@@ -755,11 +755,11 @@ void test_hashmaps_string_keys()
     }
 
     ilog("Inserting 5 more strange strings");
-    hmap_insert(&hm1, make_asset_id("another"), string("another-data"));
-    hmap_insert(&hm1, make_asset_id("type-of"), string("type-of-data"));
-    hmap_insert(&hm1, make_asset_id("thing-that"), string("thing-that-data"));
-    hmap_insert(&hm1, make_asset_id("wereallyshould"), string("wereallyshould-data"));
-    hmap_insert(&hm1, make_asset_id("beadding"), string("beadding-data"));
+    hmap_insert(&hm1, make_rid("another"), string("another-data"));
+    hmap_insert(&hm1, make_rid("type-of"), string("type-of-data"));
+    hmap_insert(&hm1, make_rid("thing-that"), string("thing-that-data"));
+    hmap_insert(&hm1, make_rid("wereallyshould"), string("wereallyshould-data"));
+    hmap_insert(&hm1, make_rid("beadding"), string("beadding-data"));
 
     ilog("Forward...");
     iter = hmap_begin(&hm1);
@@ -828,19 +828,19 @@ void test_hset_string_keys()
 {
     ilog("Starting new hashset string test");
 
-    hset<asset_id> hs1{};
+    hset<rid> hs1{};
 
     hset_init(&hs1);
     ilog("Inserting 9 strange strings");
-    hset_insert(&hs1, make_asset_id("scooby"));
-    hset_insert(&hs1, make_asset_id("sandwiches"));
-    hset_insert(&hs1, make_asset_id("alowishish"));
-    hset_insert(&hs1, make_asset_id("do-the-dance"));
-    hset_insert(&hs1, make_asset_id("booty_cake"));
-    hset_insert(&hs1, make_asset_id("gogogo300"));
-    hset_insert(&hs1, make_asset_id("67-under"));
-    hset_insert(&hs1, make_asset_id("kjhj"));
-    hset_insert(&hs1, make_asset_id("lemar"));
+    hset_insert(&hs1, make_rid("scooby"));
+    hset_insert(&hs1, make_rid("sandwiches"));
+    hset_insert(&hs1, make_rid("alowishish"));
+    hset_insert(&hs1, make_rid("do-the-dance"));
+    hset_insert(&hs1, make_rid("booty_cake"));
+    hset_insert(&hs1, make_rid("gogogo300"));
+    hset_insert(&hs1, make_rid("67-under"));
+    hset_insert(&hs1, make_rid("kjhj"));
+    hset_insert(&hs1, make_rid("lemar"));
 
     ilog("Forward...");
     auto iter = hset_begin(&hs1);
@@ -857,10 +857,10 @@ void test_hset_string_keys()
     }
 
     ilog("Removing 4 strings");
-    hset_remove(&hs1, make_asset_id("do-the-dance"));
-    hset_remove(&hs1, make_asset_id("booty_cake"));
-    hset_remove(&hs1, make_asset_id("gogogo300"));
-    hset_remove(&hs1, make_asset_id("67-under"));
+    hset_remove(&hs1, make_rid("do-the-dance"));
+    hset_remove(&hs1, make_rid("booty_cake"));
+    hset_remove(&hs1, make_rid("gogogo300"));
+    hset_remove(&hs1, make_rid("67-under"));
 
     ilog("Forward...");
     iter = hset_begin(&hs1);
@@ -877,11 +877,11 @@ void test_hset_string_keys()
     }
 
     ilog("Inserting 5 more strange strings");
-    hset_insert(&hs1, make_asset_id("another"));
-    hset_insert(&hs1, make_asset_id("type-of"));
-    hset_insert(&hs1, make_asset_id("thing-that"));
-    hset_insert(&hs1, make_asset_id("wereallyshould"));
-    hset_insert(&hs1, make_asset_id("beadding"));
+    hset_insert(&hs1, make_rid("another"));
+    hset_insert(&hs1, make_rid("type-of"));
+    hset_insert(&hs1, make_rid("thing-that"));
+    hset_insert(&hs1, make_rid("wereallyshould"));
+    hset_insert(&hs1, make_rid("beadding"));
 
     ilog("Forward...");
     iter = hset_begin(&hs1);

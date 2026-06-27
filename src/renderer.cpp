@@ -259,7 +259,7 @@ intern void init_resource_target_registry(renderer *rndr)
     // reference the swapchain image at the start of every frame once we acquire it
     auto swapchain = acquire_slot(&rndr->rtargets.textures);
     strcpy(swapchain.item->name, "swapchain");
-    swapchain.item->id = hash_type("swapchain");
+    swapchain.item->id = make_rid("swapchain");
     hmap_insert(&rndr->rtargets.texture_id_map, swapchain.item->id, swapchain.hndl);
 }
 
@@ -918,12 +918,12 @@ idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_des
         --rndr->geom_groups.size;
         return INVALID_IDX;
     }
-    cur_group->id = hash_type(cur_group->indice_stream.name);
+    cur_group->id = make_rid(cur_group->indice_stream.name);
     hmap_insert(&rndr->geom_group_id_map, cur_group->id, geom_id);
     return geom_id;
 }
 
-idx_t find_geometry_stream_group(renderer *rndr, rres_id group_id)
+idx_t find_geometry_stream_group(renderer *rndr, rid group_id)
 {
     auto id_fiter = hmap_find(&rndr->geom_group_id_map, group_id);
     return id_fiter ? id_fiter->val : INVALID_IDX;
@@ -1317,7 +1317,7 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
     }
 
     strncpy(tref.item->name, ci.name, SMALL_STR_LEN - 1);
-    tref.item->id = hash_type(tref.item->name);
+    tref.item->id = make_rid(tref.item->name);
     tref.item->flags = ci.flags;
 
     // If parameter not here its cause I want to leave at default on purpose
@@ -1364,7 +1364,7 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
     return tref.hndl;
 }
 
-rtexture_target_handle find_rtexture_target(renderer *rndr, rres_id id)
+rtexture_target_handle find_rtexture_target(renderer *rndr, rid id)
 {
     auto fiter = hmap_find(&rndr->rtargets.texture_id_map, id);
     return fiter ? fiter->val : rtexture_target_handle{};
@@ -1382,7 +1382,7 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
         return {};
     }
     strncpy(btref.item->name, ci.name, SMALL_STR_LEN - 1);
-    btref.item->id = hash_type(btref.item->name);
+    btref.item->id = make_rid(btref.item->name);
     // TODO: Don't actually just have cfg in the ci - edit this to only include actual needed things - for now we just
     // use it
     btref.item->cfg = ci.cfg;
@@ -1403,7 +1403,7 @@ rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl)
     return get_slot_item(&rndr->rtargets.buffers, hndl);
 }
 
-rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rres_id id)
+rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rid id)
 {
     auto fiter = hmap_find(&rndr->rtargets.buffer_id_map, id);
     return fiter ? fiter->val : rbuffer_target_handle{};
