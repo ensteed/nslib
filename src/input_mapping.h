@@ -29,7 +29,6 @@ using input_event_func = void(const input_trigger &ev, void *user);
 
 struct input_keymap_entry
 {
-    // string name{};
     rid trigger_id;
     u8 action_mask{INPUT_ACTION_PRESS};
     u32 flags{};
@@ -37,7 +36,6 @@ struct input_keymap_entry
 
 pup_func(input_keymap_entry)
 {
-    // pup_member(name);
     pup_member(trigger_id);
     pup_member(action_mask);
     pup_member(flags);

@@ -2,10 +2,7 @@
 #include <stdlib.h>
 
 #include "input_mapping.h"
-#include "json_archive.h"
 #include "hashfuncs.h"
-#include "util.h"
-
 #include "platform.h"
 
 namespace nslib
@@ -243,8 +240,6 @@ void map_input_event(input_keymap_stack *stack, const platform_input_event *raw,
                 input_trigger_cb cb{};
                 // Find the associated input function
                 t.trigger_id = kentry->trigger_id;
-                // t.name = str_cstr(kentry->name);
-                // u64 nkey = hash_type(kentry->trigger_id, 0, 0);
                 auto fiter = hmap_find(&stack->trigger_funcs, t.trigger_id);
                 if (fiter) {
                     cb = fiter->val;
