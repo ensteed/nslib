@@ -1,3 +1,4 @@
+#include "math/quaternion.h"
 #include "sim_region.h"
 
 namespace nslib

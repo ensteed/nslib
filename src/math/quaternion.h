@@ -142,7 +142,7 @@ quaternion<T> slerp(quaternion<T> first, quaternion<T> second, T t)
 }
 
 template<floating_pt T>
-quaternion<T> nlerp(quaternion<T> first, quaternion<T> &second, T t)
+quaternion<T> nlerp(quaternion<T> first, quaternion<T> second, T t)
 {
     if (fequals(t, T(0))) return first;
 
