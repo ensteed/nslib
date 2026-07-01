@@ -265,14 +265,6 @@ void enqueue_draws(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_
 
 void prepare_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
 {
-    // auto smtbl = get_comp_tbl<static_mesh>(&sr->cdb);
-    // auto tftbs = get_comp_tbl<transform>(&sr->cdb);
-    // auto cam_tbl = get_comp_tbl<camera>(&sr->cdb);
-    // auto mpool = get_asset_pool<material>(cg);
-    // auto tex_pool = get_asset_pool<texture>(cg);
-    // auto techpool = get_asset_pool<technique>(cg);
-    // auto geompool = get_asset_pool<geometry>(cg);
-
     prepare_materials(m, cg);
     prepare_transforms(m, sr);
     prepare_cameras(m, sr);
