@@ -553,7 +553,6 @@ struct renderer
     // Global descriptor set layouts (used for creating descriptor sets and pipelines)
     global_descriptor_info desc_info{};
 
-    // Really a single
     hmap<rid, idx_t> geom_group_id_map{};
     static_array<geom_stream_group, MAX_GEOMETRY_STREAM_GROUP_COUNT> geom_groups;
 

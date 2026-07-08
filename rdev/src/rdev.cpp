@@ -528,7 +528,7 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     prepare_and_draw_region(m, &app->rgn, &app->cg, default_mat);
 }
 
-const f32 FIXED_DT = 0.1;
+constexpr f32 FIXED_DT = 1 / 60.0f;
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
