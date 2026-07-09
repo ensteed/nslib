@@ -7,6 +7,7 @@
 #include "basic_types.h"
 #include "engine_rendering.h"
 #include "render_manifest.h"
+#include "render_thread.h"
 #include "vkr_texture_pool.h"
 #include "profiling.h"
 using namespace nslib;
@@ -90,6 +91,7 @@ const renderer_cfg RNDR_CFG{
 struct rdev_app_ctxt
 {
     renderer rndr;
+    render_thread rt;
     sim_region rgn;
     asset_cache cg;
     f64 accumulater;
@@ -360,6 +362,8 @@ intern void create_materials(material_pool *mat_pool, technique *tech, texture_p
     app->maria_mat = maria_mat.item->id;
 }
 
+intern void rdev_build_frame(rmanifest *m, const render_frame_payload *p, void *user);
+
 intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     init_asset_cache_default_types(
@@ -417,6 +421,15 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     // Create and setup input for camera
     setup_camera_controller(ctxt, app);
     create_entity_grid(&app->rgn, *cube, *rect, app);
+
+    // Last thing in init: past here the render thread is live and the blueprint set is frozen.
+    render_thread_cfg rt_cfg{};
+    rt_cfg.rndr = &app->rndr;
+    rt_cfg.mode = RENDER_THREAD_MODE_LOCKSTEP;
+    rt_cfg.build = rdev_build_frame;
+    rt_cfg.build_user = app;
+    if (!init_render_thread(&app->rt, rt_cfg)) return false;
+
     return true;
 }
 
@@ -528,58 +541,50 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
     prepare_and_draw_region(m, &app->rgn, &app->cg, default_mat);
 }
 
-constexpr f32 FIXED_DT = 1 / 60.0f;
-
-intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
+// Runs on the render thread. Reads live sim state through app, which is only safe because
+// LOCKSTEP has the sim blocked in submit_render_frame for the duration of this call.
+intern void rdev_build_frame(rmanifest *m, const render_frame_payload *p, void *user)
 {
-    PROFILE_BEGIN_FRAME();
-    begin_platform_frame(ctxt);
-
-    app->accumulater += ctxt->time_pts.dt;
-    map_input_frame(&app->stack, &ctxt->feventq);
-
-    PROFILE_BEGIN("simulate");
-    while (app->accumulater >= FIXED_DT) {
-        simulate(ctxt, app, FIXED_DT);
-        app->accumulater -= FIXED_DT;
-    }
-    PROFILE_END();
-    f32 alpha = app->accumulater / FIXED_DT;
-
-    frame_ubo_data fdata{};
-    fdata.frame_count = app->rndr.finished_frames;
-    fdata.dt = ctxt->time_pts.dt;
-    fdata.elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
-
-    auto bp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
-    rmanifest *m = begin_render_frame(&app->rndr, {.rbp = bp, .frame_sdata = &fdata});
-    if (!m) return true;
-    m->frame_alpha = alpha;
-
+    auto app = (rdev_app_ctxt *)user;
     build_manifest(m, app);
 
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
     ImGui::ShowDebugLogWindow();
 #endif
+}
 
-    bool res = end_render_frame(m);
+constexpr f32 FIXED_DT = 1 / 60.0f;
+
+intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
+{
+    begin_platform_frame(ctxt);
+
+    app->accumulater += ctxt->time_pts.dt;
+    map_input_frame(&app->stack, &ctxt->feventq);
+
+    while (app->accumulater >= FIXED_DT) {
+        simulate(ctxt, app, FIXED_DT);
+        app->accumulater -= FIXED_DT;
+    }
+
+    render_frame_payload rp{};
+    rp.alpha = app->accumulater / FIXED_DT;
+    rp.fdata.frame_count = app->rndr.finished_frames;
+    rp.fdata.dt = ctxt->time_pts.dt;
+    rp.fdata.elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
+    rp.rbp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
+
+    bool res = submit_render_frame(&app->rt, rp);
     end_platform_frame(ctxt);
 
-    PROFILE_END_FRAME();
-
-#if defined(PROFILING_ENABLED)
-    static u32 frame_count_goal = ctxt->finished_frames + GLOBAL_PROFILING_CONTEXT[0]->avg_window;
-    if (ctxt->finished_frames > frame_count_goal) {
-        PROFILE_PRINT_REPORT();
-        frame_count_goal += GLOBAL_PROFILING_CONTEXT[0]->avg_window;
-    }
-#endif
     return res;
 }
 
 intern void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
+    // Join before tearing the renderer down - the render thread uses it until it exits.
+    terminate_render_thread(&app->rt);
     terminate_renderer(&app->rndr);
     terminate_keymap(&app->global_km);
     terminate_keymap(&app->movement_km);

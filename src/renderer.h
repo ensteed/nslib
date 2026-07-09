@@ -1,4 +1,4 @@
-
+#pragma once
 
 #include "math/matrix4.h"
 #include "profile_timer.h"

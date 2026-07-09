@@ -49,6 +49,9 @@ add_subdirectory(${DEPS_DIR})
 file(GLOB_RECURSE src_files
   ${NSLIB_SRC_DIR}/*.c*
 )
+# Emacs leaves dangling .#name.cpp lock symlinks next to files open in a buffer - the glob
+# picks them up and configure dies on the missing source.
+list(FILTER src_files EXCLUDE REGEX "/\\.#")
 
 # Create lib
 add_library(${NSLIB_TARGET_NAME} SHARED ${src_files})
