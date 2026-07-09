@@ -39,6 +39,7 @@ else()
 endif()
 
 find_package(Vulkan REQUIRED)
+find_package(Threads REQUIRED)
 find_program(glslc_executable NAMES glslc HINTS Vulkan::glslc)
 
 # Add dependencies
@@ -63,7 +64,7 @@ target_compile_definitions(${NSLIB_TARGET_NAME} PUBLIC
   NSLIB_VERSION_MINOR=${NSLIB_VERSION_MINOR}
   NSLIB_VERSION_PATCH=${NSLIB_VERSION_PATCH})
 target_include_directories(${NSLIB_TARGET_NAME} PRIVATE ${SDL_INCLUDE} PUBLIC ${Vulkan_INCLUDE_DIRS})
-target_link_libraries(${NSLIB_TARGET_NAME} PRIVATE SDL3::SDL3 PUBLIC ${Vulkan_LIBRARIES})
+target_link_libraries(${NSLIB_TARGET_NAME} PRIVATE SDL3::SDL3 Threads::Threads PUBLIC ${Vulkan_LIBRARIES})
 
 
 if(WIN32)
