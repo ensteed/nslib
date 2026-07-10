@@ -6,6 +6,7 @@
 #include "containers/hset.h"
 #include "containers/hmap.h"
 #include "logging.h"
+#include "threads.h"
 #include "rid.h"
 
 #define js(p) str_cstr(to_json(p))
@@ -22,7 +23,8 @@ struct jsa_stack_frame
 struct json_archive
 {
     archive_opmode opmode{};
-    array<jsa_stack_frame> stack;
+    // Archive lifetime is bounded by the calling thread - init_jsa/terminate_jsa bracket a single use
+    array<jsa_stack_frame> stack{current_thread_free_list()};
 };
 
 // If json_str is null then we will be set to output mode, otherwise input mode
@@ -506,7 +508,8 @@ void pack_unpack(json_archive *ar, hmap<string, T> &val, const pack_var_info &vi
         asrt(cur_frame);
         auto obj = cur_frame->current->child;
         while (obj) {
-            string key = obj->string;
+            // Key is copied into the map and the copy keeps the source arena, so build it in the map's arena
+            string key(val.buckets.arena, obj->string);
             auto item = hmap_find_or_insert(&val, key);
             pup_var(ar, item->val, {obj->string});
             obj = obj->next;
@@ -557,7 +560,8 @@ void pack_unpack(json_archive *ar, hmap<K, T> &val, const pack_var_info &vinfo)
         auto obj = cur_frame->current->child;
         while (obj) {
             K key{};
-            from_str(&key, obj->string);
+            // Read-only temporary - scratch is fine, from_str never stores it
+            from_str(&key, string(current_thread_scratch_flinear(), obj->string));
             auto item = hmap_find_or_insert(&val, key);
             pup_var(ar, item->val, {obj->string});
             obj = obj->next;

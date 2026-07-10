@@ -87,6 +87,14 @@ using uptr = uintptr_t;
 
 const sizet KB_SIZE = 1024;
 const sizet MB_SIZE = 1024 * KB_SIZE;
+
+struct mem_arena_group_sizes
+{
+    sizet free_list{4000 * MB_SIZE};
+    sizet stack{100 * MB_SIZE};
+    sizet scratch_flinear{100 * MB_SIZE};
+};
+
 using idx_t = u32;
 using key_t = u64;
 using small_str = char[SMALL_STR_LEN];

@@ -80,12 +80,9 @@ void hset_print_internal(const array<hset_bucket<Val>> &buckets)
 }
 
 template<typename Val>
-void hset_init(hset<Val> *hs,
-               mem_arena *arena = get_global_arena(),
-               hash_func<Val> *hashf = hash_type,
-               sizet initial_capacity = HSET_DEFAULT_BUCKET_COUNT)
+void hset_init(hset<Val> *hs, mem_arena *arena, hash_func<Val> *hashf = hash_type, sizet initial_capacity = HSET_DEFAULT_BUCKET_COUNT)
 {
-    hash_table_init(hs, hashf, arena, initial_capacity, HSET_DEFAULT_LOAD_FACTOR);
+    hash_table_init(hs, arena, hashf, initial_capacity, HSET_DEFAULT_LOAD_FACTOR);
 }
 
 template<typename Val>

@@ -358,11 +358,11 @@ template<typename T>
 void init_asset_pool(asset_pool<T> *pool, sizet memory_budget, u32 item_budget, const mem_arena_set &upstream)
 {
     asrt(pool);
-    init_fl_arena(&pool->fl, memory_budget, upstream.free_list, T::type_str);
+    init_free_list_arena(&pool->fl, memory_budget, upstream.free_list, T::type_str);
     pool->frame_linear = upstream.frame_linear;
     pool->stack = upstream.stack;
     init_slot_pool(&pool->assets, item_budget, &pool->fl);
-    hmap_init(&pool->amap, hash_type, &pool->fl, HMAP_DEFAULT_BUCKET_COUNT);
+    hmap_init(&pool->amap, &pool->fl, hash_type, HMAP_DEFAULT_BUCKET_COUNT);
 }
 
 template<typename T>

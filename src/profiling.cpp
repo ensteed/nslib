@@ -1,4 +1,5 @@
 #include "profiling.h"
+#include "threads.h"
 
 #if defined(PROFILING_ENABLED)
     #include <stdio.h>
@@ -47,7 +48,7 @@ intern void profiling_reset_storage(profiling_context *ctxt, sizet entry_capacit
     arr_init(&ctxt->stack, &ctxt->arena, stack_capacity);
 
     ctxt->entry_lookup = {};
-    hmap_init(&ctxt->entry_lookup, profiling_hash_key, &ctxt->arena, map_capacity);
+    hmap_init(&ctxt->entry_lookup, &ctxt->arena, profiling_hash_key, map_capacity);
 }
 
 intern f64 profiling_avg_alpha(const profiling_context *ctxt)
@@ -113,11 +114,12 @@ void profiling_init(profiling_context *ctxt, sizet entry_count, sizet stack_dept
     sizet stack_sz = (sizeof(profiling_stack_entry) + sizeof(alloc_header) + SIMD_MIN_ALIGNMENT) * stack_depth;
     sizet map_sz = (sizeof(hmap_bucket<profiling_key, s32>) + sizeof(alloc_header) + SIMD_MIN_ALIGNMENT) * entry_count * 2;
     sizet arena_size = (entry_sz + stack_sz + map_sz) * 1.5;
+    if (!upstream) upstream = current_thread_free_list();
     init_lin_arena(&ctxt->arena, arena_size, upstream, "profiling");
     profiling_reset_storage(ctxt, entry_count, stack_depth, entry_count * 2);
-    ctxt->avg_arena = upstream ? upstream : get_global_arena();
+    ctxt->avg_arena = upstream;
     ctxt->avg_lookup = {};
-    hmap_init(&ctxt->avg_lookup, profiling_hash_key, ctxt->avg_arena, entry_count * 2);
+    hmap_init(&ctxt->avg_lookup, ctxt->avg_arena, profiling_hash_key, entry_count * 2);
     ctxt->avg_frame_total_ns = 0.0;
     ctxt->frame_index = 0;
     ctxt->avg_window = 0;
@@ -293,10 +295,10 @@ void profiling_set_avg_window(profiling_context *ctxt, u32 window_frames, mem_ar
 {
     asrt(ctxt);
     ctxt->avg_window = window_frames;
-    ctxt->avg_arena = avg_arena;
+    ctxt->avg_arena = avg_arena ? avg_arena : current_thread_free_list();
     hmap_terminate(&ctxt->avg_lookup);
     ctxt->avg_lookup = {};
-    hmap_init(&ctxt->avg_lookup, profiling_hash_key, ctxt->avg_arena, ctxt->frame_start_entry_count * 2);
+    hmap_init(&ctxt->avg_lookup, ctxt->avg_arena, profiling_hash_key, ctxt->frame_start_entry_count * 2);
     ctxt->avg_frame_total_ns = 0.0;
     ctxt->frame_index = 0;
 }

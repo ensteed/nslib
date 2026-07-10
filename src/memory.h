@@ -1,6 +1,5 @@
 #pragma once
 
-#include <new>
 #include "basic_types.h"
 #include "containers/linked_list.h"
 
@@ -16,6 +15,12 @@ enum struct mem_alloc_type
     POOL,
     STACK,
     LINEAR
+};
+
+enum mem_arena_bit
+{
+    MEM_ARENA_DISABLE_INIT_LOG_BIT,
+    MEM_ARENA_DISABLE_TERMINATE_LOG_BIT
 };
 
 struct free_header
@@ -106,6 +111,15 @@ struct mem_arena
         mem_stack mstack;
         mem_linear mlin;
     };
+
+    u32 flags{0};
+};
+
+struct mem_arena_group
+{
+    mem_arena free_list;
+    mem_arena stack;
+    mem_arena scratch_flinear;
 };
 
 // The size of the allocated block including padding and header
@@ -166,7 +180,6 @@ void init_arena(mem_arena *arena,
                 mem_alloc_type atype,
                 mem_arena *upstream,
                 const char *name,
-                bool skip_log = false,
                 const pf_alloc_funcs &pf_funcs = {});
 
 void init_pool_arena(mem_arena *arena,
@@ -174,51 +187,25 @@ void init_pool_arena(mem_arena *arena,
                      sizet chunk_count,
                      mem_arena *upstream,
                      const char *name,
-                     bool skip_log = false,
                      const pf_alloc_funcs &pf_funcs = {});
 
 template<class T>
-void init_pool_arena(mem_arena *arena,
-                     sizet chunk_count,
-                     mem_arena *upstream,
-                     const char *name,
-                     bool skip_log = false,
-                     const pf_alloc_funcs &pf_funcs = {})
+void init_pool_arena(mem_arena *arena, sizet chunk_count, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {})
 {
-    init_pool_arena(arena, sizeof(T), chunk_count, upstream, name, skip_log, pf_funcs);
+    init_pool_arena(arena, sizeof(T), chunk_count, upstream, name, pf_funcs);
 }
 
-void init_fl_arena(mem_arena *arena,
-                   sizet total_size,
-                   mem_arena *upstream,
-                   const char *name,
-                   bool skip_log = false,
-                   const pf_alloc_funcs &pf_funcs = {});
-void init_stack_arena(mem_arena *arena,
-                      sizet total_size,
-                      mem_arena *upstream,
-                      const char *name,
-                      bool skip_log = false,
-                      const pf_alloc_funcs &pf_funcs = {});
-void init_lin_arena(mem_arena *arena,
-                    sizet total_size,
-                    mem_arena *upstream,
-                    const char *name,
-                    bool skip_log = false,
-                    const pf_alloc_funcs &pf_funcs = {});
-
-void terminate_arena(mem_arena *arena, bool skip_log = false);
+void init_free_list_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {});
+void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {});
+void init_linear_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs = {});
+void terminate_arena(mem_arena *arena);
 const char *arena_type_str(mem_alloc_type atype);
 
-mem_arena *get_global_arena();
-
-// This must be a free list arena
-void set_global_arena(mem_arena *arena);
-
-mem_arena *get_global_stack_arena();
-void set_global_stack_arena(mem_arena *arena);
-
-mem_arena *get_global_frame_lin_arena();
-void set_global_frame_lin_arena(mem_arena *arena);
+void init_mem_arena_group(mem_arena_group *gp,
+                          const mem_arena_group_sizes &sizes,
+                          mem_arena *upstream,
+                          const char *gp_name,
+                          const pf_alloc_funcs &pf_funcs = {});
+void terminate_mem_arena_group(mem_arena_group *gp);
 
 } // namespace nslib

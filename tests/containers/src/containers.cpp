@@ -6,6 +6,7 @@
 #include "containers/hmap.h"
 #include "containers/hset.h"
 #include "binary_archive.h"
+#include "threads.h"
 
 using namespace nslib;
 
@@ -27,7 +28,7 @@ bool operator==(const custom_type_0 &lhs, const custom_type_0 &rhs)
 
 string to_str(const custom_type_0 &item)
 {
-    string ret;
+    string ret(current_thread_free_list());
     str_printf(&ret, "val1:%d str:%s", item.val1, ls(item.id));
     return ret;
 }
@@ -50,7 +51,7 @@ bool operator==(const custom_type_1 &lhs, const custom_type_1 &rhs)
 
 string to_str(const custom_type_1 &item)
 {
-    string ret;
+    string ret(current_thread_free_list());
     str_printf(&ret, "val1:%d str:%s", item.val1, str_cstr(&item.str));
     return ret;
 }
@@ -63,7 +64,7 @@ struct custom_type_2
 
 string to_str(const custom_type_2 &item)
 {
-    string ret;
+    string ret(current_thread_free_list());
     str_printf(&ret, "val1:%d val2:%d", item.val1, item.val2);
     return ret;
 }
@@ -95,7 +96,7 @@ void test_hmap_basic_api()
     ilog("Starting hashmap api test");
 
     hmap<u32, s32> hm{};
-    hmap_init(&hm, hash_type, get_global_arena(), 8);
+    hmap_init(&hm, current_thread_free_list(), hash_type, 8);
 
     asrt(hmap_empty(&hm));
     asrt(hmap_begin(&hm) == nullptr);
@@ -192,8 +193,8 @@ void test_hmap_copy_and_set()
 
     hmap<u32, s32> hm_src{};
     hmap<u32, s32> hm_dest{};
-    hmap_init(&hm_src, hash_type, get_global_arena(), 8);
-    hmap_init(&hm_dest, hash_type, get_global_arena(), 8);
+    hmap_init(&hm_src, current_thread_free_list(), hash_type, 8);
+    hmap_init(&hm_dest, current_thread_free_list(), hash_type, 8);
 
     hmap_insert(&hm_src, (u32)1, 10);
     hmap_insert(&hm_src, (u32)2, 20);
@@ -202,7 +203,7 @@ void test_hmap_copy_and_set()
     hmap_insert(&hm_dest, (u32)1, 100);
     hmap_insert(&hm_dest, (u32)4, 40);
 
-    array<u32> not_inserted{};
+    array<u32> not_inserted(current_thread_free_list());
     sizet inserted = hmap_insert(&hm_dest, &hm_src, &not_inserted);
     asrt(inserted == 2);
     asrt(not_inserted.size == 1);
@@ -226,8 +227,8 @@ void test_hmap_pack_unpack()
 
     hmap<u32, s32> hm{};
     hmap<u32, s32> hm_out{};
-    hmap_init(&hm, hash_type, get_global_arena(), 8);
-    hmap_init(&hm_out, hash_type, get_global_arena(), 8);
+    hmap_init(&hm, &current_thread_arenas()->free_list, hash_type, 8);
+    hmap_init(&hm_out, current_thread_free_list(), hash_type, 8);
 
     hmap_insert(&hm, (u32)10, 100);
     hmap_insert(&hm, (u32)20, 200);
@@ -255,7 +256,7 @@ void test_hmap_pack_unpack()
 void test_strings()
 {
     ilog("Starting string test");
-    string s;
+    string s(current_thread_free_list());
     asrt(str_empty(s));
     ilog("String empty ok");
     asrt(str_len(s) == 0);
@@ -279,7 +280,7 @@ void test_strings()
     asrt(s[4] == 'o');
     ilog("String pop_back contents ok");
 
-    string t;
+    string t(current_thread_free_list());
     str_copy(&t, s);
     asrt(t == s);
     ilog("String copy equals ok");
@@ -312,7 +313,7 @@ void test_strings()
 void test_arrays()
 {
     ilog("Starting array test");
-    array<int> arr1;
+    array<int> arr1(current_thread_free_list());
     asrt(arr_len(&arr1) == 0);
     ilog("Array len 0 ok");
     asrt(arr_begin(&arr1) == nullptr);
@@ -363,7 +364,7 @@ void test_arrays()
     asrt(arr2[1] == arr1[1]);
     ilog("Array copy contents 1 ok");
 
-    array<int> arr3;
+    array<int> arr3(current_thread_free_list());
     arr_append(&arr3, &arr1);
     asrt(arr_len(&arr3) == arr_len(&arr1));
     ilog("Array append length ok");
@@ -383,7 +384,7 @@ void test_arrays()
     asrt(arr3[3] == 15);
     ilog("Array append raw contents 1 ok");
 
-    array<array<int>> arr_of_arrs;
+    array<array<int>> arr_of_arrs(current_thread_free_list());
     arr_push_back(&arr_of_arrs, arr1);
     asrt(arr_len(&arr_of_arrs) == 1);
     ilog("Array of arrays length ok");
@@ -398,14 +399,14 @@ void test_arrays()
     asrt(arr_len(&arr_of_arrs[0]) == 2);
     ilog("Array of arrays copy isolation ok");
 
-    array<string> arr_of_strs;
-    arr_push_back(&arr_of_strs, string("one"));
-    arr_push_back(&arr_of_strs, string("two"));
+    array<string> arr_of_strs(current_thread_free_list());
+    arr_push_back(&arr_of_strs, string(current_thread_free_list(), "one"));
+    arr_push_back(&arr_of_strs, string(current_thread_free_list(), "two"));
     asrt(arr_len(&arr_of_strs) == 2);
     ilog("Array of strings length ok");
-    asrt(arr_of_strs[0] == string("one"));
+    asrt(arr_of_strs[0] == string(current_thread_free_list(), "one"));
     ilog("Array of strings contents 0 ok");
-    asrt(arr_of_strs[1] == string("two"));
+    asrt(arr_of_strs[1] == string(current_thread_free_list(), "two"));
     ilog("Array of strings contents 1 ok");
 
     array<string> arr_of_strs_copy(arr_of_strs);
@@ -414,11 +415,11 @@ void test_arrays()
     asrt(arr_of_strs_copy[0] == arr_of_strs[0]);
     ilog("Array of strings copy contents ok");
 
-    array<int> arr_nested;
+    array<int> arr_nested(current_thread_free_list());
     arr_push_back(&arr_nested, 7);
     arr_push_back(&arr_nested, 14);
 
-    array<array<int>> arr_of_arrs_extra;
+    array<array<int>> arr_of_arrs_extra(current_thread_free_list());
     arr_push_back(&arr_of_arrs_extra, arr_nested);
     arr_append(&arr_of_arrs, &arr_of_arrs_extra);
     asrt(arr_len(&arr_of_arrs) == 2);
@@ -428,12 +429,12 @@ void test_arrays()
     asrt(arr_of_arrs[1][0] == 7);
     ilog("Array of arrays append contents 0 ok");
 
-    array<string> arr_of_strs_extra;
-    arr_push_back(&arr_of_strs_extra, string("three"));
+    array<string> arr_of_strs_extra(current_thread_free_list());
+    arr_push_back(&arr_of_strs_extra, string(current_thread_free_list(), "three"));
     arr_append(&arr_of_strs, &arr_of_strs_extra);
     asrt(arr_len(&arr_of_strs) == 3);
     ilog("Array of strings append length ok");
-    asrt(arr_of_strs[2] == string("three"));
+    asrt(arr_of_strs[2] == string(current_thread_free_list(), "three"));
     ilog("Array of strings append contents ok");
 
     arr_clear(&arr3);
@@ -447,7 +448,7 @@ void test_hashsets()
     ilog("Starting new hashset test");
 
     hset<char> hs1{};
-    hset_init(&hs1);
+    hset_init(&hs1, current_thread_free_list());
 
     ilog("Inserting a through x");
     hset_insert(&hs1, 'a');
@@ -577,33 +578,33 @@ void test_hashmaps()
     ilog("Starting new hashmap test");
 
     hmap<char, string> hm1{};
-    hmap_init(&hm1, hash_type);
+    hmap_init(&hm1, current_thread_free_list(), hash_type);
 
     ilog("Inserting a through x");
-    hmap_insert(&hm1, 'a', string("a"));
-    hmap_insert(&hm1, 'b', string("b"));
-    hmap_insert(&hm1, 'c', string("c"));
-    hmap_insert(&hm1, 'd', string("d"));
-    hmap_insert(&hm1, 'e', string("e"));
-    hmap_insert(&hm1, 'f', string("f"));
-    hmap_insert(&hm1, 'g', string("g"));
-    hmap_insert(&hm1, 'h', string("h"));
-    hmap_insert(&hm1, 'i', string("i"));
-    hmap_insert(&hm1, 'j', string("j"));
-    hmap_insert(&hm1, 'k', string("k"));
-    hmap_insert(&hm1, 'l', string("l"));
-    hmap_insert(&hm1, 'm', string("m"));
-    hmap_insert(&hm1, 'n', string("n"));
-    hmap_insert(&hm1, 'o', string("o"));
-    hmap_insert(&hm1, 'p', string("p"));
-    hmap_insert(&hm1, 'q', string("q"));
-    hmap_insert(&hm1, 'r', string("r"));
-    hmap_insert(&hm1, 's', string("s"));
-    hmap_insert(&hm1, 't', string("t"));
-    hmap_insert(&hm1, 'u', string("u"));
-    hmap_insert(&hm1, 'v', string("v"));
-    hmap_insert(&hm1, 'w', string("w"));
-    hmap_insert(&hm1, 'x', string("x"));
+    hmap_insert(&hm1, 'a', string(current_thread_free_list(), "a"));
+    hmap_insert(&hm1, 'b', string(current_thread_free_list(), "b"));
+    hmap_insert(&hm1, 'c', string(current_thread_free_list(), "c"));
+    hmap_insert(&hm1, 'd', string(current_thread_free_list(), "d"));
+    hmap_insert(&hm1, 'e', string(current_thread_free_list(), "e"));
+    hmap_insert(&hm1, 'f', string(current_thread_free_list(), "f"));
+    hmap_insert(&hm1, 'g', string(current_thread_free_list(), "g"));
+    hmap_insert(&hm1, 'h', string(current_thread_free_list(), "h"));
+    hmap_insert(&hm1, 'i', string(current_thread_free_list(), "i"));
+    hmap_insert(&hm1, 'j', string(current_thread_free_list(), "j"));
+    hmap_insert(&hm1, 'k', string(current_thread_free_list(), "k"));
+    hmap_insert(&hm1, 'l', string(current_thread_free_list(), "l"));
+    hmap_insert(&hm1, 'm', string(current_thread_free_list(), "m"));
+    hmap_insert(&hm1, 'n', string(current_thread_free_list(), "n"));
+    hmap_insert(&hm1, 'o', string(current_thread_free_list(), "o"));
+    hmap_insert(&hm1, 'p', string(current_thread_free_list(), "p"));
+    hmap_insert(&hm1, 'q', string(current_thread_free_list(), "q"));
+    hmap_insert(&hm1, 'r', string(current_thread_free_list(), "r"));
+    hmap_insert(&hm1, 's', string(current_thread_free_list(), "s"));
+    hmap_insert(&hm1, 't', string(current_thread_free_list(), "t"));
+    hmap_insert(&hm1, 'u', string(current_thread_free_list(), "u"));
+    hmap_insert(&hm1, 'v', string(current_thread_free_list(), "v"));
+    hmap_insert(&hm1, 'w', string(current_thread_free_list(), "w"));
+    hmap_insert(&hm1, 'x', string(current_thread_free_list(), "x"));
 
     ilog("Forward...");
     auto iter = hmap_begin(&hm1);
@@ -660,28 +661,28 @@ void test_hashmaps()
         ilog("key: %s  value:%s", ls(iter->key), str_cstr(iter->val));
         iter = hmap_prev(&hm1, iter);
     }
-    auto ins = hmap_insert(&hm1, 'a', string("a"));
+    auto ins = hmap_insert(&hm1, 'a', string(current_thread_free_list(), "a"));
     ilog("Inserted a ptr: %p", ins);
 
-    ins = hmap_insert(&hm1, 'b', string("b"));
+    ins = hmap_insert(&hm1, 'b', string(current_thread_free_list(), "b"));
     ilog("Inserted b ptr: %p", ins);
 
-    ins = hmap_insert(&hm1, 'c', string("c"));
+    ins = hmap_insert(&hm1, 'c', string(current_thread_free_list(), "c"));
     ilog("Inserted c ptr: %p", ins);
 
-    ins = hmap_insert(&hm1, 'd', string("d"));
+    ins = hmap_insert(&hm1, 'd', string(current_thread_free_list(), "d"));
     ilog("Inserted d ptr: %p", ins);
 
-    ins = hmap_insert(&hm1, 'e', string("e"));
+    ins = hmap_insert(&hm1, 'e', string(current_thread_free_list(), "e"));
     ilog("Inserted e ptr: %p", ins);
 
-    ins = hmap_insert(&hm1, 'f', string("f"));
+    ins = hmap_insert(&hm1, 'f', string(current_thread_free_list(), "f"));
     ilog("Inserted f ptr: %p", ins);
 
-    ins = hmap_insert(&hm1, 'g', string("g"));
+    ins = hmap_insert(&hm1, 'g', string(current_thread_free_list(), "g"));
     ilog("Inserted g ptr: %p", ins);
 
-    ins = hmap_insert(&hm1, 'o', string("o"));
+    ins = hmap_insert(&hm1, 'o', string(current_thread_free_list(), "o"));
     ilog("Inserted o ptr: %p", ins);
 
     ilog("Forward...");
@@ -708,17 +709,17 @@ void test_hashmaps_string_keys()
 
     hmap<rid, string> hm1{};
 
-    hmap_init(&hm1, hash_type);
+    hmap_init(&hm1, current_thread_free_list(), hash_type);
     ilog("Inserting 9 strange strings");
-    hmap_insert(&hm1, make_rid("scooby"), string("scooby-data"));
-    hmap_insert(&hm1, make_rid("sandwiches"), string("sandwiches-data"));
-    hmap_insert(&hm1, make_rid("alowishish"), string("alowishish-data"));
-    hmap_insert(&hm1, make_rid("do-the-dance"), string("do-the-dance-data"));
-    hmap_insert(&hm1, make_rid("booty_cake"), string("booty_cake-data"));
-    hmap_insert(&hm1, make_rid("gogogo300"), string("gogogo300-data"));
-    hmap_insert(&hm1, make_rid("67-under"), string("67-under-data"));
-    hmap_insert(&hm1, make_rid("kjhj"), string("kjhj-data"));
-    hmap_insert(&hm1, make_rid("lemar"), string("lemar-data"));
+    hmap_insert(&hm1, make_rid("scooby"), string(current_thread_free_list(), "scooby-data"));
+    hmap_insert(&hm1, make_rid("sandwiches"), string(current_thread_free_list(), "sandwiches-data"));
+    hmap_insert(&hm1, make_rid("alowishish"), string(current_thread_free_list(), "alowishish-data"));
+    hmap_insert(&hm1, make_rid("do-the-dance"), string(current_thread_free_list(), "do-the-dance-data"));
+    hmap_insert(&hm1, make_rid("booty_cake"), string(current_thread_free_list(), "booty_cake-data"));
+    hmap_insert(&hm1, make_rid("gogogo300"), string(current_thread_free_list(), "gogogo300-data"));
+    hmap_insert(&hm1, make_rid("67-under"), string(current_thread_free_list(), "67-under-data"));
+    hmap_insert(&hm1, make_rid("kjhj"), string(current_thread_free_list(), "kjhj-data"));
+    hmap_insert(&hm1, make_rid("lemar"), string(current_thread_free_list(), "lemar-data"));
 
     ilog("Forward...");
     auto iter = hmap_begin(&hm1);
@@ -755,11 +756,11 @@ void test_hashmaps_string_keys()
     }
 
     ilog("Inserting 5 more strange strings");
-    hmap_insert(&hm1, make_rid("another"), string("another-data"));
-    hmap_insert(&hm1, make_rid("type-of"), string("type-of-data"));
-    hmap_insert(&hm1, make_rid("thing-that"), string("thing-that-data"));
-    hmap_insert(&hm1, make_rid("wereallyshould"), string("wereallyshould-data"));
-    hmap_insert(&hm1, make_rid("beadding"), string("beadding-data"));
+    hmap_insert(&hm1, make_rid("another"), string(current_thread_free_list(), "another-data"));
+    hmap_insert(&hm1, make_rid("type-of"), string(current_thread_free_list(), "type-of-data"));
+    hmap_insert(&hm1, make_rid("thing-that"), string(current_thread_free_list(), "thing-that-data"));
+    hmap_insert(&hm1, make_rid("wereallyshould"), string(current_thread_free_list(), "wereallyshould-data"));
+    hmap_insert(&hm1, make_rid("beadding"), string(current_thread_free_list(), "beadding-data"));
 
     ilog("Forward...");
     iter = hmap_begin(&hm1);
@@ -784,7 +785,7 @@ void test_hset_basic_api()
     ilog("Starting hashset api test");
 
     hset<u32> hs{};
-    hset_init(&hs, get_global_arena(), hash_type, 8);
+    hset_init(&hs, current_thread_free_list(), hash_type, 8);
 
     asrt(hset_empty(&hs));
     asrt(hset_begin(&hs) == nullptr);
@@ -830,7 +831,7 @@ void test_hset_string_keys()
 
     hset<rid> hs1{};
 
-    hset_init(&hs1);
+    hset_init(&hs1, current_thread_free_list());
     ilog("Inserting 9 strange strings");
     hset_insert(&hs1, make_rid("scooby"));
     hset_insert(&hs1, make_rid("sandwiches"));

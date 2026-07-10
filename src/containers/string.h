@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "array.h"
 #include "../basic_type_traits.h"
+#include "../threads.h"
 
 namespace nslib
 {
@@ -16,13 +17,16 @@ struct string
     char sos[SMALL_STR_SIZE]{};
     array<char> buf{};
 
-    string(mem_arena *arena = get_global_arena());
-    string(const string &copy, mem_arena *arena = get_global_arena());
-    string(const char *copy, mem_arena *arena = get_global_arena());
+    string(mem_arena *arena = nullptr);
+    string(const string &copy);
+    string(mem_arena *arena, const string &copy);
+    string(mem_arena *arena, const char *copy);
     ~string();
 
     string &operator=(const string &rhs);
     string &operator+=(const string &rhs);
+    string &operator+=(const char *rhs);
+
     const char &operator[](sizet ind) const;
     char &operator[](sizet ind);
 };
@@ -30,6 +34,8 @@ struct string
 using string_array = array<string>;
 
 string operator+(const string &lhs, const string &rhs);
+string operator+(const string &lhs, const char *rhs);
+string operator+(const char *lhs, const string &rhs);
 
 bool operator==(const string &lhs, const string &rhs);
 
@@ -75,7 +81,7 @@ inline sizet str_capacity(const string *str)
 
 void swap(string *lhs, string *rhs);
 
-void str_init(string *str, mem_arena *arena = get_global_arena());
+void str_init(string *str, mem_arena *arena);
 
 void str_terminate(string *str);
 
@@ -136,7 +142,7 @@ string *str_printf(string *dest, const char *format_txt, Args &&...args)
 }
 
 template<class... Args>
-void str_scanf(const char* src, const char *format_txt, Args &&...args)
+void str_scanf(const char *src, const char *format_txt, Args &&...args)
 {
     sscanf(src, format_txt, static_cast<Args &&>(args)...);
 }
@@ -150,7 +156,7 @@ void str_scanf(const string &src, const char *format_txt, Args &&...args)
 template<class... Args>
 string to_str(const char *format_txt, Args &&...args)
 {
-    string ret{};
+    string ret{current_thread_free_list()};
     sizet needed_space = snprintf(nullptr, 0, format_txt, static_cast<Args &&>(args)...);
     sizet sz = str_len(ret);
     str_resize(&ret, sz + needed_space);
@@ -163,7 +169,7 @@ u64 hash_type(const string &key, u64 seed0, u64 seed1);
 template<signed_integral T>
 string to_str(const T &n)
 {
-    string ret;
+    string ret{current_thread_free_list()};
     str_printf(&ret, "%d", n);
     return ret;
 }
@@ -171,7 +177,7 @@ string to_str(const T &n)
 template<unsigned_integral T>
 string to_str(const T &n)
 {
-    string ret;
+    string ret{current_thread_free_list()};
     str_printf(&ret, "%u", n);
     return ret;
 }
@@ -179,7 +185,7 @@ string to_str(const T &n)
 template<floating_pt T>
 string to_str(const T &n)
 {
-    string ret;
+    string ret{current_thread_free_list()};
     str_printf(&ret, "%f", n);
     return ret;
 }

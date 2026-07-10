@@ -12,9 +12,10 @@ namespace nslib
 struct string_archive
 {
     const archive_opmode opmode = archive_opmode::PACK;
-    
-    string txt;
-    string cur_indent;
+
+    // Archives are scratch-lifetime by nature - to_str() builds one on the stack and returns txt
+    string txt{current_thread_free_list()};
+    string cur_indent{current_thread_free_list()};
     s8 indent_per_level{4};
 };
 
@@ -25,14 +26,15 @@ template<class T>
 void pack_unpack_begin(string_archive *ar, T &, const pack_var_info &vinfo) {
     ar->txt += ar->cur_indent;
     handle_varname(&ar->txt, vinfo.name);
-    ar->txt += "{\n";
+    str_append(&ar->txt, "{\n");
     str_resize(&ar->cur_indent, str_len(ar->cur_indent) + ar->indent_per_level, ' ');
 }
 
 template<class T>
 void pack_unpack_end(string_archive *ar, T &, const pack_var_info &vinfo) {
     str_resize(&ar->cur_indent, str_len(ar->cur_indent) - ar->indent_per_level);
-    ar->txt += ar->cur_indent + "}\n";
+    str_append(&ar->txt, ar->cur_indent);
+    str_append(&ar->txt, "}\n");
 }
 
 // Arithmetic types
@@ -44,7 +46,7 @@ void pack_unpack_begin(string_archive *ar, T &, const pack_var_info &vinfo) {
 
 template<arithmetic_type T>
 void pack_unpack_end(string_archive *ar, T &, const pack_var_info &vinfo) {
-    ar->txt += ";\n";
+    str_append(&ar->txt, ";\n");
 }
 
 template<arithmetic_type T>
@@ -68,7 +70,7 @@ void pack_unpack_begin(string_archive *ar, T (&)[N], const pack_var_info &vinfo)
 {
     ar->txt += ar->cur_indent;
     handle_varname(&ar->txt, vinfo.name);
-    ar->txt += "[\n";
+    str_append(&ar->txt, "[\n");
     str_resize(&ar->cur_indent, str_len(ar->cur_indent) + ar->indent_per_level, ' ');
 }
 
@@ -76,7 +78,8 @@ template<class T, sizet N>
 void pack_unpack_end(string_archive *ar, T (&)[N], const pack_var_info &vinfo)
 {
     str_resize(&ar->cur_indent, str_len(ar->cur_indent) - ar->indent_per_level);
-    ar->txt += ar->cur_indent + "]\n";
+    str_append(&ar->txt, ar->cur_indent);
+    str_append(&ar->txt, "]\n");
 }
 
 template<class T, sizet N>
@@ -105,7 +108,7 @@ void pack_unpack_begin(string_archive *ar, array<T> &, const pack_var_info &vinf
 {
     ar->txt += ar->cur_indent;
     handle_varname(&ar->txt, vinfo.name);
-    ar->txt += "[\n";
+    str_append(&ar->txt, "[\n");
     str_resize(&ar->cur_indent, str_len(ar->cur_indent) + ar->indent_per_level, ' ');
 }
 
@@ -113,7 +116,8 @@ template<class T>
 void pack_unpack_end(string_archive *ar, array<T> &, const pack_var_info &vinfo)
 {
     str_resize(&ar->cur_indent, str_len(ar->cur_indent) - ar->indent_per_level);
-    ar->txt += ar->cur_indent + "]\n";
+    str_append(&ar->txt, ar->cur_indent);
+    str_append(&ar->txt, "]\n");
 }
 
 template<class T>

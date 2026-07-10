@@ -215,7 +215,7 @@ typename hash_table<Item>::iterator hash_table_insert_or_set(hash_table<Item> *h
 }
 
 template<typename Item>
-void hash_table_init(hash_table<Item> *hc, typename hash_table<Item>::hash_func *hashf, mem_arena *arena, sizet initial_capacity, float load_factor)
+void hash_table_init(hash_table<Item> *hc, mem_arena *arena, typename hash_table<Item>::hash_func *hashf, sizet initial_capacity, float load_factor)
 {
     hc->hashf = hashf;
     hc->seed0 = generate_rand_seed();

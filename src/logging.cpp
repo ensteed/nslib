@@ -4,6 +4,7 @@
 
 #include "platform.h"
 #include "logging.h"
+#include "threads.h"
 #include "stb_sprintf.h"
 
 #define MAX_CALLBACKS 32
@@ -27,14 +28,14 @@ intern void write_formatted(FILE *fp, FormatFunc format)
     char local_buf[LOCAL_BUFFER_SIZE];
     int len = format(local_buf, LOCAL_BUFFER_SIZE);
     asrt(len>=0);
-    // Most stuff should fit in local buf - for few that don't we create some temp space on the frame linear
-    // allocator - super cheap.
+    // Most stuff should fit in local buf - for few that don't we create some temp space on the calling thread's
+    // scratch allocator - super cheap.
     // buf size needs to be one element larger because null term
     if (len < LOCAL_BUFFER_SIZE) {
         fwrite(local_buf, 1, (sizet)(len), fp);
     }
     else {
-        auto buf = (char *)mem_calloc(1, len+1, get_global_frame_lin_arena());
+        auto buf = (char *)mem_calloc(1, len+1, current_thread_scratch_flinear());
         auto new_len = format(buf, len+1);
         asrt(new_len == len);
         fwrite(buf, 1, (sizet)(new_len), fp);

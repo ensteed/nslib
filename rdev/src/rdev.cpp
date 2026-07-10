@@ -79,9 +79,7 @@ const manifest_max_counts MANIFEST_MAX_COUNTS{
 };
 
 const renderer_cfg RNDR_CFG{
-    .persist_fl_size = 400 * MB_SIZE,
-    .scratch_stack_size = 10 * MB_SIZE,
-    .extra_frame_linear_size = 5 * MB_SIZE,
+    .arena_sizes{.free_list = 400 * MB_SIZE, .stack = 10 * MB_SIZE, .scratch_flinear = 5 * MB_SIZE},
     .desc{PL_LAYOUT_CFG},
     .mcounts{MANIFEST_MAX_COUNTS},
     .texture_pool_count = ARR_SIZE(TPOOL_CFGS),
@@ -369,7 +367,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     init_asset_cache_default_types(
         &app->cg,
         "asset-cache",
-        {.free_list = get_global_arena(), .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()});
+        {.free_list = current_thread_free_list(), .frame_linear = current_thread_scratch_flinear(), .stack = current_thread_stack()});
 
     auto geom_pool = get_asset_pool<geometry>(&app->cg);
     auto tex_pool = get_asset_pool<texture>(&app->cg);
@@ -408,7 +406,7 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     create_rtexture_target(&app->rndr, TEXTURE_TARGET_DEPTH(MAIN_PASS_DEPTH_NAME));
 
     // Create our sim region aka scene
-    init_sim_region(&app->rgn, get_global_arena());
+    init_sim_region(&app->rgn, current_thread_free_list());
 
     // Create input map
     init_keymap_stack(&app->stack, &ctxt->arenas.free_list);
@@ -604,7 +602,7 @@ int main(int argc, char **argv)
     pf_config.wind.title = "RDev";
     pf_config.wind.win_flags = WINDOW_RESIZABLE | WINDOW_INPUT_FOCUS | WINDOW_VULKAN | WINDOW_SHOWN | WINDOW_ALLOW_HIGHDPI;
     pf_config.default_log_level = LOG_DEBUG;
-    pf_config.mem.free_list_size = 4 * 1024 * MB_SIZE;
+    pf_config.arena_sizes.free_list = 4 * 1024 * MB_SIZE;
 
     int result = init_platform(&pf_config, &ctxt);
     if (result != err_code::PLATFORM_NO_ERROR) {

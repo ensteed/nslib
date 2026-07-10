@@ -105,7 +105,10 @@ void seed_data(data_to_pup *data)
 {
     ilog("Seeding data");
     data->asset.id = make_rid("sample_id");
-    data->fs = {"str1_text", "str2_text", {"choice1", "choice2", "choice3", "choice4", "choice5"}};
+    auto fl = current_thread_free_list();
+    data->fs = {string(fl, "str1_text"),
+                string(fl, "str2_text"),
+                {string(fl, "choice1"), string(fl, "choice2"), string(fl, "choice3"), string(fl, "choice4"), string(fl, "choice5")}};
     data->v2_sa = {2, {2, 3, 4.4f, 9.1f, 2.3f}};
     data->v4 = {4, 3, 2, 1};
     for (int i = 0; i < 5; ++i) {
@@ -115,9 +118,9 @@ void seed_data(data_to_pup *data)
         }
         arr_emplace_back(&data->v2_dyn_arr, i * 4.4f, i * 2.2f);
     }
-    hmap_insert(&data->hm, string("key1"), 1);
-    hmap_insert(&data->hm, string("key2"), 2);
-    hmap_insert(&data->hm, string("key3"), 3);
+    hmap_insert(&data->hm, string(current_thread_free_list(), "key1"), 1);
+    hmap_insert(&data->hm, string(current_thread_free_list(), "key2"), 2);
+    hmap_insert(&data->hm, string(current_thread_free_list(), "key3"), 3);
 
     hmap_insert(&data->hm_u64, (u64)12000000000000000000u, 1);
     hmap_insert(&data->hm_u64, (u64)13000000000000000000u, 2);
@@ -155,9 +158,9 @@ void seed_data(data_to_pup *data)
     hmap_insert(&data->hm_no_simp, make_rid("key2"), 2);
     hmap_insert(&data->hm_no_simp, make_rid("key3"), 3);
 
-    hset_insert(&data->hs, string("key1"));
-    hset_insert(&data->hs, string("key2"));
-    hset_insert(&data->hs, string("key3"));
+    hset_insert(&data->hs, string(current_thread_free_list(), "key1"));
+    hset_insert(&data->hs, string(current_thread_free_list(), "key2"));
+    hset_insert(&data->hs, string(current_thread_free_list(), "key3"));
 
     hset_insert(&data->hs_u64, (u64)12000000000000000000u);
     hset_insert(&data->hs_u64, (u64)13000000000000000000u);
@@ -237,26 +240,27 @@ void run_pack_unpack_tests()
 {
     ilog("App init");
     data_to_pup data{};
-    hmap_init(&data.hm);
-    hmap_init(&data.hm_u64);
-    hmap_init(&data.hm_i64);
-    hmap_init(&data.hm_u32);
-    hmap_init(&data.hm_i32);
-    hmap_init(&data.hm_u16);
-    hmap_init(&data.hm_i16);
-    hmap_init(&data.hm_u8);
-    hmap_init(&data.hm_i8);
-    hmap_init(&data.hm_no_simp);
-    hset_init(&data.hs);
-    hset_init(&data.hs_u64);
-    hset_init(&data.hs_i64);
-    hset_init(&data.hs_u32);
-    hset_init(&data.hs_i32);
-    hset_init(&data.hs_u16);
-    hset_init(&data.hs_i16);
-    hset_init(&data.hs_u8);
-    hset_init(&data.hs_i8);
-    hset_init(&data.hs_no_simp, get_global_arena(), hash_type);
+    arr_init(&data.v2_dyn_arr, current_thread_free_list());
+    hmap_init(&data.hm, current_thread_free_list());
+    hmap_init(&data.hm_u64, current_thread_free_list());
+    hmap_init(&data.hm_i64, current_thread_free_list());
+    hmap_init(&data.hm_u32, current_thread_free_list());
+    hmap_init(&data.hm_i32, current_thread_free_list());
+    hmap_init(&data.hm_u16, current_thread_free_list());
+    hmap_init(&data.hm_i16, current_thread_free_list());
+    hmap_init(&data.hm_u8, current_thread_free_list());
+    hmap_init(&data.hm_i8, current_thread_free_list());
+    hmap_init(&data.hm_no_simp, current_thread_free_list());
+    hset_init(&data.hs, current_thread_free_list());
+    hset_init(&data.hs_u64, current_thread_free_list());
+    hset_init(&data.hs_i64, current_thread_free_list());
+    hset_init(&data.hs_u32, current_thread_free_list());
+    hset_init(&data.hs_i32, current_thread_free_list());
+    hset_init(&data.hs_u16, current_thread_free_list());
+    hset_init(&data.hs_i16, current_thread_free_list());
+    hset_init(&data.hs_u8, current_thread_free_list());
+    hset_init(&data.hs_i8, current_thread_free_list());
+    hset_init(&data.hs_no_simp, current_thread_free_list(), hash_type);
 
     seed_data(&data);
     // ilog("data_to_pup json in: \n%s", ls(data));

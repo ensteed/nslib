@@ -204,7 +204,7 @@ intern bool init_frame_contexts(renderer *rndr, sizet thread_cnt)
         }
 
         // Create frame command pool
-        arr_init(&cur_fif->thread_pools, &rndr->persist_fl, thread_cnt);
+        arr_init(&cur_fif->thread_pools, &rndr->arenas.free_list, thread_cnt);
         arr_resize(&cur_fif->thread_pools, thread_cnt);
         for (u32 i = 0; i < cur_fif->thread_pools.size; ++i) {
             result = vkr_init_cmd_pool(&cur_fif->thread_pools[i].pool,
@@ -249,11 +249,11 @@ intern void terminate_frame_contexts(renderer *rndr)
 intern void init_resource_target_registry(renderer *rndr)
 {
     ilog("Initializing render memory");
-    init_slot_pool(&rndr->rtargets.textures, MAX_TEXTURE_TARGET_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->rtargets.buffers, MAX_BUFFER_TARGET_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->rtargets.textures, MAX_TEXTURE_TARGET_COUNT, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->rtargets.buffers, MAX_BUFFER_TARGET_COUNT, &rndr->arenas.free_list);
     // Load factor is .75 so two times size should make so table is never rehashed and still performant
-    hmap_init(&rndr->rtargets.texture_id_map, hash_type, &rndr->persist_fl, MAX_TEXTURE_TARGET_COUNT * 2);
-    hmap_init(&rndr->rtargets.buffer_id_map, hash_type, &rndr->persist_fl, MAX_BUFFER_TARGET_COUNT * 2);
+    hmap_init(&rndr->rtargets.texture_id_map, &rndr->arenas.free_list, hash_type, MAX_TEXTURE_TARGET_COUNT * 2);
+    hmap_init(&rndr->rtargets.buffer_id_map, &rndr->arenas.free_list, hash_type, MAX_BUFFER_TARGET_COUNT * 2);
 
     // We reserve the first render texture target as the swapchain image - and update the current fif texture to
     // reference the swapchain image at the start of every frame once we acquire it
@@ -528,7 +528,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     cb_cfg.buffer_cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     cb_cfg.buffer_cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     cb_cfg.buffer_cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
-    cb_cfg.chunk_tracking_arena = &rndr->persist_fl;
+    cb_cfg.chunk_tracking_arena = &rndr->arenas.free_list;
 
     //////////////////////////
     // Create material SSBO //
@@ -634,7 +634,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
 
     // Create all of the image infos for each pool in the texture registry
     array<VkDescriptorImageInfo> image_infos;
-    arr_init(&image_infos, &rndr->scratch_stack);
+    arr_init(&image_infos, &rndr->arenas.stack);
     arr_resize(&image_infos, rndr->textures.pools.size);
     for (u32 i = 0; i < image_infos.size; ++i) {
         image_infos[i].imageView = rndr->textures.pools[i].view;
@@ -698,7 +698,7 @@ intern void init_geometry_stream_groups(renderer *rndr)
 {
     // Geometry index/vertex buffers
     asrt(rndr->geom_groups.size == 0);
-    hmap_init(&rndr->geom_group_id_map, hash_type, &rndr->persist_fl);
+    hmap_init(&rndr->geom_group_id_map, &rndr->arenas.free_list, hash_type);
 }
 
 intern void terminate_geometry_stream_groups(renderer *rndr)
@@ -724,8 +724,8 @@ intern void terminate_shader(renderer *rndr, rshader_info *shdr)
 template<typename T>
 intern void init_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, u32 elements)
 {
-    init_slot_pool(&cache->items, elements, &rndr->persist_fl);
-    hmap_init(&cache->key_lut, hash_type, &rndr->persist_fl, elements * 2);
+    init_slot_pool(&cache->items, elements, &rndr->arenas.free_list);
+    hmap_init(&cache->key_lut, &rndr->arenas.free_list, hash_type, elements * 2);
 }
 
 template<typename T, typename TermFunc>
@@ -745,8 +745,8 @@ intern void terminate_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *
 
 intern void init_blueprints(renderer *rndr)
 {
-    hmap_init(&rndr->blueprint_id_map, hash_type, &rndr->persist_fl);
-    init_slot_pool(&rndr->blueprints, MAX_BP_COUNT, &rndr->persist_fl);
+    hmap_init(&rndr->blueprint_id_map, &rndr->arenas.free_list, hash_type);
+    init_slot_pool(&rndr->blueprints, MAX_BP_COUNT, &rndr->arenas.free_list);
 }
 
 intern void terminate_blueprints(renderer *rndr)
@@ -767,13 +767,13 @@ intern void terminate_rtechnique(renderer *rndr, rtechnique_info *info)
 
 intern void init_render_resources(renderer *rndr, const renderer_cfg &rcfg)
 {
-    init_slot_pool(&rndr->shaders, MAX_SHADER_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->persist_fl);
-    init_slot_pool(&rndr->geometry, MAX_GEOM_COUNT, &rndr->persist_fl);
+    init_slot_pool(&rndr->shaders, MAX_SHADER_COUNT, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->geometry, MAX_GEOM_COUNT, &rndr->arenas.free_list);
     rtexture_regisitry_cfg cfg{
-        .persist_fl = &rndr->persist_fl,
-        .scratch_stack = &rndr->scratch_stack,
+        .persist_fl = &rndr->arenas.free_list,
+        .scratch_stack = &rndr->arenas.stack,
         .pool_count = rcfg.texture_pool_count,
         .cfgs = rcfg.texture_pool_cfgs,
         .vk = &rndr->vk,
@@ -1029,7 +1029,7 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     VkQueue tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
 
     array<vkr_buffer> staging_buffers;
-    arr_init(&staging_buffers, &rndr->scratch_stack);
+    arr_init(&staging_buffers, &rndr->arenas.stack);
     arr_resize(&staging_buffers, layout->vert_streams.size + 1);
 
     asrt(vkr_begin_cmd_buf(tmp_cmd_buf, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == err_code::VKR_NO_ERROR);
@@ -1286,7 +1286,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         rtech.item->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
         rtech.item->rpass_plines[i].subpass = cur_desc->bp_info.spi;
         rtech.item->rpass_plines[i].pline = new_slot.hndl;
-        
+
         rtech.item->rpass_plines[i].dstate = cur_desc->dstate;
         rtech.item->rpass_plines[i].can_override = cur_desc->dstate_can_override;
         ++rtech.item->rpass_plines.size;
@@ -1414,7 +1414,7 @@ void init_imgui(renderer *rndr, const rbp_pass &pass)
 {
     auto dev = &rndr->vk.inst.device;
     // 263 KB seems to be about the min required - we'll give it a MB
-    init_fl_arena(&rndr->imgui.fl, MB_SIZE, &rndr->persist_fl, "imgui");
+    init_free_list_arena(&rndr->imgui.fl, MB_SIZE, &rndr->arenas.free_list, "imgui");
 
     // Use the main forward pass for imgui.. this might only change if we use deferred shading.. but i think the imgui
     // created pipeling only requires a color attachment
@@ -1496,19 +1496,18 @@ void terminate_imgui(renderer *rndr)
 bool init_renderer(renderer *rndr, const renderer_cfg &p)
 {
     asrt(p.upsream->alloc_type != mem_alloc_type::POOL); // Cannot use pool arena here
-    init_fl_arena(&rndr->persist_fl, p.persist_fl_size, p.upsream, "rndr-persist-fl");
-    init_stack_arena(&rndr->scratch_stack, p.scratch_stack_size, p.upsream, "rndr-sratch-stack");
-    init_lin_arena(&rndr->frame_linear,
-                   calculate_manifest_approximate_needed_capacity(p.mcounts, sizeof(mdraw_ssbo_data)) + p.extra_frame_linear_size,
+    init_mem_arena_group(&rndr->arenas, p.arena_sizes, p.upsream, "rndr");
+    init_linear_arena(&rndr->manifest_flinear,
+                   calculate_manifest_approximate_needed_capacity(p.mcounts, sizeof(mdraw_ssbo_data)),
                    p.upsream,
-                   "rndr-frame-linear");
+                   "rmanifest");
 
     vkr_arenas_cfg g_cfg = {.persistant_sz = 200 * MB_SIZE, .command_sz = 2 * MB_SIZE};
     vkr_arenas_cfg per_fift_cfg = {.persistant_sz = 10 * MB_SIZE, .command_sz = 2 * MB_SIZE};
     // Vulkan
     vkr_cfg vkii{.app_name = "rdev",
                  .vi{1, 0, 0},
-                 .upstream = &rndr->persist_fl,
+                 .upstream = &rndr->arenas.free_list,
                  .thread_count = 1,
                  .g_arena_cfg = g_cfg,
                  .fif_t_arena_cfg = per_fift_cfg,
@@ -1571,8 +1570,10 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
 void terminate_renderer(renderer *rndr)
 {
     ilog("Terminating");
-    // vkr_reset_linear_arenas(rndr->vk, 0);
-    reset_arena(&rndr->frame_linear);
+
+    // Reset our linear arenas as this is the only way to make their logging show that they are empty
+    reset_arena(&rndr->manifest_flinear);
+    reset_arena(&rndr->arenas.scratch_flinear);
 
     // Device needs to be idle before finishing with everything
     vkr_device_wait_idle(&rndr->vk.inst.device);
@@ -1618,9 +1619,8 @@ void terminate_renderer(renderer *rndr)
     vkr_terminate(&rndr->vk);
 
     // Preserve this order just in case the passed in arena was a stack arena
-    terminate_arena(&rndr->frame_linear);
-    terminate_arena(&rndr->scratch_stack);
-    terminate_arena(&rndr->persist_fl);
+    terminate_arena(&rndr->manifest_flinear);
+    terminate_mem_arena_group(&rndr->arenas);
 }
 
 } // namespace nslib

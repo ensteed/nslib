@@ -9,6 +9,7 @@ namespace nslib
 // only difference between the modes is which thread the call happens on.
 intern bool render_one_frame(render_thread *rt, const render_frame_payload *p)
 {
+    reset_arena(&rt->cfg.rndr->arenas.scratch_flinear);
     rmanifest *m = begin_render_frame(rt->cfg.rndr, {.rbp = p->rbp, .frame_sdata = &p->fdata});
 
     // Null manifest means the swapchain went out of date. Not an error - skip the frame.
@@ -74,7 +75,11 @@ bool init_render_thread(render_thread *rt, const render_thread_cfg &cfg)
 
     init_mutex(&rt->mtx);
     init_cond_var(&rt->cv);
-    if (!start_thread(&rt->thrd, render_thread_proc, rt)) {
+    thread_desc tdesc{};
+    tdesc.arenas = &cfg.rndr->arenas;
+    tdesc.idx = 1;
+    tdesc.name = "render";
+    if (!start_thread(&rt->thrd, tdesc, render_thread_proc, rt)) {
         terminate_cond_var(&rt->cv);
         terminate_mutex(&rt->mtx);
         return false;

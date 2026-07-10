@@ -1,5 +1,6 @@
 #include "platform.h"
 #include "logging.h"
+#include "threads.h"
 #include "asset_common.h"
 #include "rid.h"
 #include "model.h"
@@ -9,7 +10,7 @@ using namespace nslib;
 void test_rid_helpers()
 {
     ilog("begin");
-    string name("cache_asset");
+    string name(current_thread_free_list(), "cache_asset");
     rid id_from_string = make_rid(name);
     rid id_from_cstr = make_rid("cache_asset");
     asrt_log(id_from_string == id_from_cstr);
@@ -30,7 +31,7 @@ void test_cache_init_terminate()
     asset_cache cache{};
     init_asset_cache(&cache,
                      128 * KB_SIZE,
-                     {.free_list = get_global_arena(), .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()},
+                     {.free_list = current_thread_free_list(), .frame_linear = current_thread_scratch_flinear(), .stack = current_thread_stack()},
                      "asset_cache_test");
     asrt_log(cache.pools.size == 0);
     terminate_asset_cache(&cache);
@@ -41,11 +42,11 @@ void test_direct_pool_init_and_terminate()
 {
     ilog("begin");
     mem_arena upstream{};
-    init_fl_arena(&upstream, 128 * KB_SIZE, get_global_arena(), "asset_pool_test");
+    init_free_list_arena(&upstream, 128 * KB_SIZE, current_thread_free_list(), "asset_pool_test");
 
     asset_pool<geometry> pool{};
     init_asset_pool(
-        &pool, 64 * KB_SIZE, 4, {.free_list = &upstream, .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()});
+        &pool, 64 * KB_SIZE, 4, {.free_list = &upstream, .frame_linear = current_thread_scratch_flinear(), .stack = current_thread_stack()});
 
     auto item0 = create_asset(&pool, "geom_0");
     auto item1 = create_asset(&pool, "geom_1");
@@ -63,7 +64,11 @@ void fill_small_budgets(u32 *item_budgets, sizet *mem_budgets)
     item_budgets[ASSET_TYPE_GEOMETRY] = 4;
     item_budgets[ASSET_TYPE_TEXTURE] = 4;
     item_budgets[ASSET_TYPE_MATERIAL] = 4;
+    item_budgets[ASSET_TYPE_TECHNIQUE] = 4;
+    item_budgets[ASSET_TYPE_SHADER] = 4;
 
+    mem_budgets[ASSET_TYPE_TECHNIQUE] = 64 * KB_SIZE;
+    mem_budgets[ASSET_TYPE_SHADER] = 64 * KB_SIZE;
     mem_budgets[ASSET_TYPE_GEOMETRY] = 64 * KB_SIZE;
     mem_budgets[ASSET_TYPE_TEXTURE] = 64 * KB_SIZE;
     mem_budgets[ASSET_TYPE_MATERIAL] = 64 * KB_SIZE;
@@ -76,7 +81,7 @@ void test_cache_pool_api()
     asset_cache cache{};
     init_asset_cache(&cache,
                      256 * KB_SIZE,
-                     {.free_list = get_global_arena(), .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()},
+                     {.free_list = current_thread_free_list(), .frame_linear = current_thread_scratch_flinear(), .stack = current_thread_stack()},
                      "cache_pool_api");
 
     auto geom_pool = create_asset_pool<geometry>(&cache, 64 * KB_SIZE, 4);
@@ -133,7 +138,7 @@ void test_cache_default_types()
     init_asset_cache_default_types(
         &cache,
         "default_cache",
-        {.free_list = get_global_arena(), .frame_linear = get_global_frame_lin_arena(), .stack = get_global_stack_arena()},
+        {.free_list = current_thread_free_list(), .frame_linear = current_thread_scratch_flinear(), .stack = current_thread_stack()},
         item_budgets,
         mem_budgets,
         0);
@@ -151,7 +156,7 @@ void test_cache_default_types()
     asrt_log(tex_copy.item->id != tex.item->id);
     asrt_log(tex_copy.item->dims == tex.item->dims);
 
-    string expected_name("texture_b");
+    string expected_name(current_thread_free_list(), "texture_b");
     asrt_log(tex_copy.item->name == expected_name);
 
     asrt_log(destroy_asset(&cache, tex.hndl));

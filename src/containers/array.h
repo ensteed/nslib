@@ -1,6 +1,6 @@
 #pragma once
 
-#include <new>
+#include <new> // IWYU pragma: keep
 #include "../archive_common.h"
 #include "../memory.h"
 
@@ -39,12 +39,20 @@ struct array
     T *data{};
     mem_arena *arena{};
 
-    array(sizet initial_capacity = 0, mem_arena *arena = get_global_arena())
+    array(mem_arena *arena=nullptr, sizet initial_capacity = 0)
     {
         arr_init(this, arena, initial_capacity);
     }
 
-    array(const array &copy, mem_arena *arena = get_global_arena())
+    array(mem_arena *arena, const array &copy)
+    {
+        arr_init(this, arena, copy.capacity);
+        arr_copy(this, &copy);
+    }
+
+    // Must be declared - without it the compiler emits a memberwise copy that shallow copies data,
+    // and both arrays then free it. Adopts the source's arena, same as string(const string&).
+    array(const array &copy)
     {
         arr_init(this, copy.arena, copy.capacity);
         arr_copy(this, &copy);
@@ -57,6 +65,10 @@ struct array
 
     array &operator=(const array &rhs)
     {
+        // arr_resize value-initializes elements with no arena (nested containers, hmap items), and
+        // those elements are then assigned into. Adopt the source's arena when we have none of our
+        // own. If we already have one, we keep it - the copy lives where the destination lives.
+        if (!arena) arena = rhs.arena;
         arr_copy(this, &rhs);
         return *this;
     }
@@ -92,7 +104,7 @@ void swap(array<T> *lhs, array<T> *rhs)
 }
 
 template<typename T>
-void arr_init(array<T> *arr, mem_arena *arena = get_global_arena(), sizet initial_capacity = 0)
+void arr_init(array<T> *arr, mem_arena *arena, sizet initial_capacity = 0)
 {
     arr->arena = arena;
     arr_set_capacity(arr, initial_capacity);
@@ -206,7 +218,7 @@ void arr_append(array<T> *arr, const T *src, sizet src_size)
     sizet offset = arr->size;
     arr_resize(arr, offset + src_size);
     for (sizet i = 0; i < src_size; ++i) {
-        (*arr)[offset+i] = src[i];
+        (*arr)[offset + i] = src[i];
     }
 }
 
@@ -240,8 +252,7 @@ void arr_set_capacity(array<T> *arr, sizet new_cap)
     // Copy-only types will not compile; we intentionally do not provide a copy fallback here.
     if (new_cap > 0) {
         auto alignment = alignof(T);
-        new_data = (T *)mem_alloc(
-            new_cap * sizeof(T), arr->arena, alignment > DEFAULT_MIN_ALIGNMENT ? alignment : DEFAULT_MIN_ALIGNMENT);
+        new_data = (T *)mem_alloc(new_cap * sizeof(T), arr->arena, alignment > DEFAULT_MIN_ALIGNMENT ? alignment : DEFAULT_MIN_ALIGNMENT);
         for (sizet i = 0; i < new_size; ++i) {
             new (&new_data[i]) T(static_cast<T &&>(arr->data[i]));
         }
@@ -346,8 +357,7 @@ void arr_clear(static_array<T, N> *arr)
 template<typename T>
 void arr_pop_back(array<T> *arr)
 {
-    if (arr->size == 0)
-        return;
+    if (arr->size == 0) return;
     arr->data[arr->size - 1].~T();
     --arr->size;
 }
@@ -355,8 +365,7 @@ void arr_pop_back(array<T> *arr)
 template<typename T, sizet N>
 void arr_pop_back(static_array<T, N> *arr)
 {
-    if (arr->size == 0)
-        return;
+    if (arr->size == 0) return;
     arr->data[arr->size - 1].~T();
     --arr->size;
 }
@@ -396,8 +405,7 @@ typename T::iterator arr_find(T *bufobj, const typename T::value_type &item)
 template<typename T, typename... Args>
 array<T> *arr_resize(array<T> *arr, sizet new_size, Args &&...args)
 {
-    if (arr->size == new_size)
-        return arr;
+    if (arr->size == new_size) return arr;
 
     if (new_size < arr->size) {
         for (sizet i = new_size; i < arr->size; ++i) {
@@ -483,8 +491,7 @@ typename T::iterator arr_erase(T *bufobj, typename T::iterator first, typename T
 template<typename T>
 bool arr_swap_remove(T *bufobj, sizet index)
 {
-    if (index >= bufobj->size)
-        return false;
+    if (index >= bufobj->size) return false;
     // Only copy the last item if we are not the last item
     if (index != bufobj->size - 1) bufobj->data[index] = *arr_back(bufobj);
     arr_pop_back(bufobj);
@@ -495,8 +502,7 @@ bool arr_swap_remove(T *bufobj, sizet index)
 template<typename T>
 bool arr_remove(T *bufobj, sizet index)
 {
-    if (index >= bufobj->size)
-        return false;
+    if (index >= bufobj->size) return false;
 
     // Copy the items back one spot
     for (sizet i = index + 1; i < bufobj->size; ++i) {

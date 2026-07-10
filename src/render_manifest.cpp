@@ -338,21 +338,21 @@ intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
 // We can let this "leak" as it doesn't leak due to using frame linear allocator
 intern rmanifest *create_manifest(renderer *rndr, idx_t fif)
 {
-    rmanifest *m = mem_calloc<rmanifest>(1, &rndr->frame_linear);
+    rmanifest *m = mem_calloc<rmanifest>(1, &rndr->manifest_flinear);
     m->fif = fif;
-    arr_init(&m->jobs, &rndr->frame_linear, 24);
-    arr_init(&m->passes, &rndr->frame_linear, 12);
-    arr_init(&m->views, &rndr->frame_linear, 12);
+    arr_init(&m->jobs, &rndr->manifest_flinear, 24);
+    arr_init(&m->passes, &rndr->manifest_flinear, 12);
+    arr_init(&m->views, &rndr->manifest_flinear, 12);
 
     // Initialize our manifest textures and buffers with the global ones (well, globabl to the renderer)
-    arr_init(&m->textures, &rndr->frame_linear);
+    arr_init(&m->textures, &rndr->manifest_flinear);
     arr_resize(&m->textures, rndr->rtargets.textures.slots.size);
     for (u32 i = 0; i < m->textures.size; ++i) {
         m->textures[i] = rndr->rtargets.textures.slots[i].item.frames[fif];
     }
 
     // Buffers
-    arr_init(&m->buffers, &rndr->frame_linear);
+    arr_init(&m->buffers, &rndr->manifest_flinear);
     arr_resize(&m->buffers, rndr->rtargets.buffers.slots.size);
     for (u32 i = 0; i < m->buffers.size; ++i) {
         m->buffers[i] = rndr->rtargets.buffers.slots[i].item.frames[fif];
@@ -921,7 +921,9 @@ idx_t push_render_job(rmanifest *m, const mrender_job_params &p)
     auto rj = arr_emplace_back(&m->jobs, p.pass, p.view, mem_arena{}, array<mdraw_call>{}, array<idx_t>{}, array<idx_t>{}, p.cb, p.cb_user);
     if (p.max_draw_calls > 0) {
         sizet memsz = calculate_render_job_needed_capacity(p.max_draw_calls, m->rndr->desc_info.draw_ssbo.block_size);
-        init_lin_arena(&rj->arena, memsz, &m->rndr->frame_linear, "rjob_arena", true);
+        // We don't need logging every frame for these - massive slow down
+        rj->arena.flags |= make_flag(MEM_ARENA_DISABLE_INIT_LOG_BIT) | make_flag(MEM_ARENA_DISABLE_TERMINATE_LOG_BIT);
+        init_linear_arena(&rj->arena, memsz, &m->rndr->manifest_flinear, "rjob_arena");
         arr_init(&rj->dcs, &rj->arena, p.max_draw_calls);
         arr_init(&rj->sorted_dcs, &rj->arena, p.max_draw_calls);
         arr_init(&rj->instanced_dcs, &rj->arena, p.max_draw_calls);
@@ -1009,7 +1011,7 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
         asrt(vk_res == VK_SUCCESS);
     }
 
-    reset_arena(&rndr->frame_linear);
+    reset_arena(&rndr->manifest_flinear);
     // vkr_reset_linear_arenas(&rndr->vk, fif);
 
     /////////////////////

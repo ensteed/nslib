@@ -1,6 +1,7 @@
 #include <cstring>
 
 #include "string.h"
+#include "../threads.h"
 #include "../logging.h"
 #include "../hashfuncs.h"
 
@@ -52,13 +53,19 @@ string::string(mem_arena *arena)
     str_init(this, arena);
 }
 
-string::string(const string &copy, mem_arena *arena)
+string::string(const string &copy)
 {
     str_init(this, copy.buf.arena);
     str_copy(this, copy);
 }
 
-string::string(const char *copy, mem_arena *arena)
+string::string(mem_arena *arena, const string &copy)
+{
+    str_init(this, arena);
+    str_copy(this, copy);
+}
+
+string::string(mem_arena *arena, const char *copy)
 {
     str_init(this, arena);
     str_copy(this, copy);
@@ -69,8 +76,10 @@ string::~string()
     str_terminate(this);
 }
 
-string &string::operator=(const string& rhs)
+string &string::operator=(const string &rhs)
 {
+    // See array::operator= - adopt the source's arena only when we don't have one yet
+    if (!buf.arena) buf.arena = rhs.buf.arena;
     str_copy(this, rhs);
     return *this;
 }
@@ -80,9 +89,14 @@ string &string::operator+=(const string &rhs)
     return *str_append(this, rhs);
 }
 
+string &string::operator+=(const char *rhs)
+{
+    return *str_append(this, rhs);
+}
+
 const char &string::operator[](sizet ind) const
 {
-    
+
     return str_cstr(this)[ind];
 }
 
@@ -94,7 +108,21 @@ char &string::operator[](sizet ind)
 string operator+(const string &lhs, const string &rhs)
 {
     string ret(lhs);
-    ret += rhs;
+    str_append(&ret, rhs);
+    return ret;
+}
+
+string operator+(const string &lhs, const char *rhs)
+{
+    string ret(lhs);
+    str_append(&ret, rhs);
+    return ret;
+}
+
+string operator+(const char *lhs, const string &rhs)
+{
+    string ret(rhs.buf.arena, lhs);
+    str_append(&ret, rhs);
     return ret;
 }
 
@@ -451,28 +479,28 @@ void from_str(char *c, const char *str)
 
 string to_str(char c)
 {
-    string ret;
+    string ret{current_thread_free_list()};
     str_printf(&ret, "%c", c);
     return ret;
 }
 
 string to_str(u64 i)
 {
-    string ret;
+    string ret{current_thread_free_list()};
     str_printf(&ret, "%lu", i);
     return ret;
 }
 
 string to_str(s64 i)
 {
-    string ret;
+    string ret{current_thread_free_list()};
     str_printf(&ret, "%ld", i);
     return ret;
 }
 
 string to_str(void *i)
 {
-    string ret;
+    string ret{current_thread_free_list()};
     str_printf(&ret, "%p", i);
     return ret;
 }

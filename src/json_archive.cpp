@@ -1,4 +1,5 @@
 #include "json_archive.h"
+#include "threads.h"
 
 namespace nslib
 {
@@ -32,7 +33,7 @@ void init_jsa(json_archive *jsa, archive_opmode mode, json_obj *root)
 
 string jsa_to_json_string(const json_archive &jsa, bool pretty_format)
 {
-    string ret{};
+    string ret{current_thread_free_list()};
     if (jsa.stack.size > 0) {
         // Get the json string - this allocates
         char *src{};
@@ -44,7 +45,7 @@ string jsa_to_json_string(const json_archive &jsa, bool pretty_format)
         }
 
         // Copy the string in to the ret string
-        ret = src;
+        str_copy(&ret, src);
 
         // Free the allocation
         json_free(src);
@@ -92,7 +93,7 @@ void pack_unpack(json_archive *ar, string &val, const pack_var_info &vinfo)
 
     auto check_func = [](string *val, json_obj *item) -> bool {
         if (item && json_is_string(item)) {
-            *val = item->valuestring;
+            str_copy(val, item->valuestring);
             return true;
         }
         return false;
@@ -103,7 +104,7 @@ void pack_unpack(json_archive *ar, string &val, const pack_var_info &vinfo)
 // Special packing/unpacking for 64bit
 void pack_unpack(json_archive *ar, u64 &val, const pack_var_info &vinfo)
 {
-    string s{};
+    string s{current_thread_free_list()};
     if (ar->opmode == archive_opmode::PACK) {
         str_printf(&s, "%lu", val);
     }
@@ -115,7 +116,7 @@ void pack_unpack(json_archive *ar, u64 &val, const pack_var_info &vinfo)
 
 void pack_unpack(json_archive *ar, s64 &val, const pack_var_info &vinfo)
 {
-    string s{};
+    string s{current_thread_free_list()};
     if (ar->opmode == archive_opmode::PACK) {
         str_printf(&s, "%ld", val);
     }

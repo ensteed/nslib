@@ -295,14 +295,6 @@ struct platform_frame_event_queue
     platform_sdl_event_hook sdl_hook{};
 };
 
-struct platform_memory
-{
-    mem_arena free_list{};
-    mem_arena stack{};
-    mem_arena frame_linear{};
-    mem_arena sdl_fl{};
-};
-
 struct platform_ctxt
 {
     u32 init_flags;
@@ -315,8 +307,7 @@ struct platform_ctxt
 #if defined(PROFILING_ENABLED)
     profiling_context profiling_contexts[PROFILE_CONTEXT_COUNT];
 #endif
-
-    platform_memory arenas{};
+    mem_arena_group arenas{};
     int finished_frames{0};
     char **argv{};
     bool running{false};
@@ -338,13 +329,6 @@ struct platform_window_init_info
     const char *title;
 };
 
-struct platform_memory_init_info
-{
-    sizet free_list_size{4000 * MB_SIZE};
-    sizet stack_size{100 * MB_SIZE};
-    sizet frame_linear_size{100 * MB_SIZE};
-};
-
 enum platform_init_flag
 {
     PLATFORM_INIT_FLAG_AUDIO,
@@ -357,7 +341,7 @@ struct platform_init_info
     char **argv;
     u32 flags;
     platform_window_init_info wind;
-    platform_memory_init_info mem;
+    mem_arena_group_sizes arena_sizes;
     int default_log_level{LOG_TRACE};
 };
 

@@ -217,7 +217,7 @@ render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name)
     if (!is_valid(ref)) {
         return ref;
     }
-    hmap_init(&ref.item->pass_idmap, hash_type, &rndr->persist_fl);
+    hmap_init(&ref.item->pass_idmap, &rndr->arenas.free_list, hash_type);
     strncpy(ref.item->name, name, SMALL_STR_LEN - 1);
     ref.item->id = make_rid(ref.item->name);
     hmap_insert(&rndr->blueprint_id_map, ref.item->id, ref.hndl);

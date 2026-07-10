@@ -93,7 +93,8 @@ struct profiling_scope
     ~profiling_scope();
 };
 
-void profiling_init(profiling_context *ctxt, sizet entry_count = 128, sizet stack_depth = 64, mem_arena *upstream = get_global_arena());
+// upstream == nullptr resolves to the calling thread's free list
+void profiling_init(profiling_context *ctxt, sizet entry_count = 128, sizet stack_depth = 64, mem_arena *upstream = nullptr);
 void profiling_terminate(profiling_context *ctxt);
 
 void profiling_begin_frame(profiling_context *ctxt);
@@ -104,7 +105,8 @@ void profiling_end(profiling_context *ctxt);
 
 void profiling_report(const profiling_context *ctxt);
 
-void profiling_set_avg_window(profiling_context *ctxt, u32 window_frames, mem_arena *avg_arena = get_global_arena());
+// avg_arena == nullptr resolves to the calling thread's free list
+void profiling_set_avg_window(profiling_context *ctxt, u32 window_frames, mem_arena *avg_arena = nullptr);
 
 #else
     #define PROFILE_SCOPE_T(name, i)

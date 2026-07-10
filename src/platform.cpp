@@ -2,6 +2,7 @@
 #include "profiling.h"
 #include "imgui/imgui_impl_vulkan.h"
 #include "osdef.h"
+#include "threads.h"
 #ifdef PLATFORM_UNIX
     #include <unistd.h>
     #include <pthread.h>
@@ -36,7 +37,6 @@ const char *get_username()
     return user;
 }
 
-intern mem_arena *g_sdl_arena{};
 
 intern platform_ctxt *platform_window_ptr(void *win)
 {
@@ -145,41 +145,22 @@ bool frame_has_event_type(platform_event_type type, const platform_frame_event_q
     return false;
 }
 
-intern void init_mem_arenas(const platform_memory_init_info *info, platform_memory *mem)
+intern void init_mem_arenas(const mem_arena_group_sizes &sizes, mem_arena_group *arenas)
 {
     // Null to indicate these get platform_alloc'd
-    init_fl_arena(&mem->free_list, info->free_list_size, nullptr, "global");
-    init_stack_arena(&mem->stack, info->stack_size, nullptr, "global");
-    init_lin_arena(&mem->frame_linear, info->frame_linear_size, nullptr, "global");
-    // 213 KB is about the min needed for SDL - we'll give it 500 to be safe
-    init_fl_arena(&mem->sdl_fl, 500 * KB_SIZE, &mem->free_list, "sdl");
-
+    init_mem_arena_group(arenas, sizes, nullptr, "platform");
+    
     // Then these become our global mem arenas
-    set_global_arena(&mem->free_list);
-    set_global_stack_arena(&mem->stack);
-    set_global_frame_lin_arena(&mem->frame_linear);
-    g_sdl_arena = &mem->sdl_fl;
+    register_current_thread(0, arenas);
 
     // Set up our json alloc and free funcs
     json_hooks hooks;
-    auto mem_glob_alloc = [](sizet sz) -> void * { return mem_alloc(sz, get_global_arena()); };
-    auto mem_glob_free = [](void *ptr) -> void { mem_free(ptr, get_global_arena()); };
+    auto mem_glob_alloc = [](sizet sz) -> void * { return mem_alloc(sz, current_thread_free_list()); };
+    auto mem_glob_free = [](void *ptr) -> void { mem_free(ptr, current_thread_free_list()); };
 
     hooks.malloc_fn = mem_glob_alloc;
     hooks.free_fn = mem_glob_free;
     json_init_hooks(&hooks);
-}
-
-intern void terminate_mem_arenas(platform_memory *mem)
-{
-    terminate_arena(&mem->sdl_fl);
-    terminate_arena(&mem->stack);
-    terminate_arena(&mem->frame_linear);
-    terminate_arena(&mem->free_list);
-    g_sdl_arena = nullptr;
-    set_global_arena(nullptr);
-    set_global_stack_arena(nullptr);
-    set_global_frame_lin_arena(nullptr);
 }
 
 intern void log_display_info()
@@ -353,24 +334,27 @@ intern void handle_sdl_window_event(platform_ctxt *ctxt, platform_event *event, 
     event->we.idata = data;
 }
 
+// SDL spawns its own threads (audio, sensors) and allocates/frees across them, and its allocator
+// callbacks take no user data - so there is no thread whose arena we could route these to. The CRT
+// allocator is already thread safe, so hand SDL that and keep arenas for code we own.
 intern void *sdl_malloc(sizet size)
 {
-    return mem_alloc(size, g_sdl_arena, SIMD_MIN_ALIGNMENT);
+    return malloc(size);
 }
 
 intern void *sdl_calloc(sizet nmemb, sizet memb)
 {
-    return mem_calloc(nmemb, memb, g_sdl_arena, SIMD_MIN_ALIGNMENT);
+    return calloc(nmemb, memb);
 }
 
 intern void *sdl_realloc(void *ptr, sizet size)
 {
-    return mem_realloc(ptr, size, g_sdl_arena, SIMD_MIN_ALIGNMENT);
+    return realloc(ptr, size);
 }
 
 intern void sdl_free(void *ptr)
 {
-    mem_free(ptr, g_sdl_arena);
+    free(ptr);
 }
 
 void *platform_alloc(sizet byte_size)
@@ -397,7 +381,7 @@ int init_platform(const platform_init_info *settings, platform_ctxt *ctxt)
     ctxt->argc = settings->argc;
     ctxt->argv = settings->argv;
     set_logging_level(GLOBAL_LOGGER, settings->default_log_level);
-    init_mem_arenas(&settings->mem, &ctxt->arenas);
+    init_mem_arenas(settings->arena_sizes, &ctxt->arenas);
 
 #if defined(PROFILING_ENABLED)
     // Setup profiling
@@ -470,7 +454,8 @@ int terminate_platform(platform_ctxt *ctxt)
         profiling_terminate(&ctxt->profiling_contexts[i]);
     }
 #endif
-    terminate_mem_arenas(&ctxt->arenas);
+    reset_arena(&ctxt->arenas.scratch_flinear);
+    terminate_mem_arena_group(&ctxt->arenas);
     return err_code::PLATFORM_NO_ERROR;
 }
 
@@ -692,7 +677,7 @@ void begin_platform_frame(platform_ctxt *ctxt)
     if (ctxt->win_hndl) {
         process_platform_events(ctxt);
     }
-    reset_arena(&ctxt->arenas.frame_linear);
+    reset_arena(&ctxt->arenas.scratch_flinear);
 }
 
 void end_platform_frame(platform_ctxt *ctxt)

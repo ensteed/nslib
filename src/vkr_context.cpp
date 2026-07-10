@@ -354,6 +354,7 @@ void vkr_enumerate_device_extensions(const vkr_phys_device *pdevice,
                  ext_enabled ? "true" : "false");
         }
     }
+    mem_free(ext_array, &arenas->t_arenas[g_vk_thread_idx].command_arena);
 }
 
 void vkr_enumerate_instance_extensions(const char *const *enabled_extensions, u32 enabled_extension_count, vk_arenas *arenas, bool log_available)
@@ -380,6 +381,7 @@ void vkr_enumerate_instance_extensions(const char *const *enabled_extensions, u3
                  ext_enabled ? "true" : "false");
         }
     }
+    mem_free(ext_array, &arenas->t_arenas[g_vk_thread_idx].command_arena);
 }
 
 void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, vk_arenas *arenas, bool log_available)
@@ -410,6 +412,7 @@ void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enab
                  enabled ? "true" : "false");
         }
     }
+    mem_free(layer_array, &arenas->t_arenas[g_vk_thread_idx].command_arena);
 }
 
 intern VkBool32 VKAPI_PTR debug_message_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -518,13 +521,19 @@ int vkr_init_instance(vkr_context *vk, vkr_instance *inst)
     create_inf.flags = vk->cfg.inst_create_flags;
 
     int err = vkCreateInstance(&create_inf, &vk->arenas.alloc_cbs, &inst->hndl);
+
+    // Free ext
+    for (u32 i = 0; i < copy_ind; ++i) {
+        mem_free(ext[i], &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
+    }
+    mem_free(ext, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
+
     if (err == VK_SUCCESS) {
         ilog("Successfully created vulkan instance");
 
         // Setup debugging callbacks (for logging/printing)
         fill_extension_funcs(&inst->ext_funcs, vk->inst.hndl);
         inst->ext_funcs.create_debug_utils_messenger(inst->hndl, &dbg_ci, &vk->arenas.alloc_cbs, &inst->dbg_messenger);
-
         return err_code::VKR_NO_ERROR;
     }
     else {
@@ -610,6 +619,7 @@ vkr_queue_families vkr_get_queue_families(vkr_context *vk, VkPhysicalDevice pdev
 
         ilog("Queue family ind %d has %d available queues with %#010x capabilities", i, qfams[i].queueCount, qfams[i].queueFlags);
     }
+    mem_free(qfams, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
     return ret;
 }
 
@@ -768,6 +778,7 @@ int vkr_select_best_graphics_physical_device(vkr_context *vk, vkr_phys_device *d
     ret = vkEnumeratePhysicalDevices(vk->inst.hndl, &count, pdevices);
     if (ret != VK_SUCCESS) {
         elog("Failed to enumerate physical devices with code %d", ret);
+        mem_free(pdevices, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
         return err_code::VKR_ENUMERATE_PHYSICAL_DEVICES_FAIL;
     }
     for (u32 i = 0; i < count; ++i) {
@@ -843,6 +854,9 @@ int vkr_select_best_graphics_physical_device(vkr_context *vk, vkr_phys_device *d
             sel_dev_features = features;
         }
     }
+
+    mem_free(pdevices, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
+
     ilog("Selected device id:%d  name:%s  type:%s",
          sel_dev_props.deviceID,
          sel_dev_props.deviceName,
@@ -965,6 +979,7 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, vkr_context *vk)
     VkResult res = vkCreateSwapchainKHR(vk->inst.device.hndl, &swap_create, &vk->arenas.alloc_cbs, &sw_info->swapchain);
     if (res != VK_SUCCESS) {
         elog("Failed to create swapchain with err code: %d", res);
+        vkr_terminate_pdevice_swapchain_support(&swap_support);
         arr_terminate(&sw_info->image_views);
         arr_terminate(&sw_info->images);
         arr_terminate(&sw_info->renders_finished);
@@ -976,6 +991,7 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, vkr_context *vk)
     res = vkGetSwapchainImagesKHR(vk->inst.device.hndl, sw_info->swapchain, &image_count, nullptr);
     if (res != VK_SUCCESS) {
         elog("Failed to get swapchain images count with code %d", res);
+        vkr_terminate_pdevice_swapchain_support(&swap_support);
         arr_terminate(&sw_info->image_views);
         arr_terminate(&sw_info->images);
         arr_terminate(&sw_info->renders_finished);
@@ -990,6 +1006,8 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, vkr_context *vk)
     res = vkGetSwapchainImagesKHR(vk->inst.device.hndl, sw_info->swapchain, &image_count, simages.data);
     if (res != VK_SUCCESS) {
         elog("Failed to get swapchain images with code %d", res);
+        vkr_terminate_pdevice_swapchain_support(&swap_support);
+        arr_terminate(&simages);
         return err_code::VKR_GET_SWAPCHAIN_IMAGES_FAIL;
     }
     for (int i = 0; i < sw_info->images.size; ++i) {
@@ -1012,12 +1030,14 @@ int vkr_init_swapchain(vkr_swapchain *sw_info, vkr_context *vk)
         iview_create.image = &sw_info->images[i];
         int err = vkr_init_image_view(&sw_info->image_views[i], iview_create, vk);
         if (err != err_code::VKR_NO_ERROR) {
+            vkr_terminate_pdevice_swapchain_support(&swap_support);
             vkr_terminate_swapchain(sw_info, vk);
             return err_code::VKR_CREATE_IMAGE_VIEW_FAIL;
         }
 
         err = vkr_init_semaphore(&sw_info->renders_finished[i], {}, vk);
         if (err != VK_SUCCESS) {
+            vkr_terminate_pdevice_swapchain_support(&swap_support);
             vkr_terminate_swapchain(sw_info, vk);
             return err_code::VKR_CREATE_SEMAPHORE_FAIL;
         }
@@ -1347,6 +1367,7 @@ int vkr_init_pipeline(VkPipeline *hndl, const vkr_pipeline_cfg &cfg, vkr_context
     else {
         err_ret = err_code::VKR_NO_ERROR;
     }
+    arr_terminate(&stages);
     return err_ret;
 }
 
@@ -1486,7 +1507,7 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
         cur_offset += new_regions[i].size;
     }
 
-    vkCmdCopyBuffer(cmd_buf, staging_buffer->hndl, dest_buffer->hndl, region_count, regions);
+    vkCmdCopyBuffer(cmd_buf, staging_buffer->hndl, dest_buffer->hndl, region_count, new_regions.data);
     arr_terminate(&new_regions);
     return err;
 }
@@ -1743,8 +1764,8 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     vk->cfg = *cfg;
 
     vk->arenas.thread_count = 1;
-    init_fl_arena(&vk->arenas.t_arenas[0].persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
-    init_fl_arena(&vk->arenas.t_arenas[0].command_arena, cfg->g_arena_cfg.command_sz, cfg->upstream, "vkr_command");
+    init_free_list_arena(&vk->arenas.t_arenas[0].persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
+    init_free_list_arena(&vk->arenas.t_arenas[0].command_arena, cfg->g_arena_cfg.command_sz, cfg->upstream, "vkr_command");
 
     vk->arenas.alloc_cbs.pUserData = &vk->arenas;
     vk->arenas.alloc_cbs.pfnAllocation = vk_alloc;

@@ -93,6 +93,14 @@ void init_static_model(static_mesh *sm, mem_arena *arena)
     arr_init(&sm->mat_mapping, arena);
 }
 
+void init_comp(static_mesh *sm, mem_arena *arena)
+{
+    // add_comp can copy a populated component in - only claim an arena if there isn't one
+    if (!sm->mat_mapping.arena) {
+        init_static_model(sm, arena);
+    }
+}
+
 void terminate_static_model(static_mesh *sm)
 {
     arr_terminate(&sm->mat_mapping);
@@ -135,7 +143,8 @@ entity *add_entity(const entity &copy, sim_region *reg)
 entity *add_entity(const char *name, sim_region *reg)
 {
     sizet ind = reg->ents.size;
-    arr_emplace_back(&reg->ents, entity{++reg->last_id, name, &reg->cdb});
+    // Name lives in the same arena as the array that owns the entity
+    arr_emplace_back(&reg->ents, entity{++reg->last_id, string(reg->ents.arena, name), &reg->cdb});
     auto iter = hmap_insert(&reg->entmap, reg->ents[ind].id, ind);
     asrt(iter);
     return &reg->ents[ind];
@@ -184,7 +193,7 @@ void init_sim_region(sim_region *reg, mem_arena *arena)
 {
     arr_init(&reg->ents, arena);
     init_comp_db(&reg->cdb, arena);
-    hmap_init(&reg->entmap, hash_type, arena);
+    hmap_init(&reg->entmap, arena);
 
     add_static_mesh_tbl(&reg->cdb);
     add_camera_tbl(&reg->cdb, 64);

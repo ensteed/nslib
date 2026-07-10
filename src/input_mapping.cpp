@@ -44,8 +44,8 @@ void init_keymap(input_keymap *km, const char *name, mem_arena *arena)
 {
     asrt(km);
     asrt(name);
-    km->name = name;
-    hmap_init(&km->hm, hash_type, arena, DEFAULT_KEYMAP_BUCKET_COUNT);
+    km->name = string(arena, name);
+    hmap_init(&km->hm, arena, hash_type, DEFAULT_KEYMAP_BUCKET_COUNT);
 }
 
 void terminate_keymap(input_keymap *km)
@@ -58,8 +58,8 @@ void terminate_keymap(input_keymap *km)
 void init_keymap_stack(input_keymap_stack *stack, mem_arena *arena)
 {
     asrt(stack);
-    hmap_init(&stack->trigger_funcs, hash_type, arena, DEFAULT_FUNCMAP_BUCKET_COUNT);
-    hmap_init(&stack->cur_pressed, hash_type, arena);
+    hmap_init(&stack->trigger_funcs, arena, hash_type, DEFAULT_FUNCMAP_BUCKET_COUNT);
+    hmap_init(&stack->cur_pressed, arena);
 }
 
 void terminate_keymap_stack(input_keymap_stack *stack)

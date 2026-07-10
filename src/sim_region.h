@@ -179,7 +179,7 @@ template<typename T, typename SysData>
 void init_comp_tbl(comp_table<T, SysData> *tbl, mem_arena *arena, sizet initial_capacity)
 {
     arr_init(&tbl->entries, arena, initial_capacity);
-    hmap_init(&tbl->entc_hm, hash_type, arena);
+    hmap_init(&tbl->entc_hm, arena);
     init_comp_system(&tbl->sys, arena, initial_capacity);
 }
 
@@ -240,6 +240,13 @@ bool remove_comp_tbl(comp_db *cdb)
     return false;
 }
 
+// Per component construction hook - components that own containers give them an arena here. Mirrors
+// init_asset. Default is a no-op for components that own nothing.
+template<typename T>
+inline void init_comp(T *, mem_arena *)
+{}
+void init_comp(static_mesh *sm, mem_arena *arena);
+
 template<typename T, typename SysData>
 T *add_comp(u32 ent_id, comp_table<T, SysData> *ctbl, const T &copy = {})
 {
@@ -250,6 +257,8 @@ T *add_comp(u32 ent_id, comp_table<T, SysData> *ctbl, const T &copy = {})
         arr_push_back(&ctbl->entries, copy);
         ctbl->entries[cid].ent_id = ent_id;
         ret = &ctbl->entries[cid];
+        // The component's owned containers come out of the same arena as the table that holds it
+        init_comp(ret, ctbl->entries.arena);
     }
     return ret;
 }

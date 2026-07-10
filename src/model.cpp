@@ -184,7 +184,7 @@ const char *load_shader(shader *shdr, const char *path)
     for (u32 i = 0; i < shdr->stages.size; ++i) {
         auto cur_stage = &shdr->stages[i];
         strncpy(cur_stage->entry_point, "main", SMALL_STR_LEN - 1);
-        string str(path, shdr->frame_lin);
+        string str(shdr->frame_lin, path);
         str_append(&str, cur_stage->stype == SHADER_STAGE_TYPE_VERTEX ? ".vert.spv" : ".frag.spv");
         arr_init(&cur_stage->src, shdr->fl);
         platform_file_err_desc err{};
@@ -226,6 +226,7 @@ void terminate_asset(technique *tech)
 
 void init_asset(material *mat)
 {
+    arr_init(&mat->bp_techniques, mat->fl);
     mat->flags |= make_flag(ASSET_DIRTY_BIT);
 }
 

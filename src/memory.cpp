@@ -22,10 +22,6 @@ void default_upstream_free_func(void *ptr, void *)
     platform_free(ptr);
 }
 
-intern mem_arena *g_fl_arena{};
-intern mem_arena *g_stack_arena{};
-intern mem_arena *g_frame_linear_arena{};
-
 intern sizet calc_padding(sizet base_addr, sizet alignment)
 {
     sizet multiplier = (base_addr / alignment) + 1;
@@ -546,13 +542,7 @@ void reset_arena(mem_arena *arena)
     }
 }
 
-void init_arena(mem_arena *arena,
-                sizet total_size,
-                mem_alloc_type mtype,
-                mem_arena *upstream,
-                const char *name,
-                bool skip_log,
-                const pf_alloc_funcs &pf_funcs)
+void init_arena(mem_arena *arena, sizet total_size, mem_alloc_type mtype, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
     arena->pf_funcs.alloc = pf_funcs.alloc ? pf_funcs.alloc : default_upstream_alloc_func;
     arena->pf_funcs.free = pf_funcs.free ? pf_funcs.free : default_upstream_free_func;
@@ -561,10 +551,16 @@ void init_arena(mem_arena *arena,
     arena->total_size = total_size;
     arena->alloc_type = mtype;
     arena->upstream_allocator = upstream;
-    strncpy(arena->name, name, SMALL_STR_LEN-1);
+    strncpy(arena->name, name, SMALL_STR_LEN - 1);
 
-    if (!skip_log) {
-        ilog("Initializing %s (%s) arena with %lu available", name, arena_type_str(arena->alloc_type), arena->total_size);
+    bool do_log = !test_flags(arena->flags, make_flag(MEM_ARENA_DISABLE_INIT_LOG_BIT));
+    if (do_log) {
+        ilog("Initializing %s (%s) arena from %s (%s) upstream with %lu available",
+             name,
+             arena_type_str(arena->alloc_type),
+             upstream ? upstream->name : "pf_funcs.alloc",
+             upstream ? arena_type_str(upstream->alloc_type) : "free-list",
+             arena->total_size);
     }
 
     // Make sure user filled out a size before passsing in
@@ -584,40 +580,37 @@ void init_arena(mem_arena *arena,
     reset_arena(arena);
 }
 
-void init_fl_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
+void init_free_list_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name, skip_log, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::FREE_LIST, upstream, name, pf_funcs);
 }
 
-void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
+void init_stack_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name, skip_log, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::STACK, upstream, name, pf_funcs);
 }
 
-void init_lin_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, bool skip_log, const pf_alloc_funcs &pf_funcs)
+void init_linear_arena(mem_arena *arena, sizet total_size, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
-    init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name, skip_log, pf_funcs);
+    init_arena(arena, total_size, mem_alloc_type::LINEAR, upstream, name, pf_funcs);
 }
 
-void init_pool_arena(mem_arena *arena,
-                     sizet chunk_size,
-                     sizet chunk_count,
-                     mem_arena *upstream,
-                     const char *name,
-                     bool skip_log,
-                     const pf_alloc_funcs &pf_funcs)
+void init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_arena *upstream, const char *name, const pf_alloc_funcs &pf_funcs)
 {
     auto min_sz = sizeof(mem_node);
     arena->mpool.chunk_size = chunk_size >= min_sz ? chunk_size : min_sz;
-    init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, skip_log, pf_funcs);
+    init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, pf_funcs);
 }
 
-void terminate_arena(mem_arena *arena, bool skip_log)
+void terminate_arena(mem_arena *arena)
 {
-    if (!skip_log) {
-        ilog("Terminating %s (%s) arena with %lu used of %lu allocated and %lu peak",
+    bool do_log = !test_flags(arena->flags, make_flag(MEM_ARENA_DISABLE_TERMINATE_LOG_BIT));
+    if (do_log) {
+        ilog("Terminating %s (%s) arena from %s (%s) upstream with %lu used of %lu allocated and %lu peak",
              arena->name,
              arena_type_str(arena->alloc_type),
+             arena->upstream_allocator ? arena->upstream_allocator->name : "pf_funcs.free",
+             arena->upstream_allocator ? arena_type_str(arena->upstream_allocator->alloc_type) : "free-list",
              arena->used,
              arena->total_size,
              arena->peak);
@@ -632,11 +625,29 @@ void terminate_arena(mem_arena *arena, bool skip_log)
     arena->start = nullptr;
 }
 
+void init_mem_arena_group(mem_arena_group *gp,
+                          const mem_arena_group_sizes &sizes,
+                          mem_arena *upstream,
+                          const char *gp_name,
+                          const pf_alloc_funcs &pf_funcs)
+{
+    init_free_list_arena(&gp->free_list, sizes.free_list, upstream, gp_name, pf_funcs);
+    init_stack_arena(&gp->stack, sizes.stack, upstream, gp_name, pf_funcs);
+    init_linear_arena(&gp->scratch_flinear, sizes.scratch_flinear, upstream, gp_name, pf_funcs);
+}
+
+void terminate_mem_arena_group(mem_arena_group *gp)
+{
+    terminate_arena(&gp->scratch_flinear);
+    terminate_arena(&gp->stack);
+    terminate_arena(&gp->free_list);
+}
+
 const char *arena_type_str(mem_alloc_type atype)
 {
     switch (atype) {
     case (mem_alloc_type::FREE_LIST):
-        return "free list";
+        return "free-list";
     case (mem_alloc_type::POOL):
         return "pool";
     case (mem_alloc_type::STACK):
@@ -646,45 +657,6 @@ const char *arena_type_str(mem_alloc_type atype)
     default:
         return "unknown";
     }
-}
-
-mem_arena *get_global_arena()
-{
-    return g_fl_arena;
-}
-
-void set_global_arena(mem_arena *arena)
-{
-    if (arena) {
-        asrt(arena->alloc_type == mem_alloc_type::FREE_LIST);
-    }
-    g_fl_arena = arena;
-}
-
-mem_arena *get_global_stack_arena()
-{
-    return g_stack_arena;
-}
-
-void set_global_stack_arena(mem_arena *arena)
-{
-    if (arena) {
-        asrt(arena->alloc_type == mem_alloc_type::STACK);
-    }
-    g_stack_arena = arena;
-}
-
-mem_arena *get_global_frame_lin_arena()
-{
-    return g_frame_linear_arena;
-}
-
-void set_global_frame_lin_arena(mem_arena *arena)
-{
-    if (arena) {
-        asrt(arena->alloc_type == mem_alloc_type::LINEAR);
-    }
-    g_frame_linear_arena = arena;
 }
 
 } // namespace nslib

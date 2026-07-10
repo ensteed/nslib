@@ -530,9 +530,9 @@ struct renderer
 {
     // Owned vulkan context and mem arenas used only for vulkan stuff
     vkr_context vk{};
-    mem_arena persist_fl;
-    mem_arena scratch_stack;
-    mem_arena frame_linear;
+    mem_arena_group arenas;
+    // Manifest get's its own special linear arena because it has to be sized according to our max instance draw count etc
+    mem_arena manifest_flinear;
 
     // Renderer resources
     // TODO: Implement this for smarter pipeline creation
@@ -608,9 +608,7 @@ struct renderer_cfg
     void *win_hndl;
     mem_arena *upsream;
     sizet thread_count{1};
-    sizet persist_fl_size;
-    sizet scratch_stack_size;
-    sizet extra_frame_linear_size;
+    mem_arena_group_sizes arena_sizes;
     rpipeline_layout_cfg desc;
     manifest_max_counts mcounts;
     u32 texture_pool_count;

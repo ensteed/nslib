@@ -1,16 +1,52 @@
 #include "threads.h"
 #include "logging.h"
+#include "memory.h"
+#include <cstring>
 
 #if defined(PLATFORM_POSIX)
-#include <pthread.h>
+    #include <pthread.h>
 #elif defined(PLATFORM_WIN32)
-#define NOMINMAX
-#include <windows.h>
-#include <process.h>
+    #define NOMINMAX
+    #include <windows.h>
+    #include <process.h>
 #endif
 
 namespace nslib
 {
+
+intern thread_local u32 g_thread_idx{INVALID_IDX};
+intern thread_local mem_arena_group *g_thread_arenas{nullptr};
+
+u32 current_thread_idx()
+{
+    return g_thread_idx;
+}
+
+mem_arena_group *current_thread_arenas()
+{
+    return g_thread_arenas;
+}
+
+mem_arena *current_thread_free_list()
+{
+    return &g_thread_arenas->free_list;
+}
+
+mem_arena *current_thread_stack()
+{
+    return &g_thread_arenas->stack;
+}
+
+mem_arena *current_thread_scratch_flinear()
+{
+    return &g_thread_arenas->scratch_flinear;
+}
+
+void register_current_thread(u32 idx, mem_arena_group *thread_arenas)
+{
+    g_thread_idx = idx;
+    g_thread_arenas = thread_arenas;
+}
 
 #if defined(PLATFORM_POSIX)
 
@@ -21,14 +57,18 @@ static_assert(sizeof(pthread_cond_t) <= sizeof(cond_var::native), "pthread_cond_
 intern void *thread_trampoline(void *data)
 {
     thread *t = (thread *)data;
+    register_current_thread(t->idx, t->arenas);
     t->func(t->arg);
     return nullptr;
 }
 
-bool start_thread(thread *t, thread_func func, void *arg)
+bool start_thread(thread *t, const thread_desc &desc, thread_func func, void *arg)
 {
+    t->arenas = desc.arenas;
+    t->idx = desc.idx;
     t->func = func;
     t->arg = arg;
+    strncpy(t->name, desc.name, SMALL_STR_LEN);
     pthread_t tid;
     int res = pthread_create(&tid, nullptr, thread_trampoline, t);
     if (res != 0) {
@@ -103,6 +143,7 @@ static_assert(sizeof(CONDITION_VARIABLE) <= sizeof(cond_var::native), "CONDITION
 intern unsigned __stdcall thread_trampoline(void *data)
 {
     thread *t = (thread *)data;
+    register_current_thread(t->idx, t->arenas);
     t->func(t->arg);
     return 0;
 }

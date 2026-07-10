@@ -40,7 +40,7 @@ void init_asset_cache(asset_cache *cache, sizet overall_mem_budget, const mem_ar
     asrt(cache->arena.total_size == 0 && cache->pools.size == 0);
     strncpy(cache->name, cache_name, SMALL_STR_LEN - 1);
     cache->name[SMALL_STR_LEN - 1] = 0;
-    init_fl_arena(&cache->arena, overall_mem_budget, upstream.free_list, cache_name);
+    init_free_list_arena(&cache->arena, overall_mem_budget, upstream.free_list, cache_name);
     cache->frame_linear = upstream.frame_linear;
     cache->stack = upstream.stack;
     arr_init(&cache->pools, &cache->arena, ASSET_TYPE_USER);

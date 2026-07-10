@@ -3,13 +3,27 @@
 
 namespace nslib
 {
+inline constexpr u32 MAX_THREADS = 32;
+
+struct mem_arena_group;
+struct mem_arena;
 
 // Entry point for a thread. The OS thread's return value is ignored on purpose - communicate
 // results back through shared state guarded by a mutex/cond_var, not a return value.
 using thread_func = void (*)(void *arg);
 
+struct thread_desc
+{
+    u32 idx;
+    mem_arena_group *arenas;
+    const char *name;
+};
+
 struct thread
 {
+    u32 idx;
+    mem_arena_group *arenas;
+    small_str name;
     // Opaque native handle - pthread_t on posix, the thread HANDLE on win32.
     void *native{};
     thread_func func{};
@@ -31,7 +45,7 @@ struct cond_var
 
 // Start a thread running func(arg) immediately. Returns false on failure. The thread object must
 // outlive the running thread - it holds the handle needed to join.
-bool start_thread(thread *t, thread_func func, void *arg);
+bool start_thread(thread *t, const thread_desc &desc, thread_func func, void *arg);
 
 // Block until the thread's func returns, then release the handle.
 void join_thread(thread *t);
@@ -51,5 +65,12 @@ void terminate_cond_var(cond_var *c);
 void wait_cond_var(cond_var *c, mutex *m);
 void signal_cond_var(cond_var *c);
 void broadcast_cond_var(cond_var *c);
+
+u32 current_thread_idx(); // INVALID_IDX on threads we didn't create
+mem_arena_group *current_thread_arenas();
+mem_arena *current_thread_free_list();
+mem_arena *current_thread_stack();
+mem_arena *current_thread_scratch_flinear();
+void register_current_thread(u32 idx, mem_arena_group *thread_arenas); // called once, at thread entry
 
 } // namespace nslib

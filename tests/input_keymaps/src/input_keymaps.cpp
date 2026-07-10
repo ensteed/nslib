@@ -1,6 +1,7 @@
 #include "input_mapping.h"
 #include "platform.h"
 #include "logging.h"
+#include "threads.h"
 
 using namespace nslib;
 
@@ -45,10 +46,10 @@ static void add_keymap_entry_with_trigger(input_keymap_stack *stack,
 void input_keymaps_init(input_keymap_app *app)
 {
     ilog("App init");
-    init_keymap_stack(&app->stack, get_global_arena());
-    init_keymap(&app->km1, "km1", get_global_arena());
-    init_keymap(&app->km2, "km2", get_global_arena());
-    init_keymap(&app->km3, "km3", get_global_arena());
+    init_keymap_stack(&app->stack, current_thread_free_list());
+    init_keymap(&app->km1, "km1", current_thread_free_list());
+    init_keymap(&app->km2, "km2", current_thread_free_list());
+    init_keymap(&app->km3, "km3", current_thread_free_list());
 
     add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_K, KEYMOD_LCTRL, MBUTTON_MASK_NONE, "km1_ctrl_k", "km1");
     add_keymap_entry_with_trigger(&app->stack, &app->km1, KMCODE_KEY_M, KEYMOD_LSHIFT, MBUTTON_MASK_NONE, "km1_shift_m", "km1");

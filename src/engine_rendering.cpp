@@ -537,7 +537,7 @@ bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch)
     rshader_desc rd{};
     rd.name = ls(shdr->name);
 
-    array<rshader_stage_desc> stages(shdr->stages.size, scratch);
+    array<rshader_stage_desc> stages(scratch, shdr->stages.size);
     arr_resize(&stages, shdr->stages.size);
     for (sizet i = 0; i < stages.size; ++i) {
         auto cur_s = &stages[i];
