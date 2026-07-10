@@ -54,10 +54,23 @@ static_assert(sizeof(pthread_t) <= sizeof(void *), "pthread_t does not fit in th
 static_assert(sizeof(pthread_mutex_t) <= sizeof(mutex::native), "pthread_mutex_t too large for mutex storage");
 static_assert(sizeof(pthread_cond_t) <= sizeof(cond_var::native), "pthread_cond_t too large for cond_var storage");
 
+void set_current_thread_name(const char *name)
+{
+    #if defined(PLATFORM_APPLE)
+    pthread_setname_np(name);
+    #else
+    // Linux rejects the call outright if the name doesn't fit in 16 bytes with the null.
+    char trunc[16]{};
+    strncpy(trunc, name, sizeof(trunc) - 1);
+    pthread_setname_np(pthread_self(), trunc);
+    #endif
+}
+
 intern void *thread_trampoline(void *data)
 {
     thread *t = (thread *)data;
     register_current_thread(t->idx, t->arenas);
+    set_current_thread_name(t->name);
     t->func(t->arg);
     return nullptr;
 }
@@ -68,7 +81,8 @@ bool start_thread(thread *t, const thread_desc &desc, thread_func func, void *ar
     t->idx = desc.idx;
     t->func = func;
     t->arg = arg;
-    strncpy(t->name, desc.name, SMALL_STR_LEN);
+    strncpy(t->name, desc.name, SMALL_STR_LEN - 1);
+    t->name[SMALL_STR_LEN - 1] = 0;
     pthread_t tid;
     int res = pthread_create(&tid, nullptr, thread_trampoline, t);
     if (res != 0) {
@@ -140,18 +154,40 @@ void broadcast_cond_var(cond_var *c)
 static_assert(sizeof(CRITICAL_SECTION) <= sizeof(mutex::native), "CRITICAL_SECTION too large for mutex storage");
 static_assert(sizeof(CONDITION_VARIABLE) <= sizeof(cond_var::native), "CONDITION_VARIABLE too large for cond_var storage");
 
+void set_current_thread_name(const char *name)
+{
+    // SetThreadDescription wants utf16, and only exists on win10 1607+ - resolve it at runtime so
+    // we just silently skip the naming on older systems rather than failing to load.
+    using set_thread_desc_func = HRESULT(WINAPI *)(HANDLE, PCWSTR);
+    auto set_desc = (set_thread_desc_func)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription");
+    if (!set_desc) {
+        return;
+    }
+    wchar_t wname[SMALL_STR_LEN];
+    int cnt = MultiByteToWideChar(CP_UTF8, 0, name, -1, wname, SMALL_STR_LEN);
+    if (cnt == 0) {
+        return;
+    }
+    set_desc(GetCurrentThread(), wname);
+}
+
 intern unsigned __stdcall thread_trampoline(void *data)
 {
     thread *t = (thread *)data;
     register_current_thread(t->idx, t->arenas);
+    set_current_thread_name(t->name);
     t->func(t->arg);
     return 0;
 }
 
-bool start_thread(thread *t, thread_func func, void *arg)
+bool start_thread(thread *t, const thread_desc &desc, thread_func func, void *arg)
 {
+    t->arenas = desc.arenas;
+    t->idx = desc.idx;
     t->func = func;
     t->arg = arg;
+    strncpy(t->name, desc.name, SMALL_STR_LEN - 1);
+    t->name[SMALL_STR_LEN - 1] = 0;
     // _beginthreadex over CreateThread so per-thread CRT state is set up for any CRT calls (logging etc).
     uintptr_t h = _beginthreadex(nullptr, 0, thread_trampoline, t, 0, nullptr);
     if (h == 0) {

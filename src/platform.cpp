@@ -152,6 +152,7 @@ intern void init_mem_arenas(const mem_arena_group_sizes &sizes, mem_arena_group 
     
     // Then these become our global mem arenas
     register_current_thread(0, arenas);
+    set_current_thread_name("main");
 
     // Set up our json alloc and free funcs
     json_hooks hooks;
@@ -535,6 +536,9 @@ void process_platform_events(platform_ctxt *pf)
         platform_event ev{};
         switch (event.type) {
         case SDL_EVENT_QUIT:
+            pf->running = false;
+            break;
+        case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
             pf->running = false;
             break;
         case SDL_EVENT_KEY_DOWN:

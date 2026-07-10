@@ -24,6 +24,7 @@ intern bool render_one_frame(render_thread *rt, const render_frame_payload *p)
 
 intern void render_thread_proc(void *arg)
 {
+    ilog("Starting render thread");
     auto rt = (render_thread *)arg;
     while (true) {
         render_frame_payload p{};

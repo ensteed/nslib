@@ -66,6 +66,11 @@ void wait_cond_var(cond_var *c, mutex *m);
 void signal_cond_var(cond_var *c);
 void broadcast_cond_var(cond_var *c);
 
+// Set the name the OS/debugger shows for the calling thread. Can only be done from the thread
+// itself - that's the only form macos supports. Linux caps names at 15 chars, so longer names get
+// truncated. Threads started with start_thread() get named from thread_desc::name automatically.
+void set_current_thread_name(const char *name);
+
 u32 current_thread_idx(); // INVALID_IDX on threads we didn't create
 mem_arena_group *current_thread_arenas();
 mem_arena *current_thread_free_list();
