@@ -27,31 +27,7 @@ intern void render_thread_proc(void *arg)
     ilog("Starting render thread");
     auto rt = (render_thread *)arg;
     while (true) {
-        render_frame_payload p{};
-
-        lock_mutex(&rt->mtx);
-        // A cond var is a doorbell, not a mailbox - wait_cond_var can return with nobody
-        // having signalled. state is the only truth, so re-check it in a loop.
-        while (rt->state != RENDER_HANDOFF_SIM_READY && !rt->shutdown) {
-            wait_cond_var(&rt->cv, &rt->mtx);
-        }
-        if (rt->shutdown) {
-            unlock_mutex(&rt->mtx);
-            break;
-        }
-        // Copy the payload out under the lock. Everything the frame needs is now local.
-        p = rt->payload;
-        unlock_mutex(&rt->mtx);
-
-        bool ok = render_one_frame(rt, &p);
-
-        lock_mutex(&rt->mtx);
-        rt->frame_ok = ok;
-        rt->state = RENDER_HANDOFF_RENDER_DONE;
-        // Exactly one waiter (the sim thread) cares about this transition. If a third thread
-        // ever waits on rt->cv this must become broadcast_cond_var.
-        signal_cond_var(&rt->cv);
-        unlock_mutex(&rt->mtx);
+        
     }
 }
 
@@ -59,6 +35,8 @@ bool init_render_thread(render_thread *rt, const render_thread_cfg &cfg)
 {
     asrt(cfg.rndr);
     asrt(cfg.build);
+
+    atomic_init(&rt->pub_idx, 1);
 
     if (cfg.mode == RENDER_THREAD_MODE_PIPELINED) {
         elog("RENDER_THREAD_MODE_PIPELINED is not implemented yet");

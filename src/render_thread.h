@@ -3,6 +3,7 @@
 #include "renderer.h"
 #include "engine_rendering.h"
 #include "threads.h"
+#include "stdatomic.h"
 
 namespace nslib
 {
@@ -40,6 +41,15 @@ enum render_handoff_state
     RENDER_HANDOFF_RENDER_DONE,
 };
 
+struct rt_triple_buffer {
+    render_frame_payload payloads[3];
+    
+    // Holds exactly one buffer index.
+    // Producer swaps completed write buffer into it.
+    // Consumer swaps old read buffer into it.
+    atomic_int ready_idx;
+};
+
 struct render_thread
 {
     // Immutable after init_render_thread - readable from either thread with no lock.
@@ -47,14 +57,14 @@ struct render_thread
 
     // Unused when cfg.mode == RENDER_THREAD_MODE_INLINE.
     thread thrd{};
-    mutex mtx{};
-    cond_var cv{};
 
-    // Everything below is guarded by mtx.
-    render_handoff_state state{RENDER_HANDOFF_IDLE};
-    render_frame_payload payload{};
-    bool frame_ok{true};
-    bool shutdown{false};
+    // Shared payloads
+    render_frame_payload payloads[3];
+    
+    // Holds buffer index in first 2 bits and fresh bit in bit 3.
+    // Producer swaps completed write buffer into it along with set fresh bit.
+    // Consumer swaps old read buffer into it with fresh bit as 0. The consumer only does the swap if the fresh bit is set.
+    atomic_uint pub_idx;
 };
 
 // Spawns the thread (unless mode == INLINE). Asserts cfg.build != nullptr.

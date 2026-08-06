@@ -490,7 +490,8 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     update_transforms(&app->rgn);
 }
 
-intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
+// This happens on the render thread
+intern void build_manifest(rmanifest *m, const render_frame_payload *rfp, rdev_app_ctxt *app)
 {
     material_pool *mat_pool = get_asset_pool<material>(&app->cg);
     auto default_mat = get_asset(mat_pool, app->default_mat);
@@ -544,12 +545,7 @@ intern void build_manifest(rmanifest *m, rdev_app_ctxt *app)
 intern void rdev_build_frame(rmanifest *m, const render_frame_payload *p, void *user)
 {
     auto app = (rdev_app_ctxt *)user;
-    build_manifest(m, app);
-
-// Gather visible items and do stuff
-#ifdef USE_IMGUI
-    ImGui::ShowDebugLogWindow();
-#endif
+    build_manifest(m, p, app);
 }
 
 constexpr f32 FIXED_DT = 1 / 60.0f;
@@ -560,22 +556,29 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     app->accumulater += ctxt->time_pts.dt;
     map_input_frame(&app->stack, &ctxt->feventq);
-
+    bool res = true;
     while (app->accumulater >= FIXED_DT) {
         simulate(ctxt, app, FIXED_DT);
         app->accumulater -= FIXED_DT;
+
+        //atomic_exchange(object, desired)
+
+        render_frame_payload rp{};
+        rp.alpha = app->accumulater / FIXED_DT;
+        rp.fdata.frame_count = app->rndr.finished_frames;
+        rp.fdata.dt = ctxt->time_pts.dt;
+        rp.fdata.elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
+        rp.rbp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
+
+// Gather visible items and do stuff
+#ifdef USE_IMGUI
+        ImGui::ShowDebugLogWindow();
+#endif
+
+        res = submit_render_frame(&app->rt, rp);
     }
 
-    render_frame_payload rp{};
-    rp.alpha = app->accumulater / FIXED_DT;
-    rp.fdata.frame_count = app->rndr.finished_frames;
-    rp.fdata.dt = ctxt->time_pts.dt;
-    rp.fdata.elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
-    rp.rbp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
-
-    bool res = submit_render_frame(&app->rt, rp);
     end_platform_frame(ctxt);
-
     return res;
 }
 

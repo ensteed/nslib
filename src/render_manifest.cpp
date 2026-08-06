@@ -311,9 +311,9 @@ void draw_geometry(const render_job_cb_params &p, void *)
 }
 
 #if defined USE_IMGUI
-void draw_imgui(const render_job_cb_params &p, void *)
+void draw_imgui(const render_job_cb_params &p, void *user)
 {
-    auto img_data = ImGui::GetDrawData();
+    auto img_data = (ImDrawData*)user;
     ImGui_ImplVulkan_RenderDrawData(img_data, (VkCommandBuffer)p.cmd_buf);
 }
 #endif

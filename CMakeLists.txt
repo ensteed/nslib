@@ -69,7 +69,6 @@ target_compile_definitions(${NSLIB_TARGET_NAME} PUBLIC
 target_include_directories(${NSLIB_TARGET_NAME} PRIVATE ${SDL_INCLUDE} PUBLIC ${Vulkan_INCLUDE_DIRS})
 target_link_libraries(${NSLIB_TARGET_NAME} PRIVATE SDL3::SDL3 Threads::Threads PUBLIC ${Vulkan_LIBRARIES})
 
-
 if(WIN32)
   add_custom_target(link_target ALL
     COMMAND ${CMAKE_COMMAND} -E copy ${BUILD_DIR}/compile_commands.json ${CMAKE_SOURCE_DIR}/compile_commands.json)
