@@ -573,9 +573,10 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
         ImGui::ShowDebugLogWindow();
+        ImGui::Render();
 #endif
 
-        res = submit_render_frame(&app->rt, rp);
+        res = submit_render_frame(&app->rt);
     }
 
     end_platform_frame(ctxt);

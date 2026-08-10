@@ -1,5 +1,6 @@
 #pragma once
-#include "vkr_context.h"
+#include "vkr_context.h" // IWYU pragma: export
+#include "math/primitives.h"
 #include "render_defs.h"
 #include "rformat.h"
 

@@ -1,15 +1,12 @@
 #pragma once
-#include <atomic>
 
 #include "vk_mem_alloc.h"
 #include "containers/array.h"
 #include "util.h"
 #include "math/vector4.h"
 #include "vkr_dynamic_state.h"
-#include "math/primitives.h"
 #include "basic_types.h"
-
-using atomic_uptr = std::atomic<uintptr_t>;
+#include "atomic_types.h"
 
 namespace nslib
 {

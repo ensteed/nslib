@@ -1066,10 +1066,6 @@ bool end_render_frame(rmanifest *m)
     u32 fif = get_fif_ind(m->rndr);
     auto *cur_frame = &m->rndr->fifs[fif];
 
-// Finalize IM GUI data - not dependent on our render stuff currently
-#ifdef USE_IMGUI
-    ImGui::Render();
-#endif
 
     // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and

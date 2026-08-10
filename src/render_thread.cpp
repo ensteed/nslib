@@ -5,6 +5,8 @@
 namespace nslib
 {
 
+intern const u32 FRESH_BIT = make_flag(2);
+
 // The one place a frame actually gets rendered. INLINE and LOCKSTEP both land here, so the
 // only difference between the modes is which thread the call happens on.
 intern bool render_one_frame(render_thread *rt, const render_frame_payload *p)
@@ -25,42 +27,43 @@ intern bool render_one_frame(render_thread *rt, const render_frame_payload *p)
 intern void render_thread_proc(void *arg)
 {
     ilog("Starting render thread");
+    u32 read_idx{RENDER_PAYLOAD_INIT_OWNER_IND_RNDR};
     auto rt = (render_thread *)arg;
     while (true) {
-        
+        u32 cur = rt->tb.pub_idx.load(std::memory_order_relaxed);
+        // Peek to see if the snapshot is fresh - if so get it and exchange in the read idx without the fresh bit set
+        if (test_flags(cur, FRESH_BIT)) {
+            read_idx = rt->tb.pub_idx.exchange(read_idx & ~FRESH_BIT, std::memory_order_acquire);
+        }
+
+        // We test for the fresh bit because on first render there will be nothing...
+        if (test_flags(read_idx, FRESH_BIT)) {
+            render_one_frame(rt, &rt->tb.payloads[(read_idx & ~FRESH_BIT)]);
+        }
     }
+}
+
+render_frame_payload *get_write_slot(render_thread *rt)
+{
+    return &rt->tb.payloads[rt->tb.write_idx];
 }
 
 bool init_render_thread(render_thread *rt, const render_thread_cfg &cfg)
 {
     asrt(cfg.rndr);
     asrt(cfg.build);
-
-    atomic_init(&rt->pub_idx, 1);
-
-    if (cfg.mode == RENDER_THREAD_MODE_PIPELINED) {
-        elog("RENDER_THREAD_MODE_PIPELINED is not implemented yet");
-        return false;
-    }
-
     rt->cfg = cfg;
-    rt->state = RENDER_HANDOFF_IDLE;
-    rt->frame_ok = true;
-    rt->shutdown = false;
 
+    // Inline we simply don't create the thread
     if (cfg.mode == RENDER_THREAD_MODE_INLINE) {
         return true;
     }
 
-    init_mutex(&rt->mtx);
-    init_cond_var(&rt->cv);
     thread_desc tdesc{};
     tdesc.arenas = &cfg.rndr->arenas;
     tdesc.idx = 1;
     tdesc.name = "render";
     if (!start_thread(&rt->thrd, tdesc, render_thread_proc, rt)) {
-        terminate_cond_var(&rt->cv);
-        terminate_mutex(&rt->mtx);
         return false;
     }
     return true;
@@ -71,38 +74,17 @@ void terminate_render_thread(render_thread *rt)
     if (rt->cfg.mode == RENDER_THREAD_MODE_INLINE) {
         return;
     }
-
-    lock_mutex(&rt->mtx);
-    rt->shutdown = true;
-    // Broadcast rather than signal - shutdown doesn't care who is waiting.
-    broadcast_cond_var(&rt->cv);
-    unlock_mutex(&rt->mtx);
-
     join_thread(&rt->thrd);
-    terminate_cond_var(&rt->cv);
-    terminate_mutex(&rt->mtx);
 }
 
-bool submit_render_frame(render_thread *rt, const render_frame_payload &payload)
+bool submit_render_frame(render_thread *rt)
 {
+    // If inline, we render the frame directly
     if (rt->cfg.mode == RENDER_THREAD_MODE_INLINE) {
-        return render_one_frame(rt, &payload);
+        return render_one_frame(rt, &rt->tb.payloads[rt->tb.write_idx]);
     }
-
-    lock_mutex(&rt->mtx);
-    rt->payload = payload;
-    rt->state = RENDER_HANDOFF_SIM_READY;
-    signal_cond_var(&rt->cv);
-
-    // Lockstep: block until the render thread has presented. This barrier is what makes it
-    // safe for the build cb to touch live sim state today. Step 5 removes it.
-    while (rt->state != RENDER_HANDOFF_RENDER_DONE) {
-        wait_cond_var(&rt->cv, &rt->mtx);
-    }
-    rt->state = RENDER_HANDOFF_IDLE;
-    bool ok = rt->frame_ok;
-    unlock_mutex(&rt->mtx);
-    return ok;
+    rt->tb.write_idx = rt->tb.pub_idx.exchange(rt->tb.write_idx | FRESH_BIT, std::memory_order_release) & ~FRESH_BIT;
+    return true;
 }
 
 } // namespace nslib

@@ -1,9 +1,8 @@
 #pragma once
-
+#include "atomic_types.h"
 #include "renderer.h"
 #include "engine_rendering.h"
 #include "threads.h"
-#include "stdatomic.h"
 
 namespace nslib
 {
@@ -13,6 +12,14 @@ struct render_frame_payload
     f32 alpha;
     frame_ubo_data fdata;
     render_blueprint_ref rbp; // becomes a handle after step 4
+};
+
+// When the render thread first starts, each frame needs to have an initial owner
+enum render_payload_init_owner_ind
+{
+    RENDER_PAYLOAD_INIT_OWNER_IND_SIM,
+    RENDER_PAYLOAD_INIT_OWNER_IND_PUB,
+    RENDER_PAYLOAD_INIT_OWNER_IND_RNDR,
 };
 
 enum render_thread_mode
@@ -41,13 +48,15 @@ enum render_handoff_state
     RENDER_HANDOFF_RENDER_DONE,
 };
 
-struct rt_triple_buffer {
+struct rt_triple_buffer
+{
     render_frame_payload payloads[3];
-    
+
     // Holds exactly one buffer index.
     // Producer swaps completed write buffer into it.
     // Consumer swaps old read buffer into it.
-    atomic_int ready_idx;
+    atomic_u32 pub_idx{RENDER_PAYLOAD_INIT_OWNER_IND_PUB};
+    u32 write_idx{RENDER_PAYLOAD_INIT_OWNER_IND_SIM};
 };
 
 struct render_thread
@@ -59,12 +68,7 @@ struct render_thread
     thread thrd{};
 
     // Shared payloads
-    render_frame_payload payloads[3];
-    
-    // Holds buffer index in first 2 bits and fresh bit in bit 3.
-    // Producer swaps completed write buffer into it along with set fresh bit.
-    // Consumer swaps old read buffer into it with fresh bit as 0. The consumer only does the swap if the fresh bit is set.
-    atomic_uint pub_idx;
+    rt_triple_buffer tb{};
 };
 
 // Spawns the thread (unless mode == INLINE). Asserts cfg.build != nullptr.
@@ -75,8 +79,11 @@ bool init_render_thread(render_thread *rt, const render_thread_cfg &cfg);
 // terminate_renderer - the render thread touches the renderer right up until it joins.
 void terminate_render_thread(render_thread *rt);
 
+// Must be called from the platform thread.
+render_frame_payload *get_write_slot(render_thread *rt);
+
 // Must be called from the window-owning (platform) thread. Returns false when the frame
 // asked the app to stop. Under PIPELINED this reports the PREVIOUS frame's result.
-bool submit_render_frame(render_thread *rt, const render_frame_payload &payload);
+bool submit_render_frame(render_thread *rt);
 
 } // namespace nslib
