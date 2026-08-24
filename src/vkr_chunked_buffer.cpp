@@ -28,7 +28,7 @@ VkDescriptorBufferInfo vkr_get_chunk_desc_info(const vkr_chunked_buffer *chunk_b
     return info;
 }
 
-b32 vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buffer_cfg &cfg)
+b8 vkr_init_chunked_buffer(vkr_chunked_buffer *chunk_buf, const vkr_chunked_buffer_cfg &cfg)
 {
     asrt(chunk_buf);
     asrt(chunk_buf->free_chunks.size == 0 && chunk_buf->free_chunks.capacity == 0);

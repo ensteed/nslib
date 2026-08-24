@@ -59,10 +59,10 @@ struct rtexture_desc
 };
 
 
-b32 is_valid(const rtexture_handle &h);
+b8 is_valid(const rtexture_handle &h);
 u32 get_slot_used_count(const rtexture_registry &reg);
 
-b32 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg);
+b8 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg);
 void terminate_rtexture_registry(rtexture_registry *reg);
 rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tdesc, gpu_handle transient_pool);
 

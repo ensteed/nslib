@@ -31,12 +31,11 @@ namespace nslib
 
 const char *get_username()
 {
-    const char* user = getenv("USER");
+    const char *user = getenv("USER");
     if (!user) user = getenv("USERNAME");
     if (!user) user = "unknown_dev";
     return user;
 }
-
 
 intern platform_ctxt *platform_window_ptr(void *win)
 {
@@ -149,7 +148,7 @@ intern void init_mem_arenas(const mem_arena_group_sizes &sizes, mem_arena_group 
 {
     // Null to indicate these get platform_alloc'd
     init_mem_arena_group(arenas, sizes, nullptr, "platform");
-    
+
     // Then these become our global mem arenas
     register_current_thread(0, arenas);
     set_current_thread_name("main");
@@ -519,6 +518,12 @@ const char *event_type_to_string(platform_event_type type)
     }
 }
 
+void clear_platform_events(platform_ctxt *pf)
+{
+    arr_clear(&pf->feventq.events);
+    pf->feventq.window_pixel_change = false;
+}
+
 void process_platform_events(platform_ctxt *pf)
 {
     // Get prev sz and pos for any window resize/move events
@@ -526,8 +531,6 @@ void process_platform_events(platform_ctxt *pf)
     svec2 prev_win_sz_pixels = get_window_pixel_size(pf->win_hndl);
     svec2 prev_win_pos = get_window_pos(pf->win_hndl);
 
-    arr_clear(&pf->feventq.events);
-    pf->feventq.window_pixel_change = false;
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (pf->feventq.sdl_hook.cb && pf->feventq.sdl_hook.cb(&event, pf->feventq.sdl_hook.user)) {
@@ -564,7 +567,7 @@ void process_platform_events(platform_ctxt *pf)
             handle_sdl_window_geom_with_prev(pf, &ev, prev_win_sz_screen_coords, EVENT_TYPE_WINDOW_RESIZE, event.window);
             break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-            pf->feventq.window_pixel_change = true;            
+            pf->feventq.window_pixel_change = true;
             handle_sdl_window_geom_with_prev(pf, &ev, prev_win_sz_pixels, EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE, event.window);
             break;
         case SDL_EVENT_WINDOW_MOVED:
@@ -591,15 +594,15 @@ void process_platform_events(platform_ctxt *pf)
             handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_FULLSCREEN, event.window);
             break;
         case SDL_EVENT_WINDOW_MINIMIZED:
-            pf->feventq.window_pixel_change = true;            
+            pf->feventq.window_pixel_change = true;
             handle_sdl_window_event(pf, &ev, -1, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_MAXIMIZED:
-            pf->feventq.window_pixel_change = true;            
+            pf->feventq.window_pixel_change = true;
             handle_sdl_window_event(pf, &ev, 1, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_RESTORED:
-            pf->feventq.window_pixel_change = true;            
+            pf->feventq.window_pixel_change = true;
             handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_SHOWN:
@@ -677,15 +680,25 @@ bool window_resized_this_frame(void *win_hndl)
 
 void begin_platform_frame(platform_ctxt *ctxt)
 {
-    ptimer_split(&ctxt->time_pts);
     if (ctxt->win_hndl) {
         process_platform_events(ctxt);
     }
+    ptimer_split(&ctxt->time_pts);    
     reset_arena(&ctxt->arenas.scratch_flinear);
+#ifdef USE_IMGUI
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+#endif
 }
 
 void end_platform_frame(platform_ctxt *ctxt)
 {
+    // if (ctxt->win_hndl) {
+    //     ptimespec cur = ptimer_cur(ctxt->time_pts.ctype);
+    //     s32 remaining = wake_deadline_ns - ptimer_nsec(&cur);
+    //     if (remaining > 0) SDL_WaitEventTimeout(nullptr, (s32)(remaining / 1000000));
+    // }
+    
     ++ctxt->finished_frames;
 }
 
@@ -694,18 +707,14 @@ intern sizet platform_file_size(FILE *f, platform_file_err_desc *err)
     sizet ret{0};
 
     sizet cur_p = ftell(f);
-    if (cur_p == -1L)
-        goto ftell_fail;
+    if (cur_p == -1L) goto ftell_fail;
 
-    if (fseek(f, 0, SEEK_END) != 0)
-        goto fseek_fail;
+    if (fseek(f, 0, SEEK_END) != 0) goto fseek_fail;
 
     ret = ftell(f);
-    if (ret == -1L)
-        goto ftell_fail;
+    if (ret == -1L) goto ftell_fail;
 
-    if (fseek(f, (long)cur_p, SEEK_SET) != 0)
-        goto fseek_fail;
+    if (fseek(f, (long)cur_p, SEEK_SET) != 0) goto fseek_fail;
 
     return ret;
 

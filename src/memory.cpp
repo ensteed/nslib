@@ -51,7 +51,7 @@ intern sizet calc_padding_with_header(sizet base_addr, sizet alignment, sizet he
     return padding;
 }
 
-intern b32 mul_overflow_sizet(const sizet &a, const sizet &b, sizet *out)
+intern b8 mul_overflow_sizet(const sizet &a, const sizet &b, sizet *out)
 {
     if (a == 0 || b == 0) {
         *out = 0;

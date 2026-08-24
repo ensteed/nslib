@@ -5,7 +5,7 @@
 namespace nslib
 {
 
-b32 is_valid(const rtexture_handle &h)
+b8 is_valid(const rtexture_handle &h)
 {
     return h.pool_idx != INVALID_IDX && is_valid(h.hndl);
 }
@@ -19,7 +19,7 @@ u32 get_slot_used_count(const rtexture_registry &reg)
     return slot_used_cnt;
 }
 
-b32 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg)
+b8 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg)
 {
     ilog("Initializing texture registry with %u pools", cfg.pool_count);
     hmap_init(&reg->pmap, cfg.persist_fl, hash_type, cfg.pool_count * 2);
@@ -68,7 +68,7 @@ rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tde
 
     vkr_texture_pool *pool = &reg->pools[pool_fiter->val];
     rtexture_pool_item_ref slot;
-    b32 success = vkr_acquire_texture_slots(pool, 1, &slot);
+    b8 success = vkr_acquire_texture_slots(pool, 1, &slot);
     if (!success) return {};
 
     asrt(is_valid(slot));

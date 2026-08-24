@@ -20,6 +20,7 @@ namespace nslib
 
 enum ptimer_type
 {
+    PTIMER_TYPE_MONOTONIC,
     PTIMER_TYPE_REALTIME,
     PTIMER_TYPE_PROCESS_CPU,
     PTIMER_TYPE_THREAD_CPU

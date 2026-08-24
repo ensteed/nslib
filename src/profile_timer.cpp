@@ -1,11 +1,9 @@
 #include "profile_timer.h"
 
-#if defined (PLATFORM_WIN32)
-#define NOMINMAX
-#include <windows.h>
+#if defined(PLATFORM_WIN32)
+    #define NOMINMAX
+    #include <windows.h>
 #endif
-
-
 
 namespace nslib
 {
@@ -15,13 +13,16 @@ ptimespec ptimer_cur(s32 ptype)
 #if defined(PLATFORM_UNIX)
     clockid_t t;
     switch (ptype) {
+    case (PTIMER_TYPE_MONOTONIC):
+        t = CLOCK_MONOTONIC;
+        break;
     case (PTIMER_TYPE_REALTIME):
         t = CLOCK_REALTIME;
         break;
     case (PTIMER_TYPE_PROCESS_CPU):
         t = CLOCK_PROCESS_CPUTIME_ID;
         break;
-    case(PTIMER_TYPE_THREAD_CPU):
+    case (PTIMER_TYPE_THREAD_CPU):
         t = CLOCK_THREAD_CPUTIME_ID;
         break;
     }
@@ -36,7 +37,6 @@ ptimespec ptimer_cur(s32 ptype)
     return temp;
 }
 
-    
 ptimespec ptimer_diff(const ptimespec *start, const ptimespec *end)
 {
     ptimespec temp;
@@ -61,14 +61,14 @@ s64 ptimer_nsec(const ptimespec *spec)
     return ret;
 }
 
-void ptimer_restart(profile_timepoints * ptimer)
+void ptimer_restart(profile_timepoints *ptimer)
 {
     ptimer->restart = ptimer_cur(ptimer->ctype);
     ptimer->split = ptimer->restart;
     ptimer->dt_ns = 0;
 }
 
-void ptimer_split(profile_timepoints * ptimer)
+void ptimer_split(profile_timepoints *ptimer)
 {
     ptimespec cur = ptimer_cur(ptimer->ctype);
     ptimespec split_dt = ptimer_diff(&ptimer->split, &cur);
@@ -90,6 +90,5 @@ s64 ptimer_elapsed_dt(const profile_timepoints *ptimer)
     ptimespec split_dt = ptimer_diff(&ptimer->restart, &cur);
     return ptimer_nsec(&split_dt);
 }
-
 
 } // namespace nslib

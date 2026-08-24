@@ -207,14 +207,14 @@ struct vkr_sampler_cfg
     VkSamplerMipmapMode mipmap_mode;
     VkSamplerAddressMode address_mode_uvw[3];
     f32 mip_lod_bias;
-    b32 anisotropy_enable;
+    b8 anisotropy_enable;
     f32 max_anisotropy;
-    b32 compare_enable;
+    b8 compare_enable;
     VkCompareOp compare_op;
     f32 min_lod;
     f32 max_lod;
     VkBorderColor border_color;
-    b32 unnormalized_coords;
+    b8 unnormalized_coords;
 };
 
 struct vkr_sampler
@@ -345,14 +345,14 @@ struct vkr_push_constant_range
 
 struct vkr_pipeline_cfg_raster
 {
-    b32 depth_clamp_enable;
-    b32 rasterizer_discard_enable;
+    b8 depth_clamp_enable;
+    b8 rasterizer_discard_enable;
     VkPolygonMode polygon_mode;
     // We don't really need this - rarely supported well - use other methods to change line width (triangle strip ribbons)
     f32 line_width{1.0f};
     VkCullModeFlags cull_mode;
     VkFrontFace front_face;
-    b32 depth_bias_enable;
+    b8 depth_bias_enable;
     f32 depth_bias_constant_factor{0.0f};
     f32 depth_bias_clamp{0.0f};
     f32 depth_bias_slope_factor{0.0f};
@@ -360,12 +360,12 @@ struct vkr_pipeline_cfg_raster
 
 struct vkr_pipeline_cfg_multisample
 {
-    b32 sample_shading_enable{false};
+    b8 sample_shading_enable{false};
     VkSampleCountFlagBits rasterization_samples{VK_SAMPLE_COUNT_1_BIT};
     f32 min_sample_shading{1.0f};
     const VkSampleMask *sample_masks{nullptr};
-    b32 alpha_to_coverage_enable{false};
-    b32 alpha_to_one_enable{false};
+    b8 alpha_to_coverage_enable{false};
+    b8 alpha_to_one_enable{false};
 };
 
 struct vkr_pipeline_cfg_shader_stage
@@ -378,7 +378,7 @@ struct vkr_pipeline_cfg_shader_stage
 
 struct vkr_pipeline_cfg_input_assembly
 {
-    b32 primitive_restart_enable{};
+    b8 primitive_restart_enable{};
     VkPrimitiveTopology primitive_topology{};
 };
 
@@ -389,7 +389,7 @@ struct vkr_pipeline_cfg_tessellation_state
 
 struct vkr_pipeline_cfg_color_blending
 {
-    b32 logic_op_enabled{false};
+    b8 logic_op_enabled{false};
     VkLogicOp logic_op{};
     static_array<VkPipelineColorBlendAttachmentState, 16> attachments{};
     vec4 blend_constants{};
@@ -405,11 +405,11 @@ struct vkr_descriptor_set_layout_desc
 struct vkr_pipeline_cfg_depth_stencil
 {
     VkPipelineDepthStencilStateCreateFlags flags;
-    b32 depth_test_enable;
-    b32 depth_write_enable;
+    b8 depth_test_enable;
+    b8 depth_write_enable;
     VkCompareOp depth_compare_op;
-    b32 depth_bounds_test_enable;
-    b32 stencil_test_enable;
+    b8 depth_bounds_test_enable;
+    b8 stencil_test_enable;
     VkStencilOpState front;
     VkStencilOpState back;
     f32 min_depth_bounds;
@@ -567,7 +567,7 @@ struct vkr_context
 s32 vkr_blocking_queue_submit(VkQueue queue, const VkCommandBuffer *cmd_bufs, u32 cmd_buf_count, vkr_context *vk);
 
 // Get the best depth format for the current device
-VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, b32 need_stencil = true);
+VkFormat vkr_find_best_depth_format(const vkr_phys_device *phs, b8 need_stencil = true);
 
 VkIndexType get_vk_index_type(sizet ind_size);
 
@@ -587,18 +587,18 @@ s32 vkr_select_best_graphics_physical_device(vkr_context *vk, vkr_phys_device *d
 void vkr_enumerate_instance_extensions(const char *const *enabled_extensions,
                                        u32 enabled_extension_count,
                                        const vk_arenas *arenas,
-                                       b32 log_available);
+                                       b8 log_available);
 
 // Enumerate (log) the available device extensions
 void vkr_enumerate_device_extensions(const vkr_phys_device *pdevice,
                                      const char *const *enabled_extensions,
                                      u32 enabled_extension_count,
                                      const vk_arenas *arenas,
-                                     b32 log_available);
+                                     b8 log_available);
 
 // Enumerate (log) the available layers - if an extension is included in the passed in array then it will be
 // indicated as such
-void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas, b32 log_available);
+void vkr_enumerate_validation_layers(const char *const *enabled_layers, u32 enabled_layer_count, const vk_arenas *arenas, b8 log_available);
 
 // Descriptor Pools
 s32 vkr_init_desc_pool(VkDescriptorPool *hndl, const vkr_desc_cfg &cfg, vkr_context *vk);

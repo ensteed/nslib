@@ -362,7 +362,7 @@ intern void create_materials(material_pool *mat_pool, technique *tech, texture_p
 
 intern void rdev_build_frame(rmanifest *m, const render_frame_payload *p, void *user);
 
-intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
+intern b8 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     init_asset_cache_default_types(
         &app->cg,
@@ -423,10 +423,11 @@ intern b32 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     // Last thing in init: past here the render thread is live and the blueprint set is frozen.
     render_thread_cfg rt_cfg{};
     rt_cfg.rndr = &app->rndr;
-    rt_cfg.mode = RENDER_THREAD_MODE_LOCKSTEP;
+    rt_cfg.frame_payload_arena_size = 20 * KB_SIZE;
+    rt_cfg.mode = nslib::RENDER_THREAD_MODE_INLINE;
     rt_cfg.build = rdev_build_frame;
     rt_cfg.build_user = app;
-    if (!init_render_thread(&app->rt, rt_cfg)) return false;
+    if (!init_render_thread(&app->rt, &ctxt->arenas.free_list, rt_cfg)) return false;
 
     return true;
 }
@@ -534,7 +535,7 @@ intern void build_manifest(rmanifest *m, const render_frame_payload *rfp, rdev_a
 
     push_render_job(m, {.pass = mp_id, .view = view_id, .max_draw_calls = MAX_INSTANCES, .cb = draw_geometry, .cb_user = nullptr});
 #if defined(USE_IMGUI)
-    push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = nullptr});
+    push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = rfp->imgui_data});
 #endif
 
     prepare_and_draw_region(m, &app->rgn, &app->cg, default_mat);
@@ -548,37 +549,40 @@ intern void rdev_build_frame(rmanifest *m, const render_frame_payload *p, void *
     build_manifest(m, p, app);
 }
 
-constexpr f32 FIXED_DT = 1 / 60.0f;
+constexpr f64 FIXED_DT = 1 / 60.0f;
+constexpr f64 MAX_CATCHUP_FRAMES = 4;
+constexpr f64 MAX_CATCHUP_FRAME_DT = FIXED_DT * MAX_CATCHUP_FRAMES;
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     begin_platform_frame(ctxt);
 
-    app->accumulater += ctxt->time_pts.dt;
-    map_input_frame(&app->stack, &ctxt->feventq);
+    // Get the minimum between actual dt since last frame, and a maximum frame catchup amount to prevent spinning of death
+    f64 frame_dt = std::min(ctxt->time_pts.dt, MAX_CATCHUP_FRAME_DT);
+    f64 elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
+    
+    app->accumulater += frame_dt;
     bool res = true;
     while (app->accumulater >= FIXED_DT) {
+        map_input_frame(&app->stack, &ctxt->feventq);
         simulate(ctxt, app, FIXED_DT);
         app->accumulater -= FIXED_DT;
-
-        //atomic_exchange(object, desired)
-
-        render_frame_payload rp{};
-        rp.alpha = app->accumulater / FIXED_DT;
-        rp.fdata.frame_count = app->rndr.finished_frames;
-        rp.fdata.dt = ctxt->time_pts.dt;
-        rp.fdata.elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
-        rp.rbp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
+        clear_platform_events(ctxt);
+    }
 
 // Gather visible items and do stuff
 #ifdef USE_IMGUI
-        ImGui::ShowDebugLogWindow();
-        ImGui::Render();
+    ImGui::ShowDebugLogWindow();
 #endif
 
-        res = submit_render_frame(&app->rt);
-    }
-
+    render_frame_payload *rp = get_write_slot(&app->rt);
+    rp->alpha = app->accumulater / FIXED_DT;
+    rp->fdata.frame_count = app->rndr.finished_frames;
+    rp->fdata.dt = frame_dt;
+    rp->fdata.elapsed = elapsed;
+    rp->rbp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
+    res = submit_render_frame(&app->rt);
+        
     end_platform_frame(ctxt);
     return res;
 }

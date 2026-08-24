@@ -56,7 +56,7 @@
 
 #define asrt_log(expr)                                                                                                                     \
     do {                                                                                                                                   \
-        b32 asrt_ok = (expr);                                                                                                              \
+        b8 asrt_ok = (expr);                                                                                                              \
         asrt(asrt_ok);                                                                                                                     \
         if (asrt_ok) {                                                                                                                     \
             ilog("asrt ok: %s", #expr);                                                                                                    \
@@ -81,7 +81,9 @@ using sizet = std::size_t;
 using f32 = float;
 using f64 = double;
 using f128 = long double;
-using b32 = bool;
+using b8 = bool;
+using b16 = u16;
+using b32 = u32;
 using cstr = const char *;
 using uptr = uintptr_t;
 

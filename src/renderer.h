@@ -96,7 +96,7 @@ struct rblend_info
 
 struct rattachment_blend_info
 {
-    b32 blend_enable;
+    b8 blend_enable;
     rblend_info color;
     rblend_info alpha;
     rcolor_component_flags write_mask;

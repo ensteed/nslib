@@ -34,42 +34,42 @@ sizet calculate_image_buffer_size(rformat format, u32 width, u32 height, u32 mip
     return calculate_vk_image_buffer_size(get_vk_format_info(format), width, height, mip_levels, layer_count);
 }
 
-b32 is_sint_type(rformat format)
+b8 is_sint_type(rformat format)
 {
     return is_sint_type(get_vk_format(format));
 }
 
-b32 is_floating_point_type(rformat format)
+b8 is_floating_point_type(rformat format)
 {
     return is_floating_point_type(get_vk_format(format));
 }
 
-b32 is_uint_type(rformat format)
+b8 is_uint_type(rformat format)
 {
     return is_uint_type(get_vk_format(format));
 }
 
-b32 has_stencil_component(rformat format)
+b8 has_stencil_component(rformat format)
 {
     return has_stencil_component(get_vk_format(format));
 }
 
-b32 has_depth_component(rformat format)
+b8 has_depth_component(rformat format)
 {
     return has_depth_component(get_vk_format(format));
     
 }
-b32 is_depth_only(rformat format)
+b8 is_depth_only(rformat format)
 {
     return is_depth_only(get_vk_format(format));
 }
 
-b32 is_stencil_only(rformat format)
+b8 is_stencil_only(rformat format)
 {
     return is_stencil_only(get_vk_format(format));
 }
 
-b32 is_depth_stencil(rformat format) {
+b8 is_depth_stencil(rformat format) {
     return is_depth_stencil(get_vk_format(format));
 }
 

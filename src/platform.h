@@ -388,6 +388,8 @@ const char *event_type_to_string(platform_event_type type);
 
 bool frame_has_event_type(platform_event_type type, const platform_frame_event_queue *fevents);
 void process_platform_events(platform_ctxt *pf);
+void clear_platform_events(platform_ctxt *pf);
+
 bool window_resized_this_frame(void *win_hndl);
 
 const char *get_path_basename(const char *path);

@@ -238,16 +238,16 @@ sizet calculate_image_size(const rformat_info finfo, u32 width, u32 height, u32 
 sizet calculate_image_buffer_size(const rformat_info finfo, u32 width, u32 height, u32 mip_levels, u32 layer_count);
 
 rformat_info get_rformat_info(rformat format);
-b32 is_floating_point_type(rformat format);
+b8 is_floating_point_type(rformat format);
 
-b32 has_stencil_component(rformat format);
-b32 has_depth_component(rformat format);
-b32 is_depth_only(rformat format);
-b32 is_stencil_only(rformat format);
-b32 is_depth_stencil(rformat format);
+b8 has_stencil_component(rformat format);
+b8 has_depth_component(rformat format);
+b8 is_depth_only(rformat format);
+b8 is_stencil_only(rformat format);
+b8 is_depth_stencil(rformat format);
 
-b32 is_uint_type(rformat format);
-b32 is_sint_type(rformat format);
+b8 is_uint_type(rformat format);
+b8 is_sint_type(rformat format);
 
 template<typename T>
 struct type_info
@@ -270,7 +270,7 @@ concept RequiresNormalization = (sizeof(typename type_info<T>::element_type) <= 
 template<typename T>
 concept FixedFormat = !RequiresNormalization<T>;
 
-// --- Version A: For Floats and 32/64-bit Ints (No b32 needed) ---
+// --- Version A: For Floats and 32/64-bit Ints (No b8 needed) ---
 template<FixedFormat T>
 constexpr rformat get_rformat_for_type()
 {
@@ -321,9 +321,9 @@ constexpr rformat get_rformat_for_type()
     }
 }
 
-// --- Version B: For 8-bit and 16-bit Ints (MUST pass b32) ---
+// --- Version B: For 8-bit and 16-bit Ints (MUST pass b8) ---
 template<RequiresNormalization T>
-constexpr rformat get_rformat_for_type(b32 normalize)
+constexpr rformat get_rformat_for_type(b8 normalize)
 {
     using Info = type_info<T>;
     using V = typename Info::element_type;

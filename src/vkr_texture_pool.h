@@ -58,7 +58,7 @@ struct vkr_source_image_data {
     const char *name;
 };
 
-b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg);
+b8 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg);
 void vkr_terminate_texture_pool(vkr_texture_pool *pool);
 
 void vkr_cleanup_staging_buffers(vkr_texture_pool *pool);
@@ -71,14 +71,14 @@ void vkr_transition_texture_layouts(vkr_texture_pool *pool,
 
 void vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, vkr_texture_pool_layout intent);
 
-b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
+b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
                                 VkCommandBuffer cmd_buf,
                                 const vkr_source_image_data *src_images,
                                 const rtexture_pool_item_ref *tslots,
                                 u32 count);
 
 // Handles out must be large enough to store a handle for each source image or there will be crashes/undefined behavior
-b32 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, rtexture_pool_item_ref *slots_out);
+b8 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, rtexture_pool_item_ref *slots_out);
 
 // Returns the number of successful slots released. If a handle is no longer valid, the slot release will return false
 u32 vkr_release_texture_slots(vkr_texture_pool *pool, const rtexture_pool_handle *tslots, u32 tslot_count);

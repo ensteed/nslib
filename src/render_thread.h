@@ -9,7 +9,9 @@ namespace nslib
 
 struct render_frame_payload
 {
+    mem_arena arena;
     f32 alpha;
+    void *imgui_data;
     frame_ubo_data fdata;
     render_blueprint_ref rbp; // becomes a handle after step 4
 };
@@ -20,6 +22,7 @@ enum render_payload_init_owner_ind
     RENDER_PAYLOAD_INIT_OWNER_IND_SIM,
     RENDER_PAYLOAD_INIT_OWNER_IND_PUB,
     RENDER_PAYLOAD_INIT_OWNER_IND_RNDR,
+    RENDER_PAYLOAD_COUNT
 };
 
 enum render_thread_mode
@@ -37,6 +40,7 @@ struct render_thread_cfg
 {
     renderer *rndr; // already initialized
     render_thread_mode mode;
+    sizet frame_payload_arena_size;
     render_build_cb build; // required
     void *build_user;
 };
@@ -50,13 +54,16 @@ enum render_handoff_state
 
 struct rt_triple_buffer
 {
-    render_frame_payload payloads[3];
+    render_frame_payload payloads[RENDER_PAYLOAD_COUNT];
 
     // Holds exactly one buffer index.
     // Producer swaps completed write buffer into it.
     // Consumer swaps old read buffer into it.
     atomic_u32 pub_idx{RENDER_PAYLOAD_INIT_OWNER_IND_PUB};
+    // Sim (platform) owned
     u32 write_idx{RENDER_PAYLOAD_INIT_OWNER_IND_SIM};
+    // Render thread owned except in inline mode
+    u32 read_idx{RENDER_PAYLOAD_INIT_OWNER_IND_RNDR};
 };
 
 struct render_thread
@@ -67,13 +74,16 @@ struct render_thread
     // Unused when cfg.mode == RENDER_THREAD_MODE_INLINE.
     thread thrd{};
 
+    // Shutdown flag
+    atomic_b8 shutdown{false};
+
     // Shared payloads
     rt_triple_buffer tb{};
 };
 
 // Spawns the thread (unless mode == INLINE). Asserts cfg.build != nullptr.
 // Call AFTER init_renderer and after all blueprints are authored + compiled.
-bool init_render_thread(render_thread *rt, const render_thread_cfg &cfg);
+bool init_render_thread(render_thread *rt, mem_arena *upstream, const render_thread_cfg &cfg);
 
 // Signals shutdown, joins, then tears down the sync primitives. Must be called before
 // terminate_renderer - the render thread touches the renderer right up until it joins.

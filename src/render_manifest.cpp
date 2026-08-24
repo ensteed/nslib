@@ -1035,8 +1035,6 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
 // Start GUI frame
 #ifdef USE_IMGUI
     ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
 #endif
 
     rmanifest *m = create_manifest(rndr, fif);

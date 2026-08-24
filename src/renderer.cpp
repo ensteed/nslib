@@ -308,7 +308,7 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     rndr->desc_info = {};
 }
 
-intern b32 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
+intern b8 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
 {
     vkr_descriptor_set_layout_desc dsets[RDSET_LAYOUT_COUNT]{};
 
@@ -397,7 +397,7 @@ intern b32 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
     return true;
 }
 
-intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg &dip, const manifest_max_counts &mc)
+intern b8 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg &dip, const manifest_max_counts &mc)
 {
     ilog("Initializing global descriptor info");
 
@@ -663,7 +663,7 @@ intern b32 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cf
     return true;
 }
 
-intern b32 init_global_samplers(renderer *rndr)
+intern b8 init_global_samplers(renderer *rndr)
 {
     // Create image sampler
     vkr_sampler_cfg samp_cfg{};

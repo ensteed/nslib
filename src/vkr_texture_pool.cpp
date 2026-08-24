@@ -52,7 +52,7 @@ intern VkImageLayout get_layout_from_intent(vkr_texture_pool_layout intent, VkFo
     }
 }
 
-intern b32 get_layout_transition_masks(VkImageLayout old_layout,
+intern b8 get_layout_transition_masks(VkImageLayout old_layout,
                                        VkImageLayout new_layout,
                                        VkAccessFlags *src_access,
                                        VkAccessFlags *dst_access,
@@ -195,7 +195,7 @@ intern void build_contiguous_slot_ranges(const rtexture_pool_item_ref *tslots, u
     arr_push_back(out_ranges, {.base_ind = first_slot, .count = run_count});
 }
 
-b32 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg)
+b8 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg)
 {
     asrt(pool);
     asrt(cfg.vk);
@@ -307,7 +307,7 @@ void vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf,
     transition_ranges_to_intent(pool, cmd_buf, &range, 1, intent);
 }
 
-b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
+b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
                                 VkCommandBuffer cmd_buf,
                                 const vkr_source_image_data *src_images,
                                 const rtexture_pool_item_ref *tslots,
@@ -388,7 +388,7 @@ b32 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     return true;
 }
 
-b32 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, rtexture_pool_item_ref *slots_out)
+b8 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, rtexture_pool_item_ref *slots_out)
 {
     asrt(pool);
     asrt(slots_out);
