@@ -124,20 +124,20 @@ const char *get_path_basename(const char *path)
     return ret;
 }
 
-bool is_input_event(u32 ev_type)
+bool frame_has_event_type(platform_input_event_type type, const platform_frame_event_queue *fevents)
 {
-    return ev_type < EVENT_TYPE_WINDOW_RESIZE;
+    for (sizet i = 0; i < fevents->input_events.size; ++i) {
+        if (fevents->input_events[i].type == type) {
+            return true;
+        }
+    }
+    return false;
 }
 
-bool is_window_event(u32 ev_typ)
+bool frame_has_event_type(platform_window_event_type type, const platform_frame_event_queue *fevents)
 {
-    return !is_input_event(ev_typ);
-}
-
-bool frame_has_event_type(platform_event_type type, const platform_frame_event_queue *fevents)
-{
-    for (sizet i = 0; i < fevents->events.size; ++i) {
-        if (fevents->events[i].type == type) {
+    for (sizet i = 0; i < fevents->window_events.size; ++i) {
+        if (fevents->window_events[i].type == type) {
             return true;
         }
     }
@@ -249,89 +249,90 @@ intern u16 map_sdl_mouse_state(SDL_MouseButtonFlags mods)
     return (u16)mods;
 }
 
-intern void handle_sdl_key_event(platform_ctxt *ctxt, platform_event *event, const SDL_KeyboardEvent &ev)
+intern void handle_sdl_key_event(platform_ctxt *ctxt, platform_input_event *event, const SDL_KeyboardEvent &ev)
 {
     event->type = EVENT_TYPE_INPUT_KEY;
     event->timestamp = ev.timestamp;
     event->win_id = ev.windowID;
-    event->ie.kmcode = map_sdl_key(ev.key);
-    event->ie.keymods = map_sdl_mods(ev.mod);
-    event->ie.mbutton_mask = map_sdl_mouse_state(SDL_GetMouseState(nullptr, nullptr));
+    event->kmcode = map_sdl_key(ev.key);
+    event->keymods = map_sdl_mods(ev.mod);
+    event->mbutton_mask = map_sdl_mouse_state(SDL_GetMouseState(nullptr, nullptr));
 
-    event->ie.key.action = (ev.repeat) ? INPUT_ACTION_REPEAT : ((ev.down) ? INPUT_ACTION_PRESS : INPUT_ACTION_RELEASE);
-    event->ie.key.scancode = ev.scancode;
-    event->ie.key.raw_scancode = ev.raw;
-    event->ie.key.keyboard_id = ev.which;
+    event->key.action = (ev.repeat) ? INPUT_ACTION_REPEAT : ((ev.down) ? INPUT_ACTION_PRESS : INPUT_ACTION_RELEASE);
+    event->key.scancode = ev.scancode;
+    event->key.raw_scancode = ev.raw;
+    event->key.keyboard_id = ev.which;
 }
 
-intern void handle_sdl_mbutton_event(platform_ctxt *ctxt, platform_event *event, const SDL_MouseButtonEvent &ev)
+intern void handle_sdl_mbutton_event(platform_ctxt *ctxt, platform_input_event *event, const SDL_MouseButtonEvent &ev)
 {
     event->type = EVENT_TYPE_INPUT_MBUTTON;
     event->timestamp = ev.timestamp;
     event->win_id = ev.windowID;
-    event->ie.kmcode = map_sdl_mbutton(ev.button);
-    event->ie.keymods = map_sdl_mods(SDL_GetModState());
-    event->ie.mbutton_mask = map_sdl_mouse_state(SDL_GetMouseState(nullptr, nullptr));
+    event->kmcode = map_sdl_mbutton(ev.button);
+    event->keymods = map_sdl_mods(SDL_GetModState());
+    event->mbutton_mask = map_sdl_mouse_state(SDL_GetMouseState(nullptr, nullptr));
 
     vec2 win_sz = get_window_pixel_size(get_window(ev.windowID));
-    event->ie.mbutton.action = (ev.down) ? INPUT_ACTION_PRESS : INPUT_ACTION_RELEASE;
-    event->ie.mbutton.mpos = {ev.x, ev.y};
-    event->ie.mbutton.norm_mpos = event->ie.mbutton.mpos / win_sz;
-    event->ie.mbutton.mouse_id = ev.which;
+    event->mbutton.action = (ev.down) ? INPUT_ACTION_PRESS : INPUT_ACTION_RELEASE;
+    event->mbutton.mpos = {ev.x, ev.y};
+    event->mbutton.norm_mpos = event->mbutton.mpos / win_sz;
+    event->mbutton.mouse_id = ev.which;
 }
 
-intern void handle_sdl_mmotion_event(platform_ctxt *ctxt, platform_event *event, const SDL_MouseMotionEvent &ev)
+intern void handle_sdl_mmotion_event(platform_ctxt *ctxt, platform_input_event *event, const SDL_MouseMotionEvent &ev)
 {
     event->type = EVENT_TYPE_INPUT_MMOTION;
     event->timestamp = ev.timestamp;
     event->win_id = ev.windowID;
-    event->ie.kmcode = KMCODE_MMOTION;
-    event->ie.keymods = map_sdl_mods(SDL_GetModState());
-    event->ie.mbutton_mask = map_sdl_mouse_state(SDL_GetMouseState(nullptr, nullptr));
+    event->kmcode = KMCODE_MMOTION;
+    event->keymods = map_sdl_mods(SDL_GetModState());
+    event->mbutton_mask = map_sdl_mouse_state(SDL_GetMouseState(nullptr, nullptr));
 
     vec2 win_sz = get_window_pixel_size(get_window(ev.windowID));
-    event->ie.mmotion.mpos = {ev.x, ev.y};
-    event->ie.mmotion.norm_mpos = event->ie.mbutton.mpos / win_sz;
-    event->ie.mmotion.delta = {ev.xrel, ev.yrel};
-    event->ie.mmotion.norm_delta = event->ie.mmotion.delta / win_sz;
-    event->ie.mmotion.mouse_id = ev.which;
+    event->mmotion.mpos = {ev.x, ev.y};
+    event->mmotion.norm_mpos = event->mbutton.mpos / win_sz;
+    event->mmotion.delta = {ev.xrel, ev.yrel};
+    event->mmotion.norm_delta = event->mmotion.delta / win_sz;
+    event->mmotion.mouse_id = ev.which;
 }
 
-intern void handle_sdl_mwheel_event(platform_ctxt *ctxt, platform_event *event, const SDL_MouseWheelEvent &ev)
+intern void handle_sdl_mwheel_event(platform_ctxt *ctxt, platform_input_event *event, const SDL_MouseWheelEvent &ev)
 {
     event->type = EVENT_TYPE_INPUT_MWHEEL;
     event->timestamp = ev.timestamp;
     event->win_id = ev.windowID;
-    event->ie.kmcode = KMCODE_MWHEEL;
-    event->ie.keymods = map_sdl_mods(SDL_GetModState());
-    event->ie.mbutton_mask = map_sdl_mouse_state(SDL_GetMouseState(nullptr, nullptr));
+    event->kmcode = KMCODE_MWHEEL;
+    event->keymods = map_sdl_mods(SDL_GetModState());
+    event->mbutton_mask = map_sdl_mouse_state(SDL_GetMouseState(nullptr, nullptr));
 
     vec2 win_sz = get_window_pixel_size(get_window(ev.windowID));
-    event->ie.mwheel.mpos = {ev.x, ev.y};
-    event->ie.mwheel.norm_mpos = event->ie.mbutton.mpos / win_sz;
-    event->ie.mwheel.delta = {ev.x, ev.y};
-    event->ie.mwheel.idelta = {ev.integer_x, ev.integer_y};
-    event->ie.mwheel.mouse_id = ev.which;
+    event->mwheel.mpos = {ev.x, ev.y};
+    event->mwheel.norm_mpos = event->mbutton.mpos / win_sz;
+    event->mwheel.delta = {ev.x, ev.y};
+    event->mwheel.idelta = {ev.integer_x, ev.integer_y};
+    event->mwheel.mouse_id = ev.which;
 }
 
 intern void handle_sdl_window_geom_with_prev(platform_ctxt *ctxt,
-                                             platform_event *event,
+                                             platform_window_event *event,
                                              const svec2 &prev,
-                                             platform_event_type et,
+                                             platform_window_event_type et,
                                              const SDL_WindowEvent &ev)
 {
     event->type = et;
     event->timestamp = ev.timestamp;
     event->win_id = ev.windowID;
-    event->we.data = {prev, {ev.data1, ev.data2}};
+    event->data = {prev, {ev.data1, ev.data2}};
 }
 
-intern void handle_sdl_window_event(platform_ctxt *ctxt, platform_event *event, int data, platform_event_type et, const SDL_WindowEvent &ev)
+intern void
+handle_sdl_window_event(platform_ctxt *ctxt, platform_window_event *event, int data, platform_window_event_type et, const SDL_WindowEvent &ev)
 {
     event->type = et;
     event->timestamp = ev.timestamp;
     event->win_id = ev.windowID;
-    event->we.idata = data;
+    event->idata = data;
 }
 
 // SDL spawns its own threads (audio, sensors) and allocates/frees across them, and its allocator
@@ -486,7 +487,7 @@ void *create_window(const platform_window_init_info *settings, float *display_sc
     return SDL_CreateWindow(settings->title, sz.w, sz.h, sdl_flags);
 }
 
-const char *event_type_to_string(platform_event_type type)
+const char *event_type_to_string(platform_input_event_type type)
 {
     switch (type) {
     case EVENT_TYPE_INPUT_KEY:
@@ -497,6 +498,14 @@ const char *event_type_to_string(platform_event_type type)
         return "mwheel";
     case EVENT_TYPE_INPUT_MMOTION:
         return "mmotion";
+    default:
+        return "invalid";
+    }
+}
+
+const char *event_type_to_string(platform_window_event_type type)
+{
+    switch (type) {
     case EVENT_TYPE_WINDOW_RESIZE:
         return "win_resize";
     case EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE:
@@ -505,7 +514,7 @@ const char *event_type_to_string(platform_event_type type)
         return "win_move";
     case EVENT_TYPE_WINDOW_FOCUS:
         return "win_focus";
-    case EVENT_TYPE_WINDOW_MOUSE:
+    case EVENT_TYPE_WINDOW_MOUSE_ENTER:
         return "win_mouse";
     case EVENT_TYPE_WINDOW_FULLSCREEN:
         return "win_fullscreen";
@@ -518,13 +527,18 @@ const char *event_type_to_string(platform_event_type type)
     }
 }
 
-void clear_platform_events(platform_ctxt *pf)
+void clear_input_events(platform_ctxt *pf)
 {
-    arr_clear(&pf->feventq.events);
+    arr_clear(&pf->feventq.input_events);
+}
+
+void clear_window_events(platform_ctxt *pf)
+{
+    arr_clear(&pf->feventq.window_events);
     pf->feventq.window_pixel_change = false;
 }
 
-void process_platform_events(platform_ctxt *pf)
+void poll_platform_events(platform_ctxt *pf)
 {
     // Get prev sz and pos for any window resize/move events
     svec2 prev_win_sz_screen_coords = get_window_size(pf->win_hndl);
@@ -536,7 +550,8 @@ void process_platform_events(platform_ctxt *pf)
         if (pf->feventq.sdl_hook.cb && pf->feventq.sdl_hook.cb(&event, pf->feventq.sdl_hook.user)) {
             continue;
         }
-        platform_event ev{};
+        platform_input_event iev{};
+        platform_window_event wev{};
         switch (event.type) {
         case SDL_EVENT_QUIT:
             pf->running = false;
@@ -545,81 +560,86 @@ void process_platform_events(platform_ctxt *pf)
             pf->running = false;
             break;
         case SDL_EVENT_KEY_DOWN:
-            handle_sdl_key_event(pf, &ev, event.key);
+            handle_sdl_key_event(pf, &iev, event.key);
             break;
         case SDL_EVENT_KEY_UP:
-            handle_sdl_key_event(pf, &ev, event.key);
+            handle_sdl_key_event(pf, &iev, event.key);
             break;
         case SDL_EVENT_MOUSE_BUTTON_UP:
-            handle_sdl_mbutton_event(pf, &ev, event.button);
+            handle_sdl_mbutton_event(pf, &iev, event.button);
             break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            handle_sdl_mbutton_event(pf, &ev, event.button);
+            handle_sdl_mbutton_event(pf, &iev, event.button);
             break;
         case SDL_EVENT_MOUSE_MOTION:
-            handle_sdl_mmotion_event(pf, &ev, event.motion);
+            handle_sdl_mmotion_event(pf, &iev, event.motion);
             break;
         case SDL_EVENT_MOUSE_WHEEL:
-            handle_sdl_mwheel_event(pf, &ev, event.wheel);
+            handle_sdl_mwheel_event(pf, &iev, event.wheel);
             break;
         case SDL_EVENT_WINDOW_RESIZED:
             pf->feventq.window_pixel_change = true;
-            handle_sdl_window_geom_with_prev(pf, &ev, prev_win_sz_screen_coords, EVENT_TYPE_WINDOW_RESIZE, event.window);
+            handle_sdl_window_geom_with_prev(pf, &wev, prev_win_sz_screen_coords, EVENT_TYPE_WINDOW_RESIZE, event.window);
             break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
             pf->feventq.window_pixel_change = true;
-            handle_sdl_window_geom_with_prev(pf, &ev, prev_win_sz_pixels, EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE, event.window);
+            handle_sdl_window_geom_with_prev(pf, &wev, prev_win_sz_pixels, EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE, event.window);
             break;
         case SDL_EVENT_WINDOW_MOVED:
-            handle_sdl_window_geom_with_prev(pf, &ev, prev_win_pos, EVENT_TYPE_WINDOW_MOVE, event.window);
+            handle_sdl_window_geom_with_prev(pf, &wev, prev_win_pos, EVENT_TYPE_WINDOW_MOVE, event.window);
             break;
         case SDL_EVENT_WINDOW_FOCUS_GAINED:
-            handle_sdl_window_event(pf, &ev, 1, EVENT_TYPE_WINDOW_FOCUS, event.window);
+            handle_sdl_window_event(pf, &wev, 1, EVENT_TYPE_WINDOW_FOCUS, event.window);
             break;
         case SDL_EVENT_WINDOW_FOCUS_LOST:
-            handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_FOCUS, event.window);
+            handle_sdl_window_event(pf, &wev, 0, EVENT_TYPE_WINDOW_FOCUS, event.window);
             break;
         case SDL_EVENT_WINDOW_MOUSE_ENTER:
-            handle_sdl_window_event(pf, &ev, 1, EVENT_TYPE_WINDOW_MOUSE, event.window);
+            handle_sdl_window_event(pf, &wev, 1, EVENT_TYPE_WINDOW_MOUSE_ENTER, event.window);
             break;
         case SDL_EVENT_WINDOW_MOUSE_LEAVE:
-            handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_MOUSE, event.window);
+            handle_sdl_window_event(pf, &wev, 0, EVENT_TYPE_WINDOW_MOUSE_ENTER, event.window);
             break;
         case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
             pf->feventq.window_pixel_change = true;
-            handle_sdl_window_event(pf, &ev, 1, EVENT_TYPE_WINDOW_FULLSCREEN, event.window);
+            handle_sdl_window_event(pf, &wev, 1, EVENT_TYPE_WINDOW_FULLSCREEN, event.window);
             break;
         case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
             pf->feventq.window_pixel_change = true;
-            handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_FULLSCREEN, event.window);
+            handle_sdl_window_event(pf, &wev, 0, EVENT_TYPE_WINDOW_FULLSCREEN, event.window);
             break;
         case SDL_EVENT_WINDOW_MINIMIZED:
             pf->feventq.window_pixel_change = true;
-            handle_sdl_window_event(pf, &ev, -1, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
+            handle_sdl_window_event(pf, &wev, -1, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_MAXIMIZED:
             pf->feventq.window_pixel_change = true;
-            handle_sdl_window_event(pf, &ev, 1, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
+            handle_sdl_window_event(pf, &wev, 1, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_RESTORED:
             pf->feventq.window_pixel_change = true;
-            handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
+            handle_sdl_window_event(pf, &wev, 0, EVENT_TYPE_WINDOW_VIEWSTATE, event.window);
             break;
         case SDL_EVENT_WINDOW_SHOWN:
-            handle_sdl_window_event(pf, &ev, 1, EVENT_TYPE_WINDOW_VISIBILITY, event.window);
+            handle_sdl_window_event(pf, &wev, 1, EVENT_TYPE_WINDOW_VISIBILITY, event.window);
             break;
         case SDL_EVENT_WINDOW_HIDDEN:
-            handle_sdl_window_event(pf, &ev, 0, EVENT_TYPE_WINDOW_VISIBILITY, event.window);
+            handle_sdl_window_event(pf, &wev, 0, EVENT_TYPE_WINDOW_VISIBILITY, event.window);
             break;
         default:
             // do nothing yet
             break;
         }
 
-        if (ev.type != EVENT_TYPE_INVALID) {
-            // tlog("Got %s event: %s", event_type_to_string(ev.type), js(ev));
-            asrt(pf->feventq.events.size < pf->feventq.events.capacity);
-            arr_push_back(&pf->feventq.events, ev);
+        if (iev.type != EVENT_TYPE_INPUT_INVALID) {
+            // tlog("Got %s event: %s", event_type_to_string(iev.type), js(iev));
+            asrt(pf->feventq.input_events.size < pf->feventq.input_events.capacity);
+            arr_push_back(&pf->feventq.input_events, iev);
+        }
+        if (wev.type != EVENT_TYPE_WINDOW_INVALID) {
+            // tlog("Got %s event: %s", event_type_to_string(wev.type), js(wev));
+            asrt(pf->feventq.window_events.size < pf->feventq.window_events.capacity);
+            arr_push_back(&pf->feventq.window_events, wev);
         }
     }
 }
@@ -681,7 +701,7 @@ bool window_resized_this_frame(void *win_hndl)
 void begin_platform_frame(platform_ctxt *ctxt)
 {
     if (ctxt->win_hndl) {
-        process_platform_events(ctxt);
+        poll_platform_events(ctxt);
     }
     ptimer_split(&ctxt->time_pts);    
     reset_arena(&ctxt->arenas.scratch_flinear);

@@ -21,7 +21,6 @@ enum keymap_entry_flags
 struct input_trigger
 {
     rid trigger_id;
-    u32 ev_type;
     const platform_input_event *ev;
 };
 
@@ -116,7 +115,7 @@ const input_keymap_entry *find_first_keymap_entry(const input_keymap *km, const 
 bool remove_keymap_entry(input_keymap *km, u32 id);
 
 // Map the platform event to input_keymap_entries
-void map_input_event(input_keymap_stack *stack, const platform_input_event *raw, u32 in_ev_type);
+void map_input_event(input_keymap_stack *stack, const platform_input_event *raw);
 
 // Map the frame platform events to input_keymap_entries
 void map_input_frame(input_keymap_stack *stack, const platform_frame_event_queue *frame);

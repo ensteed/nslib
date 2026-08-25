@@ -193,14 +193,13 @@ input_keymap *pop_keymap(input_keymap_stack *stack)
     return nullptr;
 }
 
-void map_input_event(input_keymap_stack *stack, const platform_input_event *raw, u32 in_ev_type)
+void map_input_event(input_keymap_stack *stack, const platform_input_event *raw)
 {
     asrt(raw);
     asrt(stack);
     input_trigger t{};
     t.ev = raw;
-    t.ev_type = in_ev_type;
-    bool key_or_mbtn = t.ev_type == EVENT_TYPE_INPUT_KEY || t.ev_type == EVENT_TYPE_INPUT_MBUTTON;
+    bool key_or_mbtn = t.ev->type == EVENT_TYPE_INPUT_KEY || t.ev->type == EVENT_TYPE_INPUT_MBUTTON;
     // We can use key.action for both mouse button and key because they are unioned
     bool key_or_mbtn_release = key_or_mbtn && t.ev->key.action == INPUT_ACTION_RELEASE;
 
@@ -275,11 +274,9 @@ void map_input_frame(input_keymap_stack *stack, const platform_frame_event_queue
     PROFILE_SCOPE("map_input_frame");
     asrt(frame);
     asrt(stack);
-    asrt(frame->events.size <= frame->events.capacity);
-    for (sizet i = 0; i < frame->events.size; ++i) {
-        if (is_input_event(frame->events[i].type)) {
-            map_input_event(stack, &frame->events[i].ie, frame->events[i].type);
-        }
+    asrt(frame->input_events.size <= frame->input_events.capacity);
+    for (sizet i = 0; i < frame->input_events.size; ++i) {
+        map_input_event(stack, &frame->input_events[i]);
     }
 }
 

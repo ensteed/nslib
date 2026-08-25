@@ -560,14 +560,16 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     // Get the minimum between actual dt since last frame, and a maximum frame catchup amount to prevent spinning of death
     f64 frame_dt = std::min(ctxt->time_pts.dt, MAX_CATCHUP_FRAME_DT);
     f64 elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
-    
+
     app->accumulater += frame_dt;
-    bool res = true;
+    // Input events are cleared in here rather than after the loop on purpose - if no fixed step runs this frame the
+    // events stay queued for the next one instead of getting dropped. After the first step the queue is empty, so the
+    // map calls in any catchup steps are no-ops.
     while (app->accumulater >= FIXED_DT) {
         map_input_frame(&app->stack, &ctxt->feventq);
         simulate(ctxt, app, FIXED_DT);
         app->accumulater -= FIXED_DT;
-        clear_platform_events(ctxt);
+        clear_input_events(ctxt);
     }
 
 // Gather visible items and do stuff
@@ -581,8 +583,10 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     rp->fdata.dt = frame_dt;
     rp->fdata.elapsed = elapsed;
     rp->rbp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
-    res = submit_render_frame(&app->rt);
-        
+    bool res = submit_render_frame(&app->rt);
+
+    // Window events live for the whole outer frame - the render thread reads them through the submit above
+    clear_window_events(ctxt);
     end_platform_frame(ctxt);
     return res;
 }

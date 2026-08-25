@@ -16,7 +16,7 @@ struct input_keymap_app
 static void log_trigger(const input_trigger &ev, void *user)
 {
     const char *map_name = (const char *)user;
-    ilog("Input trigger: keymap=%s trigger_id=%s ev_type=%u", map_name ? map_name : "unknown", ls(ev.trigger_id), ev.ev_type);
+    ilog("Input trigger: keymap=%s trigger_id=%s ev_type=%s", map_name ? map_name : "unknown", ls(ev.trigger_id), event_type_to_string(ev.ev->type));
 }
 
 static void add_keymap_entry_with_trigger(input_keymap_stack *stack,

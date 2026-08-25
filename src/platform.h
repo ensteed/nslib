@@ -66,25 +66,27 @@ enum platform_window_flags
     WINDOW_NOT_FOCUSABLE = 1u << 31
 };
 
-enum platform_event_type
+enum platform_input_event_type
 {
-    EVENT_TYPE_INVALID = -1,
+    EVENT_TYPE_INPUT_INVALID = -1,
     EVENT_TYPE_INPUT_KEY,
     EVENT_TYPE_INPUT_MBUTTON,
     EVENT_TYPE_INPUT_MWHEEL,
-    EVENT_TYPE_INPUT_MMOTION,
+    EVENT_TYPE_INPUT_MMOTION
+};
+
+enum platform_window_event_type
+{
+    EVENT_TYPE_WINDOW_INVALID = -1,
     EVENT_TYPE_WINDOW_RESIZE,
     EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE,
     EVENT_TYPE_WINDOW_MOVE,
     EVENT_TYPE_WINDOW_FOCUS,
-    EVENT_TYPE_WINDOW_MOUSE,
+    EVENT_TYPE_WINDOW_MOUSE_ENTER,
     EVENT_TYPE_WINDOW_FULLSCREEN,
     EVENT_TYPE_WINDOW_VIEWSTATE,
     EVENT_TYPE_WINDOW_VISIBILITY
 };
-
-bool is_input_event(u32 ev_type);
-bool is_window_event(u32 ev_typ);
 
 struct platform_key_event
 {
@@ -172,8 +174,12 @@ pup_func(platform_mwheel_event)
     pup_member(mouse_id);
 }
 
+// Input events are consumed and cleared by the simulation loop
 struct platform_input_event
 {
+    platform_input_event_type type{EVENT_TYPE_INPUT_INVALID};
+    u64 timestamp;
+    u32 win_id;
     u16 kmcode;
     u16 keymods;
     u8 mbutton_mask;
@@ -188,95 +194,81 @@ struct platform_input_event
 
 pup_func(platform_input_event)
 {
-    u32 type = *((u32 *)vinfo.meta.data);
+    pup_enum_member(platform_input_event_type, u32, type);
+    pup_member(timestamp);
+    pup_member(win_id);
     pup_member(kmcode);
     pup_member(keymods);
     pup_member(mbutton_mask);
-    if (type == EVENT_TYPE_INPUT_KEY) {
+    if (val.type == EVENT_TYPE_INPUT_KEY) {
         pup_member(key);
     }
-    else if (type == EVENT_TYPE_INPUT_MBUTTON) {
+    else if (val.type == EVENT_TYPE_INPUT_MBUTTON) {
         pup_member(mbutton);
     }
-    else if (type == EVENT_TYPE_INPUT_MWHEEL) {
+    else if (val.type == EVENT_TYPE_INPUT_MWHEEL) {
         pup_member(mwheel);
     }
-    else if (type == EVENT_TYPE_INPUT_MMOTION) {
+    else if (val.type == EVENT_TYPE_INPUT_MMOTION) {
         pup_member(mmotion);
     }
 }
 
-union platform_window_event
+// Window events are consumed and cleared by the outer (frame) loop
+struct platform_window_event
 {
-    // First is new size, second is prev size - for window resize these are screen coords, for fb resize they are pixels
-    pair<svec2, svec2> resize{};
-    // First is new pos, second is prev pos
-    pair<svec2, svec2> move;
-    // Generic name
-    pair<svec2, svec2> data;
-
-    // Gained focus is 1, lost focus is 0
-    int focus;
-    // Mouse entered is 1, mouse left is 0
-    int mouse;
-    // Enter fullscreen is 1, leave fullscreen is 0
-    int fullscreen;
-    // Minimized is -1, restored is 0, maximized is 1
-    int viewstate;
-    // Shown is 1 and hidden is 0
-    int visibility;
-    // Generic name
-    int idata;
-};
-
-pup_func(platform_window_event)
-{
-    u32 type = *((u32 *)vinfo.meta.data);
-    if (type == EVENT_TYPE_WINDOW_RESIZE || type == EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE) {
-        pup_member(resize);
-    }
-    else if (type == EVENT_TYPE_WINDOW_MOVE) {
-        pup_member(move);
-    }
-    else if (type == EVENT_TYPE_WINDOW_FOCUS) {
-        pup_member(focus);
-    }
-    else if (type == EVENT_TYPE_WINDOW_MOUSE) {
-        pup_member(mouse);
-    }
-    else if (type == EVENT_TYPE_WINDOW_FULLSCREEN) {
-        pup_member(fullscreen);
-    }
-    else if (type == EVENT_TYPE_WINDOW_VIEWSTATE) {
-        pup_member(viewstate);
-    }
-    else if (type == EVENT_TYPE_WINDOW_VISIBILITY) {
-        pup_member(visibility);
-    }
-}
-
-struct platform_event
-{
-    platform_event_type type{EVENT_TYPE_INVALID};
+    platform_window_event_type type{EVENT_TYPE_WINDOW_INVALID};
     u64 timestamp;
     u32 win_id;
     union
     {
-        platform_input_event ie;
-        platform_window_event we;
+        // First is new size, second is prev size - for window resize these are screen coords, for fb resize they are pixels
+        pair<svec2, svec2> resize{};
+        // First is new pos, second is prev pos
+        pair<svec2, svec2> move;
+        // Generic name
+        pair<svec2, svec2> data;
+
+        // Gained focus is 1, lost focus is 0
+        int focus;
+        // Mouse entered is 1, mouse left is 0
+        int mouse;
+        // Enter fullscreen is 1, leave fullscreen is 0
+        int fullscreen;
+        // Minimized is -1, restored is 0, maximized is 1
+        int viewstate;
+        // Shown is 1 and hidden is 0
+        int visibility;
+        // Generic name
+        int idata;
     };
 };
 
-pup_func(platform_event)
+pup_func(platform_window_event)
 {
-    pup_enum_member(platform_event_type, u32, type);
+    pup_enum_member(platform_window_event_type, u32, type);
     pup_member(timestamp);
     pup_member(win_id);
-    if (is_input_event(val.type)) {
-        pup_member_meta(ie, .data = &val.type);
+    if (val.type == EVENT_TYPE_WINDOW_RESIZE || val.type == EVENT_TYPE_WINDOW_PIXEL_SIZE_CHANGE) {
+        pup_member(resize);
     }
-    else if (is_window_event(val.type)) {
-        pup_member_meta(we, .data = &val.type);
+    else if (val.type == EVENT_TYPE_WINDOW_MOVE) {
+        pup_member(move);
+    }
+    else if (val.type == EVENT_TYPE_WINDOW_FOCUS) {
+        pup_member(focus);
+    }
+    else if (val.type == EVENT_TYPE_WINDOW_MOUSE_ENTER) {
+        pup_member(mouse);
+    }
+    else if (val.type == EVENT_TYPE_WINDOW_FULLSCREEN) {
+        pup_member(fullscreen);
+    }
+    else if (val.type == EVENT_TYPE_WINDOW_VIEWSTATE) {
+        pup_member(viewstate);
+    }
+    else if (val.type == EVENT_TYPE_WINDOW_VISIBILITY) {
+        pup_member(visibility);
     }
 }
 
@@ -291,7 +283,10 @@ struct platform_sdl_event_hook
 struct platform_frame_event_queue
 {
     bool window_pixel_change{false};
-    static_array<platform_event, 1024> events{};
+    // Cleared by the sim loop with clear_input_events
+    static_array<platform_input_event, 1024> input_events{};
+    // Cleared by the outer frame loop with clear_window_events
+    static_array<platform_window_event, 128> window_events{};
     platform_sdl_event_hook sdl_hook{};
 };
 
@@ -380,15 +375,23 @@ vec2 get_mouse_pos();
 // Get the OS specific thread id
 u64 get_thread_id();
 
-const char *event_type_to_string(platform_event_type type);
+const char *event_type_to_string(platform_input_event_type type);
+const char *event_type_to_string(platform_window_event_type type);
 
 // // Get the cursor
 // vec2 get_cursor_pos(void *window_hndl);
 // vec2 get_normalized_cursor_pos(void *window_hndl);
 
-bool frame_has_event_type(platform_event_type type, const platform_frame_event_queue *fevents);
-void process_platform_events(platform_ctxt *pf);
-void clear_platform_events(platform_ctxt *pf);
+bool frame_has_event_type(platform_input_event_type type, const platform_frame_event_queue *fevents);
+bool frame_has_event_type(platform_window_event_type type, const platform_frame_event_queue *fevents);
+void poll_platform_events(platform_ctxt *pf);
+
+// Clear the input events - this should be done by whoever consumes them (the sim loop)
+void clear_input_events(platform_ctxt *pf);
+
+// Clear the window events and the window_pixel_change flag - this should be done by whoever consumes
+// them (the outer frame loop)
+void clear_window_events(platform_ctxt *pf);
 
 bool window_resized_this_frame(void *win_hndl);
 
