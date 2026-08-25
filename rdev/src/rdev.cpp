@@ -383,7 +383,6 @@ intern b8 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     renderer_cfg p{RNDR_CFG};
     p.win_hndl = ctxt->win_hndl;
-
     p.upsream = &ctxt->arenas.free_list;
     if (!init_renderer(&app->rndr, p)) return false;
 
