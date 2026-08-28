@@ -316,18 +316,16 @@ struct mrender_job_params
 struct mframe_params
 {
     double dt;
+    const void *frame_sdata;
 };
 
 struct rmanifest
 {
-    f32 frame_alpha;
     renderer *rndr;
     idx_t fif;
     render_blueprint_ref rbp;
     array<rbuffer_target_fif> buffers;
     array<rtexture_target_fif> textures;
-
-    mframe_params fp;
     array<mpass> passes;
     array<mview> views;
     array<mrender_job> jobs;
@@ -337,8 +335,6 @@ struct rframe_begin_params
 {
     // Blueprint handle for this frame
     render_blueprint_ref rbp;
-    // Frame SSBO data
-    const void *frame_sdata;
 };
 
 struct manifest_max_counts
@@ -358,7 +354,7 @@ void draw_imgui(const render_job_cb_params &, void *);
 void draw_geometry(const render_job_cb_params &, void *);
 
 rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p);
-bool end_render_frame(rmanifest *m);
+bool end_render_frame(rmanifest *m, const mframe_params &fp);
 
 void update_view_data(rmanifest *m, idx_t view, const void *data);
 void update_instance_data(rmanifest *m, idx_t inst, const void *data);

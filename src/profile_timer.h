@@ -50,7 +50,7 @@ struct profile_timepoints
     s64 dt_ns;
 
     // Time, in s, between current split point and previous split (updated with ptimer_split)
-    f64 dt;
+    f32 dt;
 };
 
 inline f64 nanos_to_sec(s64 ns) {

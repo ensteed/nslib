@@ -57,16 +57,24 @@ intern const u32 FRESH_BIT = make_flag(2);
 // only difference between the modes is which thread the call happens on.
 intern bool render_one_frame(render_thread *rt)
 {
-    const render_frame_payload *p = &rt->tb.payloads[rt->tb.read_idx & ~FRESH_BIT];
+    const sim_snapshot *p = &rt->tb.payloads[rt->tb.read_idx & ~FRESH_BIT];
     reset_arena(&rt->cfg.rndr->arenas.scratch_flinear);
-    rmanifest *m = begin_render_frame(rt->cfg.rndr, {.rbp = p->rbp, .frame_sdata = &p->fdata});
+    
+    rmanifest *m = begin_render_frame(rt->cfg.rndr, {.rbp = p->rbp});
+
+    frame_ubo_data fd{.sim_elapsed = p->elapsed,
+                      .sim_dt = p->dt,
+                      .sim_frame_count = p->step_count,
+                      .render_elapsed = 0.0,
+                      .render_dt = 0.0f,
+                      .render_frame_count = rt->cfg.rndr->finished_frames + 1};
 
     // Null manifest means the swapchain went out of date. Not an error - skip the frame.
     if (!m) {
         return true;
     }
 
-    m->frame_alpha = p->alpha;
+    m->frame_alpha = 
     rt->cfg.build(m, p, rt->cfg.build_user);
     return end_render_frame(m);
 }
@@ -91,7 +99,7 @@ intern void render_thread_proc(void *arg)
     }
 }
 
-render_frame_payload *get_write_slot(render_thread *rt)
+sim_snapshot *get_write_slot(render_thread *rt)
 {
     return &rt->tb.payloads[rt->tb.write_idx];
 }
@@ -110,11 +118,11 @@ bool init_render_thread(render_thread *rt, mem_arena *upstream, const render_thr
         snprintf(FRAME_PAYLOAD_BUFFER, 24, "frame-%d-payload", i + 1);
         init_arena(&rt->tb.payloads[i].arena, cfg.frame_payload_arena_size, mem_alloc_type::LINEAR, upstream, FRAME_PAYLOAD_BUFFER);
     }
-    
+
     if (cfg.mode == RENDER_THREAD_MODE_INLINE) {
         return true;
     }
-    
+
     thread_desc tdesc{};
     tdesc.arenas = &cfg.rndr->arenas;
     tdesc.idx = 1;

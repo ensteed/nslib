@@ -92,7 +92,9 @@ struct rdev_app_ctxt
     render_thread rt;
     sim_region rgn;
     asset_cache cg;
-    f64 accumulater;
+    s64 accum_ns;
+    s64 step_anchor_ns;
+    u32 step_count;
 
     material_handle default_mat;
 
@@ -360,7 +362,7 @@ intern void create_materials(material_pool *mat_pool, technique *tech, texture_p
     app->maria_mat = maria_mat.item->id;
 }
 
-intern void rdev_build_frame(rmanifest *m, const render_frame_payload *p, void *user);
+intern void rdev_build_frame(rmanifest *m, const sim_snapshot *p, void *user);
 
 intern b8 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
@@ -491,7 +493,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 }
 
 // This happens on the render thread
-intern void build_manifest(rmanifest *m, const render_frame_payload *rfp, rdev_app_ctxt *app)
+intern void build_manifest(rmanifest *m, const sim_snapshot *rfp, rdev_app_ctxt *app)
 {
     material_pool *mat_pool = get_asset_pool<material>(&app->cg);
     auto default_mat = get_asset(mat_pool, app->default_mat);
@@ -542,32 +544,41 @@ intern void build_manifest(rmanifest *m, const render_frame_payload *rfp, rdev_a
 
 // Runs on the render thread. Reads live sim state through app, which is only safe because
 // LOCKSTEP has the sim blocked in submit_render_frame for the duration of this call.
-intern void rdev_build_frame(rmanifest *m, const render_frame_payload *p, void *user)
+intern void rdev_build_frame(rmanifest *m, const sim_snapshot *p, void *user)
 {
     auto app = (rdev_app_ctxt *)user;
     build_manifest(m, p, app);
 }
 
-constexpr f64 FIXED_DT = 1 / 60.0f;
 constexpr f64 MAX_CATCHUP_FRAMES = 4;
-constexpr f64 MAX_CATCHUP_FRAME_DT = FIXED_DT * MAX_CATCHUP_FRAMES;
+constexpr s64 FIXED_STEP_NS = 16666667;
+constexpr f64 FIXED_DT = NSEC_TO_SEC(FIXED_STEP_NS); // only for simulate()
+constexpr s64 MAX_CATCHUP_NS = FIXED_STEP_NS * MAX_CATCHUP_FRAMES;
 
 intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     begin_platform_frame(ctxt);
 
-    // Get the minimum between actual dt since last frame, and a maximum frame catchup amount to prevent spinning of death
-    f64 frame_dt = std::min(ctxt->time_pts.dt, MAX_CATCHUP_FRAME_DT);
-    f64 elapsed = ptimer_elapsed_dt(&ctxt->time_pts);
+    // Get the minimum between actual dt since last frame, and a maximum frame catchup amount to prevent spinning of
+    // death
 
-    app->accumulater += frame_dt;
+    s64 frame_dt_ns = std::min(ctxt->time_pts.dt_ns, MAX_CATCHUP_NS);
+    f64 elapsed = NSEC_TO_SEC(ptimer_elapsed_dt(&ctxt->time_pts));
+
+    app->accum_ns += frame_dt_ns;
+
+    // Advance the step anchor by any skipped amount..
+    app->step_anchor_ns += ctxt->time_pts.dt_ns - frame_dt_ns;
+
     // Input events are cleared in here rather than after the loop on purpose - if no fixed step runs this frame the
     // events stay queued for the next one instead of getting dropped. After the first step the queue is empty, so the
     // map calls in any catchup steps are no-ops.
-    while (app->accumulater >= FIXED_DT) {
+    while (app->accum_ns >= FIXED_STEP_NS) {
         map_input_frame(&app->stack, &ctxt->feventq);
         simulate(ctxt, app, FIXED_DT);
-        app->accumulater -= FIXED_DT;
+        app->accum_ns -= FIXED_STEP_NS;
+        app->step_anchor_ns += FIXED_STEP_NS;
+        ++app->step_count;
         clear_input_events(ctxt);
     }
 
@@ -576,11 +587,11 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     ImGui::ShowDebugLogWindow();
 #endif
 
-    render_frame_payload *rp = get_write_slot(&app->rt);
-    rp->alpha = app->accumulater / FIXED_DT;
-    rp->fdata.frame_count = app->rndr.finished_frames;
-    rp->fdata.dt = frame_dt;
-    rp->fdata.elapsed = elapsed;
+    sim_snapshot *rp = get_write_slot(&app->rt);
+    rp->step_count = app->step_count;
+    rp->step_anchor_ns = app->step_anchor_ns;
+    rp->elapsed = elapsed;
+    rp->dt = ctxt->time_pts.dt;
     rp->rbp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
     bool res = submit_render_frame(&app->rt);
 

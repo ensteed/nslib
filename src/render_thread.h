@@ -7,12 +7,14 @@
 namespace nslib
 {
 
-struct render_frame_payload
+struct sim_snapshot
 {
     mem_arena arena;
-    f32 alpha;
+    s64 step_anchor_ns;
+    u32 step_count;
+    f32 dt;
+    f64 elapsed;
     void *imgui_data;
-    frame_ubo_data fdata;
     render_blueprint_ref rbp; // becomes a handle after step 4
 };
 
@@ -34,7 +36,7 @@ enum render_thread_mode
 
 // Runs on the render thread. Touch only m, p, and immutable assets - reaching through user
 // to read live sim state works in LOCKSTEP and corrupts in PIPELINED.
-using render_build_cb = void (*)(rmanifest *m, const render_frame_payload *p, void *user);
+using render_build_cb = void (*)(rmanifest *m, const sim_snapshot *p, void *user);
 
 struct render_thread_cfg
 {
@@ -43,6 +45,7 @@ struct render_thread_cfg
     sizet frame_payload_arena_size;
     render_build_cb build; // required
     void *build_user;
+    s64 fixed_timestep_ns;
 };
 
 enum render_handoff_state
@@ -54,7 +57,7 @@ enum render_handoff_state
 
 struct rt_triple_buffer
 {
-    render_frame_payload payloads[RENDER_PAYLOAD_COUNT];
+    sim_snapshot payloads[RENDER_PAYLOAD_COUNT];
 
     // Holds exactly one buffer index.
     // Producer swaps completed write buffer into it.
@@ -90,7 +93,7 @@ bool init_render_thread(render_thread *rt, mem_arena *upstream, const render_thr
 void terminate_render_thread(render_thread *rt);
 
 // Must be called from the platform thread.
-render_frame_payload *get_write_slot(render_thread *rt);
+sim_snapshot *get_write_slot(render_thread *rt);
 
 // Must be called from the window-owning (platform) thread. Returns false when the frame
 // asked the app to stop. Under PIPELINED this reports the PREVIOUS frame's result.

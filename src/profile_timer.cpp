@@ -54,9 +54,9 @@ s64 ptimer_nsec(const ptimespec *spec)
 {
     s64 ret{};
 #if defined(PLATFORM_UNIX)
-    ret = spec->t.tv_sec * 1000000000 + spec->t.tv_nsec;
+    ret = SEC_TO_NSEC(spec->t.tv_sec) + spec->t.tv_nsec;
 #elif defined(PLATFORM_WIN32)
-    ret = SEC_TO_NSEC(spec->t) / spec->f;
+    ret = SEC_TO_NSEC(spec->t / spec->f) + SEC_TO_NSEC(spec->t % spec->f) / spec->f;
 #endif
     return ret;
 }

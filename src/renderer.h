@@ -568,14 +568,13 @@ struct renderer
 #endif
 
     // Stored on reset render frame - used in subsequent frame calls to get the current frame
-    s32 finished_frames{0};
+    u32 finished_frames{0};
 
     // Render blueprints
     hmap<rid, render_blueprint_handle> blueprint_id_map{};
     slot_pool<render_blueprint> blueprints{};
 
     rresource_target_registry rtargets{};
-
     profile_timepoints pt{};
 };
 

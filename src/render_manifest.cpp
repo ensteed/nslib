@@ -1040,22 +1040,10 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
     rmanifest *m = create_manifest(rndr, fif);
     m->rndr = rndr;
     m->rbp = p.rbp;
-
-    // UBO per pass frame update - the block size was already aligned to UBO min offset so no need to do any alignment
-    // funny business here
-    sizet blocksz = m->rndr->desc_info.frame_ubo.block_size;
-    sizet buf_offset = fif * blocksz * m->rndr->desc_info.frame_ubo.fif_block_count;
-    void *dst = (void *)((sizet)m->rndr->desc_info.frame_ubo.buffer.mem_info.pMappedData + buf_offset);
-    if (p.frame_sdata) {
-        memcpy(dst, p.frame_sdata, blocksz);
-    }
-    else {
-        memset(dst, 0, blocksz);
-    }
     return m;
 }
 
-bool end_render_frame(rmanifest *m)
+bool end_render_frame(rmanifest *m, const mframe_params &fp)
 {
     PROFILE_SCOPE("end_render_frame");
     asrt(m);
@@ -1063,7 +1051,18 @@ bool end_render_frame(rmanifest *m)
     auto dev = &m->rndr->vk.inst.device;
     u32 fif = get_fif_ind(m->rndr);
     auto *cur_frame = &m->rndr->fifs[fif];
-
+    
+    // UBO per pass frame update - the block size was already aligned to UBO min offset so no need to do any alignment
+    // funny business here
+    sizet blocksz = m->rndr->desc_info.frame_ubo.block_size;
+    sizet buf_offset = fif * blocksz * m->rndr->desc_info.frame_ubo.fif_block_count;
+    void *dst = (void *)((sizet)m->rndr->desc_info.frame_ubo.buffer.mem_info.pMappedData + buf_offset);
+    if (fp.frame_sdata) {
+        memcpy(dst, fp.frame_sdata, blocksz);
+    }
+    else {
+        memset(dst, 0, blocksz);
+    }
 
     // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
     // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and

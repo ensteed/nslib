@@ -67,10 +67,12 @@ struct pass_ssbo_data {
 
 // This data is used in uniform buffer - needs to be aligned to 16 bytes
 struct frame_ubo_data {
-    float elapsed;
-    float dt;
-    u32 frame_count;
-    u32 padding;
+    f64 sim_elapsed;
+    f32 sim_dt;
+    u32 sim_frame_count;
+    f64 render_elapsed;
+    f32 render_dt;
+    u32 render_frame_count;
 };
 
 struct rgeom_vert_pos_col
