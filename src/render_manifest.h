@@ -313,12 +313,6 @@ struct mrender_job_params
     void *cb_user;
 };
 
-struct mframe_params
-{
-    double dt;
-    const void *frame_sdata;
-};
-
 struct rmanifest
 {
     renderer *rndr;
@@ -331,10 +325,14 @@ struct rmanifest
     array<mrender_job> jobs;
 };
 
-struct rframe_begin_params
-{
+struct create_rmanifest_params {
+    renderer *rndr;
     // Blueprint handle for this frame
     render_blueprint_ref rbp;
+    // Frame in flight
+    idx_t fif;
+    // Frame SSBO buffer data
+    const void *frame_sdata;
 };
 
 struct manifest_max_counts
@@ -353,8 +351,9 @@ void draw_imgui(const render_job_cb_params &, void *);
 #endif
 void draw_geometry(const render_job_cb_params &, void *);
 
-rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p);
-bool end_render_frame(rmanifest *m, const mframe_params &fp);
+bool begin_render_frame(renderer *rndr);
+rmanifest *create_manifest(const create_rmanifest_params &p);
+bool end_render_frame(rmanifest *m);
 
 void update_view_data(rmanifest *m, idx_t view, const void *data);
 void update_instance_data(rmanifest *m, idx_t inst, const void *data);

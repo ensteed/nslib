@@ -59,15 +59,21 @@ intern bool render_one_frame(render_thread *rt)
 {
     const sim_snapshot *p = &rt->tb.payloads[rt->tb.read_idx & ~FRESH_BIT];
     reset_arena(&rt->cfg.rndr->arenas.scratch_flinear);
-    
-    rmanifest *m = begin_render_frame(rt->cfg.rndr, {.rbp = p->rbp});
 
+
+    rmanifest *m = begin_render_frame(rt->cfg.rndr, {.rbp = p->rbp});
+    
     frame_ubo_data fd{.sim_elapsed = p->elapsed,
                       .sim_dt = p->dt,
                       .sim_frame_count = p->step_count,
                       .render_elapsed = 0.0,
                       .render_dt = 0.0f,
                       .render_frame_count = rt->cfg.rndr->finished_frames + 1};
+    
+    create_rmanifest_params cp{.frame_sdata=&fd,.rndr=rt->cfg.rndr,.fif=};
+    rmanifest *m = create_manifest();
+
+
 
     // Null manifest means the swapchain went out of date. Not an error - skip the frame.
     if (!m) {

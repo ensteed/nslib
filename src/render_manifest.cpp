@@ -336,26 +336,27 @@ intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
 }
 
 // We can let this "leak" as it doesn't leak due to using frame linear allocator
-intern rmanifest *create_manifest(renderer *rndr, idx_t fif)
+rmanifest *create_manifest(const create_rmanifest_params &p)
 {
-    rmanifest *m = mem_calloc<rmanifest>(1, &rndr->manifest_flinear);
-    m->fif = fif;
-    arr_init(&m->jobs, &rndr->manifest_flinear, 24);
-    arr_init(&m->passes, &rndr->manifest_flinear, 12);
-    arr_init(&m->views, &rndr->manifest_flinear, 12);
+    rmanifest *m = mem_calloc<rmanifest>(1, &p.rndr->manifest_flinear);
+    m->rndr = p.rndr;
+    m->fif = p.fif;
+    arr_init(&m->jobs, &p.rndr->manifest_flinear, 24);
+    arr_init(&m->passes, &p.rndr->manifest_flinear, 12);
+    arr_init(&m->views, &p.rndr->manifest_flinear, 12);
 
     // Initialize our manifest textures and buffers with the global ones (well, globabl to the renderer)
-    arr_init(&m->textures, &rndr->manifest_flinear);
-    arr_resize(&m->textures, rndr->rtargets.textures.slots.size);
+    arr_init(&m->textures, &p.rndr->manifest_flinear);
+    arr_resize(&m->textures, p.rndr->rtargets.textures.slots.size);
     for (u32 i = 0; i < m->textures.size; ++i) {
-        m->textures[i] = rndr->rtargets.textures.slots[i].item.frames[fif];
+        m->textures[i] = p.rndr->rtargets.textures.slots[i].item.frames[fif];
     }
 
     // Buffers
-    arr_init(&m->buffers, &rndr->manifest_flinear);
-    arr_resize(&m->buffers, rndr->rtargets.buffers.slots.size);
+    arr_init(&m->buffers, &p.rndr->manifest_flinear);
+    arr_resize(&m->buffers, p.rndr->rtargets.buffers.slots.size);
     for (u32 i = 0; i < m->buffers.size; ++i) {
-        m->buffers[i] = rndr->rtargets.buffers.slots[i].item.frames[fif];
+        m->buffers[i] = p.rndr->rtargets.buffers.slots[i].item.frames[fif];
     }
 
     return m;
@@ -964,7 +965,7 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
     return push_cnt;
 }
 
-rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
+bool begin_render_frame(renderer *rndr)
 {
     PROFILE_SCOPE("begin_render_frame");
     ptimer_split(&rndr->pt);
@@ -976,7 +977,7 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
 
     // Window resize
     if (!window_resize_continue_check(rndr, cur_fif)) {
-        return nullptr;
+        return false;
     }
 
     // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
@@ -1038,7 +1039,7 @@ rmanifest *begin_render_frame(renderer *rndr, const rframe_begin_params &p)
 #endif
 
     rmanifest *m = create_manifest(rndr, fif);
-    m->rndr = rndr;
+
     m->rbp = p.rbp;
     return m;
 }
