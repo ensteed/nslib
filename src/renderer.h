@@ -636,8 +636,6 @@ void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
 void handle_window_resize(renderer *rndr);
 rformat get_swapchain_format(renderer *rnd);
-idx_t get_fif_ind(renderer *rndr);
-
 idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 idx_t find_geometry_stream_group(renderer *rndr, rid group_id);
 

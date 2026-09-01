@@ -106,19 +106,20 @@ using small_str = char[SMALL_STR_LEN];
 #define get_idxn_arr_item(array, id) get_idxn_item(array, id, array.size)
 
 inline constexpr const u64 INVALID_ID = ~(0UL);
-inline constexpr const sizet INVALID_IND = ~(0UL);
+inline constexpr const sizet INVALID_SIZET_IDX = ~(0UL);
 inline constexpr const idx_t INVALID_IDX = ~(0U);
+inline constexpr const u8 INVALID_U8_IDX = ~(0UL);
 
 #if defined(PLATFORM_APPLE_MACOS)
 inline bool is_valid(u64 v)
 {
-    return (v != INVALID_IND);
+    return (v != INVALID_SIZET_IDX);
 }
 #endif
 
 inline bool is_valid(sizet v)
 {
-    return (v != INVALID_IND);
+    return (v != INVALID_SIZET_IDX);
 }
 inline bool is_valid(u32 v)
 {

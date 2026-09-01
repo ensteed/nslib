@@ -173,7 +173,7 @@ void prepare_transforms(rmanifest *m, sim_region *sr)
     for (u32 i = 0; i < tf_tbl->entries.size; ++i) {
         transform *tf = &tf_tbl->entries[i];
         if (is_valid(tf->active_idx)) {
-            instance_ssbo_data update_d{.model = interpolate_tranform(*tf, m->frame_alpha)};
+            instance_ssbo_data update_d{.model = interpolate_tranform(*tf, 1.0)};
             update_instance_data(m, i, &update_d);
         }
         else if (tf->rfif_dirty > 0) {

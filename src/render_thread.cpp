@@ -60,27 +60,23 @@ intern bool render_one_frame(render_thread *rt)
     const sim_snapshot *p = &rt->tb.payloads[rt->tb.read_idx & ~FRESH_BIT];
     reset_arena(&rt->cfg.rndr->arenas.scratch_flinear);
 
+    u8 fif = begin_render_frame(rt->cfg.rndr);
 
-    rmanifest *m = begin_render_frame(rt->cfg.rndr, {.rbp = p->rbp});
-    
+    // Null manifest means the swapchain went out of date. Not an error - skip the frame.
+    if (fif == INVALID_U8_IDX) {
+        return true;
+    }
+
     frame_ubo_data fd{.sim_elapsed = p->elapsed,
                       .sim_dt = p->dt,
                       .sim_frame_count = p->step_count,
                       .render_elapsed = 0.0,
                       .render_dt = 0.0f,
                       .render_frame_count = rt->cfg.rndr->finished_frames + 1};
+
+    create_rmanifest_params cp{.rndr = rt->cfg.rndr, .rbp = p->rbp, .fif = fif, .frame_sdata = &fd};
+    rmanifest *m = create_manifest(cp);
     
-    create_rmanifest_params cp{.frame_sdata=&fd,.rndr=rt->cfg.rndr,.fif=};
-    rmanifest *m = create_manifest();
-
-
-
-    // Null manifest means the swapchain went out of date. Not an error - skip the frame.
-    if (!m) {
-        return true;
-    }
-
-    m->frame_alpha = 
     rt->cfg.build(m, p, rt->cfg.build_user);
     return end_render_frame(m);
 }

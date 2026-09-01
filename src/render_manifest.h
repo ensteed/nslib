@@ -316,8 +316,9 @@ struct mrender_job_params
 struct rmanifest
 {
     renderer *rndr;
-    idx_t fif;
+    u8 fif;
     render_blueprint_ref rbp;
+    const void *frame_sdata;
     array<rbuffer_target_fif> buffers;
     array<rtexture_target_fif> textures;
     array<mpass> passes;
@@ -325,12 +326,13 @@ struct rmanifest
     array<mrender_job> jobs;
 };
 
-struct create_rmanifest_params {
+struct create_rmanifest_params
+{
     renderer *rndr;
     // Blueprint handle for this frame
     render_blueprint_ref rbp;
     // Frame in flight
-    idx_t fif;
+    u8 fif;
     // Frame SSBO buffer data
     const void *frame_sdata;
 };
@@ -351,7 +353,7 @@ void draw_imgui(const render_job_cb_params &, void *);
 #endif
 void draw_geometry(const render_job_cb_params &, void *);
 
-bool begin_render_frame(renderer *rndr);
+u8 begin_render_frame(renderer *rndr);
 rmanifest *create_manifest(const create_rmanifest_params &p);
 bool end_render_frame(rmanifest *m);
 

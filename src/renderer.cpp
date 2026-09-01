@@ -817,11 +817,6 @@ intern void terminate_render_resources(renderer *rndr)
     terminate_slot_pool(&rndr->shaders);
 }
 
-idx_t get_fif_ind(renderer *rndr)
-{
-    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
-}
-
 void handle_window_resize(renderer *rndr)
 {
     ilog("Recreating swapchain");

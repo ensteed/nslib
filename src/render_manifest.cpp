@@ -305,7 +305,7 @@ void draw_geometry(const render_job_cb_params &p, void *)
         u32 voffset = geom->vert_offset + cur_r->offset;
         u32 ioffset = geom->ind_offset + cur_r->offset;
         vkCmdDrawIndexed(cb, cur_r->count, dc->inst_count, ioffset, voffset, inst_draw_id);
-        
+
         inst_draw_id += dc->inst_count;
     }
 }
@@ -313,7 +313,7 @@ void draw_geometry(const render_job_cb_params &p, void *)
 #if defined USE_IMGUI
 void draw_imgui(const render_job_cb_params &p, void *user)
 {
-    auto img_data = (ImDrawData*)user;
+    auto img_data = (ImDrawData *)user;
     ImGui_ImplVulkan_RenderDrawData(img_data, (VkCommandBuffer)p.cmd_buf);
 }
 #endif
@@ -341,6 +341,8 @@ rmanifest *create_manifest(const create_rmanifest_params &p)
     rmanifest *m = mem_calloc<rmanifest>(1, &p.rndr->manifest_flinear);
     m->rndr = p.rndr;
     m->fif = p.fif;
+    m->rbp = p.rbp;
+    m->frame_sdata = p.frame_sdata;
     arr_init(&m->jobs, &p.rndr->manifest_flinear, 24);
     arr_init(&m->passes, &p.rndr->manifest_flinear, 12);
     arr_init(&m->views, &p.rndr->manifest_flinear, 12);
@@ -349,14 +351,14 @@ rmanifest *create_manifest(const create_rmanifest_params &p)
     arr_init(&m->textures, &p.rndr->manifest_flinear);
     arr_resize(&m->textures, p.rndr->rtargets.textures.slots.size);
     for (u32 i = 0; i < m->textures.size; ++i) {
-        m->textures[i] = p.rndr->rtargets.textures.slots[i].item.frames[fif];
+        m->textures[i] = p.rndr->rtargets.textures.slots[i].item.frames[m->fif];
     }
 
     // Buffers
     arr_init(&m->buffers, &p.rndr->manifest_flinear);
     arr_resize(&m->buffers, p.rndr->rtargets.buffers.slots.size);
     for (u32 i = 0; i < m->buffers.size; ++i) {
-        m->buffers[i] = p.rndr->rtargets.buffers.slots[i].item.frames[fif];
+        m->buffers[i] = p.rndr->rtargets.buffers.slots[i].item.frames[m->fif];
     }
 
     return m;
@@ -838,12 +840,11 @@ intern rdraw_dyn_state get_dynamic_state(const rmaterial_info &mat, const rtechn
     return ret;
 }
 
-
 void update_view_data(rmanifest *m, idx_t view, const void *view_data)
 {
     sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
     sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.view_ssbo.fif_block_count + view);
-    void *dst = (u8*)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset;
+    void *dst = (u8 *)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset;
     memcpy(dst, view_data, blocksz);
 }
 
@@ -851,7 +852,7 @@ void update_instance_data(rmanifest *m, idx_t inst, const void *instance_data)
 {
     sizet blocksz = m->rndr->desc_info.instance_ssbo.block_size;
     sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.instance_ssbo.fif_block_count + inst);
-    void *dst = (u8*)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset;
+    void *dst = (u8 *)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset;
     memcpy(dst, instance_data, blocksz);
 }
 
@@ -859,7 +860,7 @@ void update_material_data(rmanifest *m, rmaterial_handle mh, const void *data)
 {
     auto minfo = get_slot_item(m->rndr->materials, mh);
     sizet blocksz = m->rndr->desc_info.material_ssbo.chunk_size;
-    void *dst = vkr_get_chunk_ptr(&m->rndr->desc_info.material_ssbo,minfo->mat_ssbo, m->fif);
+    void *dst = vkr_get_chunk_ptr(&m->rndr->desc_info.material_ssbo, minfo->mat_ssbo, m->fif);
     memcpy(dst, data, blocksz);
 }
 
@@ -935,7 +936,6 @@ idx_t push_render_job(rmanifest *m, const mrender_job_params &p)
 u32 push_draw(rmanifest *m, const mdraw_params &dp)
 {
     u32 push_cnt{0};
-    idx_t fif = get_fif_ind(m->rndr);
     rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.tech);
     rmaterial_info *mptr = get_slot_item(&m->rndr->materials, dp.mat);
 
@@ -965,7 +965,12 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
     return push_cnt;
 }
 
-bool begin_render_frame(renderer *rndr)
+intern u8 get_fif_ind(renderer *rndr)
+{
+    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
+}
+
+u8 begin_render_frame(renderer *rndr)
 {
     PROFILE_SCOPE("begin_render_frame");
     ptimer_split(&rndr->pt);
@@ -977,7 +982,7 @@ bool begin_render_frame(renderer *rndr)
 
     // Window resize
     if (!window_resize_continue_check(rndr, cur_fif)) {
-        return false;
+        return INVALID_U8_IDX;
     }
 
     // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
@@ -1002,7 +1007,7 @@ bool begin_render_frame(renderer *rndr)
     // At least.. i think?
     if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
         cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
-        return nullptr;
+        return INVALID_U8_IDX;
     }
     asrt(vk_res == VK_SUCCESS || vk_res == VK_SUBOPTIMAL_KHR);
 
@@ -1037,46 +1042,35 @@ bool begin_render_frame(renderer *rndr)
 #ifdef USE_IMGUI
     ImGui_ImplVulkan_NewFrame();
 #endif
-
-    rmanifest *m = create_manifest(rndr, fif);
-
-    m->rbp = p.rbp;
-    return m;
+    return fif;
 }
 
-bool end_render_frame(rmanifest *m, const mframe_params &fp)
+bool end_render_frame(rmanifest *m)
 {
     PROFILE_SCOPE("end_render_frame");
     asrt(m);
     asrt(is_valid(m->rbp));
     auto dev = &m->rndr->vk.inst.device;
-    u32 fif = get_fif_ind(m->rndr);
-    auto *cur_frame = &m->rndr->fifs[fif];
-    
+    auto *cur_frame = &m->rndr->fifs[m->fif];
+
     // UBO per pass frame update - the block size was already aligned to UBO min offset so no need to do any alignment
     // funny business here
     sizet blocksz = m->rndr->desc_info.frame_ubo.block_size;
-    sizet buf_offset = fif * blocksz * m->rndr->desc_info.frame_ubo.fif_block_count;
+    sizet buf_offset = m->fif * blocksz * m->rndr->desc_info.frame_ubo.fif_block_count;
     void *dst = (void *)((sizet)m->rndr->desc_info.frame_ubo.buffer.mem_info.pMappedData + buf_offset);
-    if (fp.frame_sdata) {
-        memcpy(dst, fp.frame_sdata, blocksz);
+    if (m->frame_sdata) {
+        memcpy(dst, m->frame_sdata, blocksz);
     }
     else {
         memset(dst, 0, blocksz);
     }
-
-    // The command buf index struct has an ind struct into the pool the cmd buf comes from, and then an ind into the buffer
-    // The ind into the pool has an ind into the queue family (as that contains our array of command pools) and then and
-    // ind to the command pool
-    // auto fb = &dev->swapchain.fbs[cur_frame->cur_im_ind];
-    // asrt(fb && "Invalid framebuffer");
 
     ////////////////////////////
     // Record Command Buffers //
     ////////////////////////////
     // Just use buf 0 for now
     auto buf = cur_frame->thread_pools[0].buf;
-    bool result = execute_manifest(m, buf, fif);
+    bool result = execute_manifest(m, buf, m->fif);
     if (!result) {
         return false;
     }
@@ -1114,7 +1108,7 @@ bool end_render_frame(rmanifest *m, const mframe_params &fp)
     vk_res = vkQueuePresentKHR(dev->qfams[VKR_QUEUE_FAM_TYPE_PRESENT].qs[VKR_RENDER_QUEUE], &present_info);
 
     // Update global state from manifest
-    update_global_target_state(m, fif);
+    update_global_target_state(m, m->fif);
 
     // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
     // the next frame, but it seems to resize more smoothly doing it here
