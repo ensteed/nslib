@@ -5,6 +5,7 @@
 #include "containers/string.h"
 #include "containers/hmap.h"
 #include "containers/hset.h"
+#include "containers/slot_pool.h"
 #include "binary_archive.h"
 #include "threads.h"
 
@@ -1055,8 +1056,125 @@ void test_hmap_stress()
     ilog("Hashmap stress test succeeded");
 }
 
+struct sp_test_item
+{
+    int a;
+    float b;
+};
+
+void test_slot_pool()
+{
+    ilog("Starting slot pool test");
+    slot_pool<sp_test_item> pool{};
+    init_slot_pool(&pool, 4, current_thread_free_list());
+    asrt(get_slot_capacity(pool) == 4);
+    asrt(pool.slots.size == 4);
+    asrt(get_slot_used_count(pool) == 0);
+    asrt(slot_pool_empty(pool));
+    asrt(!is_valid(slot_pool_begin(&pool)));
+    ilog("Slot pool init ok");
+
+    // Single threaded acquire/release
+    auto r0 = acquire_slot(&pool, {1, 1.0f});
+    auto r1 = acquire_slot(&pool, {2, 2.0f});
+    asrt(is_valid(r0) && is_valid(r1));
+    asrt(r0.hndl.si == 0 && r0.hndl.gen_id == 1);
+    asrt(r1.hndl.si == 1 && r1.hndl.gen_id == 1);
+    asrt(r0.item->a == 1 && r1.item->a == 2);
+    asrt(get_slot_used_count(pool) == 2);
+    asrt(get_slots_available_count(pool) == 2);
+    asrt(pool.slots.size == 4);
+    asrt(get_slot_item(&pool, r0.hndl) == r0.item);
+    ilog("Slot pool acquire ok");
+
+    asrt(release_slot(&pool, r0.hndl));
+    asrt(!release_slot(&pool, r0.hndl));
+    asrt(get_slot_item(&pool, r0.hndl) == nullptr);
+    asrt(get_slot_used_count(pool) == 1);
+    asrt(pool.free_list.size == 1);
+    ilog("Slot pool release ok");
+
+    // Reuse bumps the generation and invalidates the old handle
+    auto r2 = acquire_slot(&pool, {3, 3.0f});
+    asrt(r2.hndl.si == 0 && r2.hndl.gen_id == 2);
+    asrt(get_slot_item(&pool, r0.hndl) == nullptr);
+    asrt(get_slot_item(&pool, r2.hndl)->a == 3);
+    ilog("Slot pool reuse ok");
+
+    // Split path: reserve mints a handle without touching storage
+    auto h = reserve_slot(&pool);
+    asrt(is_valid(h) && h.si == 2 && h.gen_id == 1);
+    asrt(pool.slots[2].gen_id == 0);
+    asrt(get_slot_item(&pool, h) == nullptr);
+    asrt(get_slot_used_count(pool) == 3);
+    ilog("Slot pool reserve ok");
+
+    auto item = place_slot(&pool, h, {4, 4.0f});
+    asrt(item && item->a == 4);
+    asrt(get_slot_item(&pool, h) == item);
+    asrt(pool.slots[2].gen_id == 1);
+    ilog("Slot pool place ok");
+
+    // Split path: free then reserve the same slot BEFORE the storage side clears it. This is the order an
+    // ordered channel produces when the handle owner removes and re-adds in one frame.
+    asrt(free_slot(&pool, h));
+    asrt(get_slot_item(&pool, h) == item);
+    asrt(get_slot_used_count(pool) == 2);
+    auto h2 = reserve_slot(&pool);
+    asrt(h2.si == 2 && h2.gen_id == 2);
+    asrt(get_slot_item(&pool, h) == item);
+    asrt(get_slot_item(&pool, h2) == nullptr);
+    asrt(clear_slot(&pool, h));
+    asrt(!clear_slot(&pool, h));
+    asrt(get_slot_item(&pool, h) == nullptr);
+    auto item2 = place_slot(&pool, h2, {5, 5.0f});
+    asrt(get_slot_item(&pool, h2) == item2 && item2->a == 5);
+    ilog("Slot pool free/reserve/clear/place ordering ok");
+
+    // Fill up - size never grows past capacity
+    auto r3 = acquire_slot(&pool);
+    asrt(is_valid(r3) && r3.hndl.si == 3);
+    asrt(!is_slot_available(pool));
+    asrt(!is_valid(reserve_slot(&pool)));
+    asrt(!is_valid(acquire_slot(&pool)));
+    asrt(get_slot_used_count(pool) == 4);
+    asrt(pool.slots.size == 4);
+    ilog("Slot pool full ok");
+
+    // Iteration visits only live slots
+    u32 cnt = 0;
+    for (auto it = slot_pool_begin(&pool); is_valid(it); it = slot_pool_next(&pool, it)) {
+        ++cnt;
+    }
+    asrt(cnt == 4);
+    asrt(release_slot(&pool, r1.hndl));
+    cnt = 0;
+    for (auto it = slot_pool_begin(&pool); is_valid(it); it = slot_pool_next(&pool, it)) {
+        ++cnt;
+    }
+    asrt(cnt == 3);
+    cnt = 0;
+    for (auto it = slot_pool_rbegin(&pool); is_valid(it); it = slot_pool_prev(&pool, it)) {
+        ++cnt;
+    }
+    asrt(cnt == 3);
+    ilog("Slot pool iteration ok");
+
+    clear_slot_pool(&pool);
+    asrt(slot_pool_empty(pool));
+    asrt(pool.slots.size == 4);
+    asrt(!is_valid(slot_pool_begin(&pool)));
+    auto r4 = acquire_slot(&pool);
+    asrt(r4.hndl.si == 0 && r4.hndl.gen_id == 1);
+    ilog("Slot pool clear ok");
+
+    terminate_slot_pool(&pool);
+    ilog("Slot pool test succeeded");
+}
+
 void run_container_tests()
 {
+    test_slot_pool();
     test_strings();
     test_arrays();
     test_hmap_basic_api();
