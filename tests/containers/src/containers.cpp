@@ -96,7 +96,7 @@ void test_hmap_basic_api()
     ilog("Starting hashmap api test");
 
     hmap<u32, s32> hm{};
-    hmap_init(&hm, current_thread_free_list(), hash_type, 8);
+    hmap_init(&hm, current_thread_free_list(), 8);
 
     asrt(hmap_empty(&hm));
     asrt(hmap_begin(&hm) == nullptr);
@@ -193,8 +193,8 @@ void test_hmap_copy_and_set()
 
     hmap<u32, s32> hm_src{};
     hmap<u32, s32> hm_dest{};
-    hmap_init(&hm_src, current_thread_free_list(), hash_type, 8);
-    hmap_init(&hm_dest, current_thread_free_list(), hash_type, 8);
+    hmap_init(&hm_src, current_thread_free_list(), 8);
+    hmap_init(&hm_dest, current_thread_free_list(), 8);
 
     hmap_insert(&hm_src, (u32)1, 10);
     hmap_insert(&hm_src, (u32)2, 20);
@@ -227,8 +227,8 @@ void test_hmap_pack_unpack()
 
     hmap<u32, s32> hm{};
     hmap<u32, s32> hm_out{};
-    hmap_init(&hm, &current_thread_arenas()->free_list, hash_type, 8);
-    hmap_init(&hm_out, current_thread_free_list(), hash_type, 8);
+    hmap_init(&hm, &current_thread_arenas()->free_list, 8);
+    hmap_init(&hm_out, current_thread_free_list(), 8);
 
     hmap_insert(&hm, (u32)10, 100);
     hmap_insert(&hm, (u32)20, 200);
@@ -578,7 +578,7 @@ void test_hashmaps()
     ilog("Starting new hashmap test");
 
     hmap<char, string> hm1{};
-    hmap_init(&hm1, current_thread_free_list(), hash_type);
+    hmap_init(&hm1, current_thread_free_list());
 
     ilog("Inserting a through x");
     hmap_insert(&hm1, 'a', string(current_thread_free_list(), "a"));
@@ -709,7 +709,7 @@ void test_hashmaps_string_keys()
 
     hmap<rid, string> hm1{};
 
-    hmap_init(&hm1, current_thread_free_list(), hash_type);
+    hmap_init(&hm1, current_thread_free_list());
     ilog("Inserting 9 strange strings");
     hmap_insert(&hm1, make_rid("scooby"), string(current_thread_free_list(), "scooby-data"));
     hmap_insert(&hm1, make_rid("sandwiches"), string(current_thread_free_list(), "sandwiches-data"));
@@ -785,7 +785,7 @@ void test_hset_basic_api()
     ilog("Starting hashset api test");
 
     hset<u32> hs{};
-    hset_init(&hs, current_thread_free_list(), hash_type, 8);
+    hset_init(&hs, current_thread_free_list(), 8);
 
     asrt(hset_empty(&hs));
     asrt(hset_begin(&hs) == nullptr);
@@ -928,6 +928,133 @@ void test_hash_tail_lengths()
     ilog("Hash tail length test succeeded");
 }
 
+// Reference model for the stress test: parallel arrays with linear search. Slow but obviously correct.
+struct stress_ref
+{
+    array<u64> keys;
+    array<u32> vals;
+};
+
+sizet stress_ref_find(const stress_ref *ref, u64 k)
+{
+    for (sizet i = 0; i < ref->keys.size; ++i) {
+        if (ref->keys[i] == k) {
+            return i;
+        }
+    }
+    return INVALID_ID;
+}
+
+u64 stress_rng(u64 *s)
+{
+    u64 z = (*s += 0x9e3779b97f4a7c15ull);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
+    return z ^ (z >> 31);
+}
+
+// Random inserts, sets, removes, erases and finds against the reference model, with a full cross check every so often.
+// Small key spaces force heavy reuse of keys so removed slots get reinserted and the table rehashes several times.
+void stress_hmap_against_ref(sizet ops, u64 seed, u64 key_space)
+{
+    u64 rs = seed;
+    hmap<u64, u32> hm{};
+    hmap_init(&hm, current_thread_free_list(), 8);
+    stress_ref ref{};
+    arr_init(&ref.keys, current_thread_free_list());
+    arr_init(&ref.vals, current_thread_free_list());
+
+    for (sizet i = 0; i < ops; ++i) {
+        u64 op = stress_rng(&rs) % 100;
+        u64 k = stress_rng(&rs) % key_space;
+        u32 v = (u32)stress_rng(&rs);
+        sizet ri = stress_ref_find(&ref, k);
+        if (op < 40) {
+            auto ins = hmap_insert(&hm, k, v);
+            asrt((ins != nullptr) == (ri == INVALID_ID));
+            if (ri == INVALID_ID) {
+                arr_push_back(&ref.keys, k);
+                arr_push_back(&ref.vals, v);
+            }
+        }
+        else if (op < 55) {
+            hmap_set(&hm, k, v);
+            if (ri == INVALID_ID) {
+                arr_push_back(&ref.keys, k);
+                arr_push_back(&ref.vals, v);
+            }
+            else {
+                ref.vals[ri] = v;
+            }
+        }
+        else if (op < 80) {
+            u32 out{};
+            bool rem = hmap_remove(&hm, k, &out);
+            asrt(rem == (ri != INVALID_ID));
+            if (ri != INVALID_ID) {
+                asrt(out == ref.vals[ri]);
+                arr_swap_remove(&ref.keys, ri);
+                arr_swap_remove(&ref.vals, ri);
+            }
+        }
+        else if (op < 90) {
+            auto f = hmap_find(&hm, k);
+            asrt((f != nullptr) == (ri != INVALID_ID));
+            if (f && ri != INVALID_ID) {
+                asrt(f->val == ref.vals[ri]);
+            }
+        }
+        else {
+            auto f = hmap_find(&hm, k);
+            if (f) {
+                hmap_erase(&hm, f);
+                arr_swap_remove(&ref.keys, ri);
+                arr_swap_remove(&ref.vals, ri);
+            }
+        }
+        if ((i & 1023) == 0) {
+            sizet cnt = 0;
+            auto it = hmap_begin(&hm);
+            while (it) {
+                sizet fi = stress_ref_find(&ref, it->key);
+                asrt(fi != INVALID_ID);
+                asrt(fi == INVALID_ID || ref.vals[fi] == it->val);
+                ++cnt;
+                it = hmap_next(&hm, it);
+            }
+            asrt(cnt == ref.keys.size);
+            asrt(hmap_count(&hm) == ref.keys.size);
+            for (sizet r = 0; r < ref.keys.size; ++r) {
+                auto f = hmap_find(&hm, ref.keys[r]);
+                asrt(f && f->val == ref.vals[r]);
+            }
+        }
+    }
+
+    // Forward iterate erasing every item through the returned pointer - must visit each exactly once
+    sizet erased = 0;
+    auto it = hmap_begin(&hm);
+    while (it) {
+        it = hmap_erase(&hm, it);
+        ++erased;
+    }
+    asrt(erased == ref.keys.size);
+    asrt(hmap_empty(&hm));
+
+    arr_terminate(&ref.keys);
+    arr_terminate(&ref.vals);
+    hmap_terminate(&hm);
+}
+
+void test_hmap_stress()
+{
+    ilog("Starting hashmap stress test");
+    stress_hmap_against_ref(50000, 1, 64);
+    stress_hmap_against_ref(50000, 2, 1024);
+    stress_hmap_against_ref(20000, 3, 100000);
+    ilog("Hashmap stress test succeeded");
+}
+
 void run_container_tests()
 {
     test_strings();
@@ -935,6 +1062,7 @@ void run_container_tests()
     test_hmap_basic_api();
     test_hmap_copy_and_set();
     test_hmap_pack_unpack();
+    test_hmap_stress();
     test_hashmaps();
     test_hashmaps_string_keys();
     test_hash_tail_lengths();

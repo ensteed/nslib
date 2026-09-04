@@ -30,7 +30,7 @@ intern s64 profiling_now_ns(const profiling_context *ctxt)
     return ptimer_nsec(&now);
 }
 
-intern u64 profiling_hash_key(const profiling_key &key, u64 seed0, u64 seed1)
+u64 profiling_hash_key(const profiling_key &key, u64 seed0, u64 seed1)
 {
     u64 h0 = hash_type(&key.name, sizeof(key.name), seed0, seed1);
     u64 h1 = hash_type(&key.parent_index, sizeof(key.parent_index), seed0 ^ 0x9e3779b97f4a7c15ULL, seed1);
@@ -48,7 +48,7 @@ intern void profiling_reset_storage(profiling_context *ctxt, sizet entry_capacit
     arr_init(&ctxt->stack, &ctxt->arena, stack_capacity);
 
     ctxt->entry_lookup = {};
-    hmap_init(&ctxt->entry_lookup, &ctxt->arena, profiling_hash_key, map_capacity);
+    hmap_init(&ctxt->entry_lookup, &ctxt->arena, map_capacity);
 }
 
 intern f64 profiling_avg_alpha(const profiling_context *ctxt)
@@ -119,7 +119,7 @@ void profiling_init(profiling_context *ctxt, sizet entry_count, sizet stack_dept
     profiling_reset_storage(ctxt, entry_count, stack_depth, entry_count * 2);
     ctxt->avg_arena = upstream;
     ctxt->avg_lookup = {};
-    hmap_init(&ctxt->avg_lookup, ctxt->avg_arena, profiling_hash_key, entry_count * 2);
+    hmap_init(&ctxt->avg_lookup, ctxt->avg_arena, entry_count * 2);
     ctxt->avg_frame_total_ns = 0.0;
     ctxt->frame_index = 0;
     ctxt->avg_window = 0;
@@ -298,7 +298,7 @@ void profiling_set_avg_window(profiling_context *ctxt, u32 window_frames, mem_ar
     ctxt->avg_arena = avg_arena ? avg_arena : current_thread_free_list();
     hmap_terminate(&ctxt->avg_lookup);
     ctxt->avg_lookup = {};
-    hmap_init(&ctxt->avg_lookup, ctxt->avg_arena, profiling_hash_key, ctxt->frame_start_entry_count * 2);
+    hmap_init(&ctxt->avg_lookup, ctxt->avg_arena, ctxt->frame_start_entry_count * 2);
     ctxt->avg_frame_total_ns = 0.0;
     ctxt->frame_index = 0;
 }

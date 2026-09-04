@@ -66,13 +66,15 @@ op_eq_func(profiling_key)
     return lhs.name == rhs.name && lhs.parent_index == rhs.parent_index;
 }
 
+u64 profiling_hash_key(const profiling_key &key, u64 seed0, u64 seed1);
+
 struct profiling_context
 {
     profile_timepoints timer{};
     array<profiling_entry> entries{};
     array<profiling_stack_entry> stack{};
-    hmap<profiling_key, s32> entry_lookup{};
-    hmap<profiling_key, profiling_avg_entry> avg_lookup{};
+    hmap<profiling_key, s32, profiling_hash_key> entry_lookup{};
+    hmap<profiling_key, profiling_avg_entry, profiling_hash_key> avg_lookup{};
     sizet frame_start_entry_count{};
     sizet frame_start_stack_depth{};
     s64 frame_start_ns{};

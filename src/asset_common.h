@@ -362,7 +362,7 @@ void init_asset_pool(asset_pool<T> *pool, sizet memory_budget, u32 item_budget, 
     pool->frame_linear = upstream.frame_linear;
     pool->stack = upstream.stack;
     init_slot_pool(&pool->assets, item_budget, &pool->fl);
-    hmap_init(&pool->amap, &pool->fl, hash_type, HMAP_DEFAULT_BUCKET_COUNT);
+    hmap_init(&pool->amap, &pool->fl, HMAP_DEFAULT_BUCKET_COUNT);
 }
 
 template<typename T>
@@ -372,7 +372,7 @@ void terminate_asset_pool(asset_pool<T> *pool)
     for (auto item = asset_pool_begin(pool); is_valid(item); item = asset_pool_next(pool, item)) {
         destroy_asset(pool, item.hndl);
     }
-    asrt(pool->amap.count == 0);
+    asrt(hmap_empty(&pool->amap));
     hmap_terminate(&pool->amap);
     // This will invalidate any handles we have for this cache
     terminate_slot_pool(&pool->assets);

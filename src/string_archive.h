@@ -129,8 +129,8 @@ void pack_unpack(string_archive *ar, array<T> &val, const pack_var_info &vinfo)
 }
 
 // Hashset
-template<class T>
-void pack_unpack_begin(string_archive *ar, hset<T> &, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack_begin(string_archive *ar, hset<T, HashF> &, const pack_var_info &vinfo)
 {
     ar->txt += ar->cur_indent;
     handle_varname(&ar->txt, vinfo.name);
@@ -138,15 +138,15 @@ void pack_unpack_begin(string_archive *ar, hset<T> &, const pack_var_info &vinfo
     str_resize(&ar->cur_indent, str_len(ar->cur_indent) + ar->indent_per_level, ' ');
 }
 
-template<class T>
-void pack_unpack_end(string_archive *ar, hset<T> &, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack_end(string_archive *ar, hset<T, HashF> &, const pack_var_info &vinfo)
 {
     str_resize(&ar->cur_indent, str_len(ar->cur_indent) - ar->indent_per_level);
     ar->txt += ar->cur_indent + "]\n";
 }
 
-template<class T>
-void pack_unpack(string_archive *ar, hset<T> &val, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack(string_archive *ar, hset<T, HashF> &val, const pack_var_info &vinfo)
 {
     auto iter = hset_begin(&val);
     while (iter) {
@@ -157,8 +157,8 @@ void pack_unpack(string_archive *ar, hset<T> &val, const pack_var_info &vinfo)
 }
 
 // Hashmap with string key
-template<class T>
-void pack_unpack(string_archive *ar, hmap<string, T> &val, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack(string_archive *ar, hmap<string, T, HashF> &val, const pack_var_info &vinfo)
 {
     auto iter = hmap_begin(&val);
     while (iter) {
@@ -168,8 +168,8 @@ void pack_unpack(string_archive *ar, hmap<string, T> &val, const pack_var_info &
 }
 
 // Hashmap with rid key
-template<class T>
-void pack_unpack(string_archive *ar, hmap<rid, T> &val, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack(string_archive *ar, hmap<rid, T, HashF> &val, const pack_var_info &vinfo)
 {
     auto iter = hmap_begin(&val);
     while (iter) {
@@ -179,8 +179,8 @@ void pack_unpack(string_archive *ar, hmap<rid, T> &val, const pack_var_info &vin
 }
 
 // Hashmap with integral key type
-template<integral K, class T>
-void pack_unpack(string_archive *ar, hmap<K, T> &val, const pack_var_info &vinfo)
+template<integral K, class T, auto HashF>
+void pack_unpack(string_archive *ar, hmap<K, T, HashF> &val, const pack_var_info &vinfo)
 {
     auto iter = hmap_begin(&val);
     while (iter) {

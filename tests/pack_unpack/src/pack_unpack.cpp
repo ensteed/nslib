@@ -36,6 +36,12 @@ pup_func(fancy_struct)
     pup_member(strarr);
 }
 
+// Custom hash for u32 keys - exercises serializing tables whose hash function is not the default hash_type
+u64 custom_u32_hash(const u32 &key, u64 seed0, u64 seed1)
+{
+    return hash_type(&key, sizeof(key), seed0, seed1);
+}
+
 struct data_to_pup
 {
     example_asset asset;
@@ -67,6 +73,9 @@ struct data_to_pup
     hset<u8> hs_u8;
     hset<s8> hs_i8;
     hset<rid> hs_no_simp;
+
+    hmap<u32, int, custom_u32_hash> hm_custom;
+    hset<u32, custom_u32_hash> hs_custom;
 };
 
 pup_func(data_to_pup)
@@ -99,6 +108,9 @@ pup_func(data_to_pup)
     pup_member(hs_u8);
     pup_member(hs_i8);
     pup_member(hs_no_simp);
+
+    pup_member(hm_custom);
+    pup_member(hs_custom);
 }
 
 void seed_data(data_to_pup *data)
@@ -197,6 +209,14 @@ void seed_data(data_to_pup *data)
     hset_insert(&data->hs_no_simp, make_rid("key1"));
     hset_insert(&data->hs_no_simp, make_rid("key2"));
     hset_insert(&data->hs_no_simp, make_rid("key3"));
+
+    hmap_insert(&data->hm_custom, 10u, 1);
+    hmap_insert(&data->hm_custom, 20u, 2);
+    hmap_insert(&data->hm_custom, 30u, 3);
+
+    hset_insert(&data->hs_custom, 10u);
+    hset_insert(&data->hs_custom, 20u);
+    hset_insert(&data->hs_custom, 30u);
 }
 
 void clear_data(data_to_pup *data)
@@ -234,6 +254,8 @@ void clear_data(data_to_pup *data)
     hset_clear(&data->hs_u8);
     hset_clear(&data->hs_i8);
     hset_clear(&data->hs_no_simp);
+    hmap_clear(&data->hm_custom);
+    hset_clear(&data->hs_custom);
 }
 
 void run_pack_unpack_tests()
@@ -260,7 +282,9 @@ void run_pack_unpack_tests()
     hset_init(&data.hs_i16, current_thread_free_list());
     hset_init(&data.hs_u8, current_thread_free_list());
     hset_init(&data.hs_i8, current_thread_free_list());
-    hset_init(&data.hs_no_simp, current_thread_free_list(), hash_type);
+    hset_init(&data.hs_no_simp, current_thread_free_list());
+    hmap_init(&data.hm_custom, current_thread_free_list());
+    hset_init(&data.hs_custom, current_thread_free_list());
 
     seed_data(&data);
     // ilog("data_to_pup json in: \n%s", ls(data));
@@ -316,6 +340,15 @@ void run_pack_unpack_tests()
 
     ilog("data_to_pup json in: \n%s", ls(data));
 
+    // Tables with a custom hash function must round trip through the archive like default hashed ones
+    asrt(hmap_count(&data.hm_custom) == 3);
+    for (u32 i = 1; i <= 3; ++i) {
+        auto item = hmap_find(&data.hm_custom, i * 10u);
+        asrt(item && item->val == (int)i);
+        asrt(hset_find(&data.hs_custom, i * 10u));
+    }
+    asrt(hset_count(&data.hs_custom) == 3);
+
     hmap_terminate(&data.hm);
     hmap_terminate(&data.hm_u64);
     hmap_terminate(&data.hm_i64);
@@ -337,6 +370,8 @@ void run_pack_unpack_tests()
     hset_terminate(&data.hs_u8);
     hset_terminate(&data.hs_i8);
     hset_terminate(&data.hs_no_simp);
+    hmap_terminate(&data.hm_custom);
+    hset_terminate(&data.hs_custom);
 }
 
 int main(int argc, char **argv)

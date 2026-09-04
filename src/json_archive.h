@@ -420,8 +420,8 @@ void pack_unpack(json_archive *ar, array<T> &val, const pack_var_info &vinfo)
 
 // Hashset - same as dynamic array in json representation
 // Dynamic arrays
-template<class T>
-void pack_unpack_begin(json_archive *ar, hset<T> &, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack_begin(json_archive *ar, hset<T, HashF> &, const pack_var_info &vinfo)
 {
     jsa_stack_frame *cur_frame = arr_back(&ar->stack);
     asrt(cur_frame);
@@ -467,14 +467,14 @@ void pack_unpack_begin(json_archive *ar, hset<T> &, const pack_var_info &vinfo)
     }
 }
 
-template<class T>
-void pack_unpack_end(json_archive *ar, hset<T> &, const pack_var_info &)
+template<class T, auto HashF>
+void pack_unpack_end(json_archive *ar, hset<T, HashF> &, const pack_var_info &)
 {
     arr_pop_back(&ar->stack);
 }
 
-template<class T>
-void pack_unpack(json_archive *ar, hset<T> &val, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack(json_archive *ar, hset<T, HashF> &val, const pack_var_info &vinfo)
 {
     if (ar->opmode == archive_opmode::UNPACK) {
         jsa_stack_frame *cur_frame = arr_back(&ar->stack);
@@ -500,8 +500,8 @@ void pack_unpack(json_archive *ar, hset<T> &val, const pack_var_info &vinfo)
 
 // Hashmaps can use the default begin/end functions as they will just be json objects with each member var name as a key
 // and member var value as a value. We have special cases for string convertable
-template<class T>
-void pack_unpack(json_archive *ar, hmap<string, T> &val, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack(json_archive *ar, hmap<string, T, HashF> &val, const pack_var_info &vinfo)
 {
     if (ar->opmode == archive_opmode::UNPACK) {
         jsa_stack_frame *cur_frame = arr_back(&ar->stack);
@@ -509,7 +509,7 @@ void pack_unpack(json_archive *ar, hmap<string, T> &val, const pack_var_info &vi
         auto obj = cur_frame->current->child;
         while (obj) {
             // Key is copied into the map and the copy keeps the source arena, so build it in the map's arena
-            string key(val.buckets.arena, obj->string);
+            string key(val.items.arena, obj->string);
             auto item = hmap_find_or_insert(&val, key);
             pup_var(ar, item->val, {obj->string});
             obj = obj->next;
@@ -526,8 +526,8 @@ void pack_unpack(json_archive *ar, hmap<string, T> &val, const pack_var_info &vi
 
 // Hashmaps can use the default begin/end functions as they will just be json objects with each member var name as a key
 // and member var value as a value. We have special cases for string convertable
-template<class T>
-void pack_unpack(json_archive *ar, hmap<rid, T> &val, const pack_var_info &vinfo)
+template<class T, auto HashF>
+void pack_unpack(json_archive *ar, hmap<rid, T, HashF> &val, const pack_var_info &vinfo)
 {
     if (ar->opmode == archive_opmode::UNPACK) {
         jsa_stack_frame *cur_frame = arr_back(&ar->stack);
@@ -551,8 +551,8 @@ void pack_unpack(json_archive *ar, hmap<rid, T> &val, const pack_var_info &vinfo
 
 // Hashmaps can use the default begin/end functions as they will just be json objects with each member var name as a key
 // and member var value as a value. We have special cases for string convertable
-template<integral K, class T>
-void pack_unpack(json_archive *ar, hmap<K, T> &val, const pack_var_info &vinfo)
+template<integral K, class T, auto HashF>
+void pack_unpack(json_archive *ar, hmap<K, T, HashF> &val, const pack_var_info &vinfo)
 {
     if (ar->opmode == archive_opmode::UNPACK) {
         jsa_stack_frame *cur_frame = arr_back(&ar->stack);

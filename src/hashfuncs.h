@@ -85,6 +85,14 @@ u64 hash_type(const cstr&, u64, u64);
 
 u64 hash_type(const cstr&);
 
+// Default hash policy for hash tables. Calling hash_type through a template defers overload resolution to the point
+// of instantiation, so hash_type overloads declared after the container headers (rid, user types) are still found
+template<class Key>
+inline u64 hash_type_default(const Key &key, u64 seed0, u64 seed1)
+{
+    return hash_type(key, seed0, seed1);
+}
+
 
 
 } // namespace nslib

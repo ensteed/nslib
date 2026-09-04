@@ -9,142 +9,130 @@ namespace nslib
 constexpr inline sizet HSET_DEFAULT_BUCKET_COUNT = 16;
 constexpr inline float HSET_DEFAULT_LOAD_FACTOR = HASH_TABLE_DEFAULT_LOAD_FACTOR;
 
-enum hset_bucket_flags
-{
-    HSET_BUCKET_FLAG_USED = 1
-};
-
-template<typename Val>
+template<typename Val, auto HashF = hash_type_default<Val>>
 struct hset_item
 {
     using hash_key = Val;
     using key_type = Val;
     using mapped_type = Val;
-    using iterator = const hset_item<Val> *;
-    using const_iterator = const hset_item<Val> *;
+    using iterator = const hset_item<Val, HashF> *;
+    using const_iterator = const hset_item<Val, HashF> *;
+
+    // Hash function the table uses for Val - a compile time constant so it inlines in to lookups
+    static constexpr hash_func<Val> *hashf = HashF;
 
     Val val{};
-    sizet next{INVALID_ID};
-    sizet prev{INVALID_ID};
 };
 
-template<typename Val>
-using hset_bucket = hash_bucket<hset_item<Val>>;
+// Because hset uses arrays as its memory management, all of the default dtor/copy ctor, assignment operator, etc
+// should work just fine
+template<typename Val, auto HashF = hash_type_default<Val>>
+using hset = hash_table<hset_item<Val, HashF>>;
 
-template<class Val>
-using hash_func = u64(const Val &, u64, u64);
-
-// Since hset manages memory, but we want it to act like a built in type in terms of copying and equality testing, we
-// have to write copy ctor, dtor, assignment operator, and equality operators.
-template<typename Val>
-using hset = hash_table<hset_item<Val>>;
-
-template<typename Val>
-bool hash_table_item_match(const hset_item<Val> &item, const Val &v)
+template<typename Val, auto HashF>
+bool hash_table_item_match(const hset_item<Val, HashF> &item, const Val &v)
 {
     return item.val == v;
 }
 
-template<typename Val>
-const Val &hash_table_item_key(const hset_item<Val> &item)
+template<typename Val, auto HashF>
+const Val &hash_table_item_key(const hset_item<Val, HashF> &item)
 {
     return item.val;
 }
 
-template<typename Val>
-const Val &hash_table_item_value(const hset_item<Val> &item)
+template<typename Val, auto HashF>
+const Val &hash_table_item_value(const hset_item<Val, HashF> &item)
 {
     return item.val;
 }
 
-template<typename Val>
-void set_hash_table_item_value(hset_item<Val> &item, const Val &v, const Val &)
+template<typename Val, auto HashF>
+void set_hash_table_item_value(hset_item<Val, HashF> &item, const Val &v, const Val &)
 {
     item.val = v;
 }
 
-template<typename Val>
-void hset_print_internal(const array<hset_bucket<Val>> &buckets)
+template<typename Val, auto HashF>
+void hset_print_internal(const hset<Val, HashF> *hs)
 {
-    for (sizet i = 0; i < buckets.size; ++i) {
-        auto b = &buckets[i];
-        dlog("Bucket: %lu  hval:%lu  prev:%lu  next:%lu  item [val:%s  prev:%lu  next:%lu]",
+    for (sizet i = 0; i < hs->items.size; ++i) {
+        dlog("Item: %lu  val:%s", i, ls(hs->items[i].val));
+    }
+    for (sizet i = 0; i < hs->slots.size; ++i) {
+        dlog("Slot: %lu  dist:%u  fp:%u  idx:%u",
              i,
-             b->hashed_v,
-             b->prev,
-             b->next,
-             ls(b->item.val),
-             b->item.prev,
-             b->item.next);
+             hs->slots[i].dist_and_fp >> 8,
+             hs->slots[i].dist_and_fp & HASH_SLOT_FP_MASK,
+             hs->slots[i].idx);
     }
 }
 
-template<typename Val>
-void hset_init(hset<Val> *hs, mem_arena *arena, hash_func<Val> *hashf = hash_type, sizet initial_capacity = HSET_DEFAULT_BUCKET_COUNT)
+template<typename Val, auto HashF>
+void hset_init(hset<Val, HashF> *hs, mem_arena *arena, sizet initial_capacity = HSET_DEFAULT_BUCKET_COUNT)
 {
-    hash_table_init(hs, arena, hashf, initial_capacity, HSET_DEFAULT_LOAD_FACTOR);
+    hash_table_init(hs, arena, initial_capacity, HSET_DEFAULT_LOAD_FACTOR);
 }
 
-template<typename Val>
-void hset_rehash(hset<Val> *hs, sizet new_size)
+template<typename Val, auto HashF>
+void hset_rehash(hset<Val, HashF> *hs, sizet new_size)
 {
     hash_table_rehash(hs, new_size);
 }
 
-template<typename Val>
-float hset_load_factor(const hset<Val> *hs, sizet hs_entry_count)
+template<typename Val, auto HashF>
+float hset_load_factor(const hset<Val, HashF> *hs, sizet hs_entry_count)
 {
     return hash_table_load_factor(hs, hs_entry_count);
 }
 
-template<typename Val>
-float hset_current_load_factor(const hset<Val> *hs, sizet hs_entry_count)
+template<typename Val, auto HashF>
+float hset_current_load_factor(const hset<Val, HashF> *hs, sizet hs_entry_count)
 {
     return hash_table_current_load_factor(hs);
 }
 
-// NOTE: erasing removes/compacts buckets and can invalidate other iterators/pointers.
-template<typename Val>
-hset<Val>::iterator hset_erase(hset<Val> *hs, typename hset<Val>::iterator item)
+template<typename Val, auto HashF>
+sizet hset_count(const hset<Val, HashF> *hs)
+{
+    return hash_table_count(hs);
+}
+
+// Erase item and return the item now occupying its position, or null if it was the last item. Erasing moves the last
+// item in to the erased slot, so pointers to the erased item and to the last item are invalidated - all others stay
+// valid. Iterating forward and continuing from the returned pointer visits every remaining item exactly once.
+template<typename Val, auto HashF>
+hset<Val, HashF>::iterator hset_erase(hset<Val, HashF> *hs, typename hset<Val, HashF>::iterator item)
 {
     return hash_table_erase(hs, item);
 }
 
-// Remove the entry for key k from the map.
-// NOTE: erasing removes/compacts buckets and can invalidate other iterators/pointers.
-template<typename Val>
-bool hset_remove(hset<Val> *hs, const Val &v)
+// Remove the entry for value v from the set.
+// NOTE: see hset_erase for pointer invalidation.
+template<typename Val, auto HashF>
+bool hset_remove(hset<Val, HashF> *hs, const Val &v)
 {
-    sizet bckt_ind = hash_table_find_bucket(hs, v);
-    if (bckt_ind != INVALID_ID) {
-        hash_table_remove_bucket(hs, bckt_ind);
-        return true;
-    }
-    return false;
+    return hash_table_remove(hs, v);
 }
 
-template<typename Val>
-hset<Val>::iterator hset_find(const hset<Val> *hs, const Val &v)
+template<typename Val, auto HashF>
+hset<Val, HashF>::iterator hset_find(const hset<Val, HashF> *hs, const Val &v)
 {
-    sizet bucket_ind = hash_table_find_bucket(hs, v);
-    if (bucket_ind != INVALID_ID) {
-        return &hs->buckets[bucket_ind].item;
-    }
-    return nullptr;
+    return hash_table_find(hs, v);
 }
 
 // Insert a new item into the set. If the value already exists, return null. If it does not exist, insert it and
 // return the inserted item.
-template<typename Val>
-hset<Val>::iterator hset_insert(hset<Val> *hs, const Val &val)
+template<typename Val, auto HashF>
+hset<Val, HashF>::iterator hset_insert(hset<Val, HashF> *hs, const Val &val)
 {
     return hash_table_insert_or_set(hs, val, val, false);
 }
 
 // Call hset_insert for all items in src on dest. Returns the number of new items inserted. If not_inserted is set,
 // fills the array with vals from src that were not inserted in dest (most likely because they already existed)
-template<typename Val>
-sizet hset_insert(hset<Val> *dest, const hset<Val> *src, array<Val> *not_inserted = nullptr)
+template<typename Val, auto HashF>
+sizet hset_insert(hset<Val, HashF> *dest, const hset<Val, HashF> *src, array<Val> *not_inserted = nullptr)
 {
     sizet cnt{0};
     auto iter = hset_begin(src);
@@ -161,52 +149,52 @@ sizet hset_insert(hset<Val> *dest, const hset<Val> *src, array<Val> *not_inserte
     return cnt;
 }
 
-template<typename Val>
-bool hset_empty(const hset<Val> *hs)
+template<typename Val, auto HashF>
+bool hset_empty(const hset<Val, HashF> *hs)
 {
     return hash_table_empty(hs);
 }
 
-template<typename Val>
-void hset_clear(hset<Val> *hs)
+template<typename Val, auto HashF>
+void hset_clear(hset<Val, HashF> *hs)
 {
     hash_table_clear(hs);
 }
 
-template<typename Val>
-hset<Val>::iterator hset_begin(const hset<Val> *hs)
+template<typename Val, auto HashF>
+hset<Val, HashF>::iterator hset_begin(const hset<Val, HashF> *hs)
 {
     return hash_table_begin(hs);
 }
 
-template<typename Val>
-hset<Val>::iterator hset_rbegin(const hset<Val> *hs)
+template<typename Val, auto HashF>
+hset<Val, HashF>::iterator hset_rbegin(const hset<Val, HashF> *hs)
 {
     return hash_table_rbegin(hs);
 }
 
-template<typename Val>
-hset<Val>::iterator hset_next(const hset<Val> *hs, typename hset<Val>::iterator item)
+template<typename Val, auto HashF>
+hset<Val, HashF>::iterator hset_next(const hset<Val, HashF> *hs, typename hset<Val, HashF>::iterator item)
 {
     return hash_table_next(hs, item);
 }
 
-template<typename Val>
-hset<Val>::iterator hset_prev(const hset<Val> *hs, typename hset<Val>::iterator item)
+template<typename Val, auto HashF>
+hset<Val, HashF>::iterator hset_prev(const hset<Val, HashF> *hs, typename hset<Val, HashF>::iterator item)
 {
     return hash_table_prev(hs, item);
 }
 
-template<typename Val>
-void hset_terminate(hset<Val> *hs)
+template<typename Val, auto HashF>
+void hset_terminate(hset<Val, HashF> *hs)
 {
     hash_table_terminate(hs);
 }
 
-template<class ArchiveT, class T>
-void pack_unpack(ArchiveT *ar, hset<T> &val, const pack_var_info &vinfo)
+template<class ArchiveT, class T, auto HashF>
+void pack_unpack(ArchiveT *ar, hset<T, HashF> &val, const pack_var_info &vinfo)
 {
-    sizet sz = val.count;
+    sizet sz = val.items.size;
     pup_var(ar, sz, {"count"});
     sizet i{0};
     if (ar->opmode == archive_opmode::UNPACK) {

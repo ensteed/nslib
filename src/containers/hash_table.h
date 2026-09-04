@@ -5,16 +5,33 @@
 namespace nslib
 {
 constexpr inline float HASH_TABLE_DEFAULT_LOAD_FACTOR = 0.75f;
+constexpr inline sizet HASH_TABLE_MIN_SLOT_COUNT = 4;
 
-template<typename Item>
-struct hash_bucket
+// A slot packs the probe distance in the upper 24 bits (1 for an entry sitting in its home slot, 2 one step past it,
+// and so on) and an 8 bit fingerprint of the hash in the low byte. A dist_and_fp of zero means the slot is empty.
+// Since the distance lives in the high bits, comparing two packed values compares probe distance first, which is what
+// robin hood probing orders by - entries further from home sort before entries closer to home along a probe sequence.
+constexpr inline u32 HASH_SLOT_DIST_INC = 1u << 8;
+constexpr inline u32 HASH_SLOT_FP_MASK = 0xFFu;
+
+struct hash_slot
 {
-    Item item{};
-    u64 hashed_v{};
-    sizet next{INVALID_ID};
-    sizet prev{INVALID_ID};
+    u32 dist_and_fp{};
+    u32 idx{};
 };
 
+template<class Key>
+using hash_func = u64(const Key &, u64, u64);
+
+// Dense hash table. Items live packed in insertion order in the items array, and a separate power of two sized slot
+// array maps hashes to item indices with robin hood linear probing. Lookups touch the 8 byte slot array until they
+// find a fingerprint match, then touch the item once to compare the key. Iteration walks the items array directly.
+//
+// The hash function is a compile time property of the item type (Item::hashf) so it inlines in to lookups rather
+// than going through a function pointer.
+//
+// Pointer validity: inserting can grow the items array and invalidate all item pointers. Erasing moves the last item
+// into the erased item's spot, so only pointers to the erased item and the last item are invalidated.
 template<typename Item>
 struct hash_table
 {
@@ -25,413 +42,319 @@ struct hash_table
     using iterator = typename Item::iterator;
     using const_iterator = typename Item::const_iterator;
     using hash_key_type = typename Item::hash_key;
-    using hash_func = u64(const hash_key_type &, u64, u64);
 
-    hash_func *hashf{};
     u64 seed0{};
     u64 seed1{};
     float load_factor{0.0f};
-    sizet head{INVALID_ID};
-    sizet count{0};
-    array<hash_bucket<Item>> buckets{};
+    // Item count at which the next insert grows the slot array
+    sizet grow_at{0};
+    // Right shift applied to a mixed hash to get its home slot index
+    u8 shift{64};
+    array<Item> items{};
+    array<hash_slot> slots{};
 };
 
-template<typename Item>
-sizet hash_table_find_bucket(const hash_table<Item> *hc, const typename hash_table<Item>::hash_key_type &k)
+// Murmur3 style finalizer. The integral hash functions are identity so this is what actually spreads the bits.
+inline u64 hash_table_mix(u64 h)
 {
-    asrt(hc->hashf);
-    if (hc->buckets.size == 0) {
-        return INVALID_ID;
-    }
-    u64 hashval = hc->hashf(k, hc->seed0, hc->seed1);
-    sizet fnd_bckt = INVALID_ID;
-    sizet bckt_ind = hashval % hc->buckets.size;
-    sizet cur_bckt_ind = bckt_ind;
-    sizet i = 0;
-
-    // Find the correct bucket first - hashed_v mod bucket count should give us bckt_ind if a match
-    while (i < hc->buckets.size && is_valid(hc->buckets[cur_bckt_ind].prev) &&
-           (bckt_ind != (hc->buckets[cur_bckt_ind].hashed_v % hc->buckets.size))) {
-        ++i;
-        cur_bckt_ind = (hashval + i) % hc->buckets.size;
-    }
-
-    // If we found a matching bucket
-    if (i < hc->buckets.size && is_valid(hc->buckets[cur_bckt_ind].prev) &&
-        (bckt_ind == (hc->buckets[cur_bckt_ind].hashed_v % hc->buckets.size))) {
-        // Follow the bucket linked list to check for matches on any of the items in the bucket
-        while (is_valid(cur_bckt_ind)) {
-            if ((hashval != hc->buckets[cur_bckt_ind].hashed_v || !hash_table_item_match(hc->buckets[cur_bckt_ind].item, k))) {
-                cur_bckt_ind = hc->buckets[cur_bckt_ind].next;
-            }
-            else {
-                fnd_bckt = cur_bckt_ind;
-                cur_bckt_ind = INVALID_ID;
-            }
-        }
-    }
-    return fnd_bckt;
+    h ^= h >> 33;
+    h *= 0xff51afd7ed558ccdull;
+    h ^= h >> 33;
+    h *= 0xc4ceb9fe1a85ec53ull;
+    h ^= h >> 33;
+    return h;
 }
 
-template<typename Item, typename Key, typename Val>
-typename hash_table<Item>::iterator hash_table_insert_or_set(hash_table<Item> *hc, const Key &k, const Val &val, bool set_if_exists);
+inline u32 hash_slot_dist_and_fp(u64 h)
+{
+    return HASH_SLOT_DIST_INC | ((u32)h & HASH_SLOT_FP_MASK);
+}
 
+template<typename Item>
+inline u64 hash_table_hash(const hash_table<Item> *hc, const typename hash_table<Item>::hash_key_type &k)
+{
+    return hash_table_mix(Item::hashf(k, hc->seed0, hc->seed1));
+}
+
+template<typename Item>
+inline sizet hash_table_home_slot(const hash_table<Item> *hc, u64 h)
+{
+    return (sizet)(h >> hc->shift);
+}
+
+template<typename Item>
+inline sizet hash_table_next_slot(const hash_table<Item> *hc, sizet si)
+{
+    return (si + 1) & (hc->slots.size - 1);
+}
+
+template<typename Item>
+sizet hash_table_count(const hash_table<Item> *hc)
+{
+    return hc->items.size;
+}
+
+// Returns the index in to the items array of the item with key k, or INVALID_ID if not found
+template<typename Item>
+sizet hash_table_find_index(const hash_table<Item> *hc, const typename hash_table<Item>::hash_key_type &k)
+{
+    if (hc->slots.size == 0) {
+        return INVALID_ID;
+    }
+    u64 h = hash_table_hash(hc, k);
+    u32 dfp = hash_slot_dist_and_fp(h);
+    sizet si = hash_table_home_slot(hc, h);
+    const hash_slot *slots = hc->slots.data;
+    const Item *items = hc->items.data;
+    while (true) {
+        u32 sdfp = slots[si].dist_and_fp;
+        if (dfp == sdfp && hash_table_item_match(items[slots[si].idx], k)) {
+            return slots[si].idx;
+        }
+        // Robin hood ordering: if we would have displaced this slot on insert, the key is not in the table. This also
+        // catches empty slots since their dist_and_fp is zero.
+        if (dfp > sdfp) {
+            return INVALID_ID;
+        }
+        dfp += HASH_SLOT_DIST_INC;
+        si = hash_table_next_slot(hc, si);
+    }
+}
+
+template<typename Item>
+typename hash_table<Item>::iterator hash_table_find(hash_table<Item> *hc, const typename hash_table<Item>::hash_key_type &k)
+{
+    sizet ind = hash_table_find_index(hc, k);
+    if (ind != INVALID_ID) {
+        return &hc->items.data[ind];
+    }
+    return nullptr;
+}
+
+template<typename Item>
+typename hash_table<Item>::const_iterator hash_table_find(const hash_table<Item> *hc, const typename hash_table<Item>::hash_key_type &k)
+{
+    sizet ind = hash_table_find_index(hc, k);
+    if (ind != INVALID_ID) {
+        return &hc->items.data[ind];
+    }
+    return nullptr;
+}
+
+// Place slot s at index si, shifting any richer (closer to home) entries forward until an empty slot absorbs the chain
+template<typename Item>
+void hash_table_place_slot(hash_table<Item> *hc, hash_slot s, sizet si)
+{
+    hash_slot *slots = hc->slots.data;
+    while (slots[si].dist_and_fp != 0) {
+        hash_slot tmp = slots[si];
+        slots[si] = s;
+        s = tmp;
+        s.dist_and_fp += HASH_SLOT_DIST_INC;
+        si = hash_table_next_slot(hc, si);
+    }
+    slots[si] = s;
+}
+
+// Rebuild the slot array with at least new_size slots (rounded up to a power of two and never so small that the
+// current items exceed the load factor). Items are not moved so item pointers stay valid.
 template<typename Item>
 void hash_table_rehash(hash_table<Item> *hc, sizet new_size)
 {
-    // Make tmp copy of buckets and head index, then clear the hash table, then resize the buckets to the new size
-    auto tmp = hc->buckets;
-    sizet ind = hc->head;
-    hash_table_clear(hc);
-    arr_resize(&hc->buckets, new_size);
-
-    // Temporarily set the load factor so the hash table will never rehash on insert
-    auto cached_lf = hc->load_factor;
-    hc->load_factor = 2.0f;
-
-    // And finally insert all of the items in the tmp copy in to the new bucket array
-    while (is_valid(ind)) {
-        const auto &item = tmp[ind].item;
-        hash_table_insert_or_set(hc, hash_table_item_key(item), hash_table_item_value(item), false);
-        ind = tmp[ind].item.next;
+    sizet needed = (sizet)((float)hc->items.size / hc->load_factor) + 1;
+    if (new_size < needed) {
+        new_size = needed;
+    }
+    sizet n = HASH_TABLE_MIN_SLOT_COUNT;
+    u8 bits = 2;
+    while (n < new_size) {
+        n <<= 1;
+        ++bits;
     }
 
-    // Restore cached load factor
-    hc->load_factor = cached_lf;
-}
-
-template<typename Item, typename Key, typename Val>
-typename hash_table<Item>::iterator hash_table_insert_or_set(hash_table<Item> *hc, const Key &k, const Val &val, bool set_if_exists)
-{
-    asrt(hc->hashf);
-    if (hc->buckets.size == 0) {
-        return nullptr;
-    }
-    if (hash_table_should_rehash_on_insert(hc)) {
-        hash_table_rehash(hc, hc->buckets.size * 2);
+    arr_resize(&hc->slots, n);
+    arr_clear_to(&hc->slots, hash_slot{});
+    hc->shift = (u8)(64 - bits);
+    hc->grow_at = (sizet)((float)n * hc->load_factor);
+    // Always leave at least one empty slot so probes terminate
+    if (hc->grow_at >= n) {
+        hc->grow_at = n - 1;
     }
 
-    u64 hashval = hc->hashf(k, hc->seed0, hc->seed1);
-    sizet bckt_ind = hashval % hc->buckets.size;
-
-    // Find an un-occupied bucket - a bucket is unoccupied if the prev bucket index is invalid. Head nodes have the prev
-    // bucket index pointing to the last item in the bucket (the last item does not have its next pointing to the first
-    // item however).
-    auto cur_bckt_ind = bckt_ind;
-    auto head_bckt_ind = INVALID_ID;
-    sizet i{};
-    while (is_valid(hc->buckets[cur_bckt_ind].prev) && i < hc->buckets.size) {
-        // If we found a match (both hashed_v and the actual key) then return null
-        if (hc->buckets[cur_bckt_ind].hashed_v == hashval && hash_table_item_match(hc->buckets[cur_bckt_ind].item, k)) {
-            if (set_if_exists) {
-                set_hash_table_item_value(hc->buckets[cur_bckt_ind].item, k, val);
-                return &hc->buckets[cur_bckt_ind].item;
-            }
-            return nullptr;
+    // Keys are known to be unique here so there is no key compare, but each still has to probe past any entries
+    // that sort ahead of it to keep the slot ordering that find relies on for early exit
+    for (sizet i = 0; i < hc->items.size; ++i) {
+        u64 h = hash_table_hash(hc, hash_table_item_key(hc->items.data[i]));
+        u32 dfp = hash_slot_dist_and_fp(h);
+        sizet si = hash_table_home_slot(hc, h);
+        while (dfp < hc->slots.data[si].dist_and_fp) {
+            dfp += HASH_SLOT_DIST_INC;
+            si = hash_table_next_slot(hc, si);
         }
-
-        // The head bucket will be the first bucket we find with the same hashed bucket as ours
-        if (!is_valid(head_bckt_ind) && (hc->buckets[cur_bckt_ind].hashed_v % hc->buckets.size) == bckt_ind) {
-            head_bckt_ind = cur_bckt_ind;
-        }
-
-        cur_bckt_ind = (hashval + ++i) % hc->buckets.size;
+        hash_table_place_slot(hc, {dfp, (u32)i}, si);
     }
-    if (i >= hc->buckets.size) {
-        return nullptr;
-    }
-
-    // New bucket insertion
-    if (!is_valid(head_bckt_ind)) {
-        head_bckt_ind = cur_bckt_ind;
-    }
-
-    // Check the bucket ll for existing items and return null if any
-    sizet n = hc->buckets[head_bckt_ind].next;
-    while (is_valid(n)) {
-        if (hc->buckets[n].hashed_v == hashval && hash_table_item_match(hc->buckets[n].item, k)) {
-            if (set_if_exists) {
-                set_hash_table_item_value(hc->buckets[n].item, k, val);
-                return &hc->buckets[n].item;
-            }
-            return nullptr;
-        }
-        n = hc->buckets[n].next;
-    }
-
-    // The bucket item's next and prev should both be invalid
-    asrt(!is_valid(hc->buckets[cur_bckt_ind].item.next));
-    asrt(!is_valid(hc->buckets[cur_bckt_ind].item.prev));
-
-    // Set the key/value/hashed_v
-    hc->buckets[cur_bckt_ind].hashed_v = hashval;
-    set_hash_table_item_value(hc->buckets[cur_bckt_ind].item, k, val);
-
-    // If this is the first item, we create head pointing to itself as prev and leave next invalid
-    if (!is_valid(hc->head)) {
-        hc->head = cur_bckt_ind;
-        hc->buckets[cur_bckt_ind].item.prev = cur_bckt_ind;
-    }
-    else {
-        // Our bucket's prev should point to the last item, which is head's prev, our next will remain pointing to
-        // invalid to indicate it is the last item. Then head's prev should point to us
-        hc->buckets[cur_bckt_ind].item.prev = hc->buckets[hc->head].item.prev;
-        hc->buckets[hc->head].item.prev = cur_bckt_ind;
-
-        // And finally the bucket before us (which was previously the last bucket) should now point to us as next
-        asrt(!is_valid(hc->buckets[hc->buckets[cur_bckt_ind].item.prev].item.next));
-        hc->buckets[hc->buckets[cur_bckt_ind].item.prev].item.next = cur_bckt_ind;
-    }
-
-    // And now, we need to insert the item in the bucket item's linked list chain
-    asrt(!is_valid(hc->buckets[cur_bckt_ind].prev));
-
-    // If we are appending to a bucket ll rather than inserting the head bucket node
-    sizet head_prev_ind = cur_bckt_ind;
-    if (cur_bckt_ind != head_bckt_ind) {
-        // Make sure the head bucket has a valid prev ind
-        asrt(is_valid(hc->buckets[head_bckt_ind].prev));
-
-        // Set our prev to the bucket that was previously at the end
-        hc->buckets[cur_bckt_ind].prev = hc->buckets[head_bckt_ind].prev;
-
-        // Asssert the previously end bucket's next index is invalid, and then set it to us
-        asrt(!is_valid(hc->buckets[hc->buckets[cur_bckt_ind].prev].next));
-        hc->buckets[hc->buckets[cur_bckt_ind].prev].next = cur_bckt_ind;
-
-        // Set the head bucket's prev ind to us
-    }
-    // If we are the head bucket and our next ind is valid, it means we are inserting this item to a previously deleted
-    // head bucket, and need to find the end of the bucket ll to set our prev too
-    else if (is_valid(hc->buckets[cur_bckt_ind].next)) {
-        while (is_valid(hc->buckets[head_prev_ind].next)) {
-            head_prev_ind = hc->buckets[head_prev_ind].next;
-        }
-    }
-    hc->buckets[head_bckt_ind].prev = head_prev_ind;
-
-    ++hc->count;
-    return &hc->buckets[cur_bckt_ind].item;
-}
-
-template<typename Item>
-void hash_table_init(hash_table<Item> *hc, mem_arena *arena, typename hash_table<Item>::hash_func *hashf, sizet initial_capacity, float load_factor)
-{
-    hc->hashf = hashf;
-    hc->seed0 = generate_rand_seed();
-    hc->seed1 = generate_rand_seed();
-    hc->head = INVALID_ID;
-    hc->load_factor = load_factor;
-    hc->count = 0;
-    arr_init(&hc->buckets, arena, initial_capacity);
-    arr_resize(&hc->buckets, initial_capacity);
-}
-
-template<typename Item>
-float hash_table_load_factor(const hash_table<Item> *hc, sizet entry_count)
-{
-    if (hc->buckets.size == 0) {
-        return 0.0f;
-    }
-    return (float)entry_count / (float)hc->buckets.size;
-}
-
-template<typename Item>
-float hash_table_current_load_factor(const hash_table<Item> *hc)
-{
-    return hash_table_load_factor(hc, hc->count);
 }
 
 template<typename Item>
 bool hash_table_should_rehash_on_insert(const hash_table<Item> *hc)
 {
-    if (hc->load_factor >= 0.0f && hc->load_factor <= 1.0f) {
-        return hash_table_load_factor(hc, hc->count + 1) > hc->load_factor;
+    return hc->items.size >= hc->grow_at;
+}
+
+template<typename Item, typename Key, typename Val>
+typename hash_table<Item>::iterator hash_table_insert_or_set(hash_table<Item> *hc, const Key &k, const Val &val, bool set_if_exists)
+{
+    if (hc->slots.size == 0) {
+        return nullptr;
     }
-    return false;
+    if (hash_table_should_rehash_on_insert(hc)) {
+        hash_table_rehash(hc, hc->slots.size * 2);
+    }
+
+    u64 h = hash_table_hash(hc, k);
+    u32 dfp = hash_slot_dist_and_fp(h);
+    sizet si = hash_table_home_slot(hc, h);
+    hash_slot *slots = hc->slots.data;
+
+    // Walk the probe sequence while the entries there are at least as far from home as we are - our key can only be
+    // among those. Stop at the first slot we would displace.
+    while (dfp <= slots[si].dist_and_fp) {
+        if (dfp == slots[si].dist_and_fp && hash_table_item_match(hc->items.data[slots[si].idx], k)) {
+            Item *existing = &hc->items.data[slots[si].idx];
+            if (set_if_exists) {
+                set_hash_table_item_value(*existing, k, val);
+                return existing;
+            }
+            return nullptr;
+        }
+        dfp += HASH_SLOT_DIST_INC;
+        si = hash_table_next_slot(hc, si);
+    }
+
+    asrt(hc->items.size < 0xFFFFFFFFu);
+    u32 idx = (u32)hc->items.size;
+    Item *item = arr_emplace_back(&hc->items);
+    set_hash_table_item_value(*item, k, val);
+    hash_table_place_slot(hc, {dfp, idx}, si);
+    return item;
 }
 
 template<typename Item>
-void hash_table_copy_bucket(hash_table<Item> *hc, sizet dest_ind, sizet src_ind)
+void hash_table_init(hash_table<Item> *hc, mem_arena *arena, sizet initial_capacity, float load_factor)
 {
-    auto cur_b = &hc->buckets[src_ind];
-
-    // If we are the tail node, we need to point the head node's prev dest ind.
-    if (!is_valid(cur_b->next)) {
-        auto cur_bckt = src_ind;
-        while (hc->buckets[cur_bckt].prev != src_ind) {
-            cur_bckt = hc->buckets[cur_bckt].prev;
-        }
-        if (cur_bckt != src_ind) {
-            hc->buckets[cur_bckt].prev = dest_ind;
-        }
+    hc->seed0 = generate_rand_seed();
+    hc->seed1 = generate_rand_seed();
+    if (!(load_factor > 0.0f) || load_factor > 1.0f) {
+        load_factor = HASH_TABLE_DEFAULT_LOAD_FACTOR;
     }
-
-    if (hc->buckets[cur_b->prev].next == src_ind) {
-        hc->buckets[cur_b->prev].next = dest_ind;
-    }
-    if (is_valid(cur_b->next) && hc->buckets[cur_b->next].prev == src_ind) {
-        hc->buckets[cur_b->next].prev = dest_ind;
-    }
-
-    auto previ_b = &hc->buckets[cur_b->item.prev];
-    if (previ_b->item.next == src_ind) {
-        previ_b->item.next = dest_ind;
-    }
-    if (is_valid(cur_b->item.next) && hc->buckets[cur_b->item.next].item.prev == src_ind) {
-        hc->buckets[cur_b->item.next].item.prev = dest_ind;
-    }
-
-    hc->buckets[dest_ind] = hc->buckets[src_ind];
-    if (hc->buckets[dest_ind].prev == src_ind) {
-        hc->buckets[dest_ind].prev = dest_ind;
-    }
-    if (hc->buckets[dest_ind].item.prev == src_ind) {
-        hc->buckets[dest_ind].item.prev = dest_ind;
-    }
-    if (hc->buckets[hc->head].item.prev == src_ind) {
-        hc->buckets[hc->head].item.prev = dest_ind;
-    }
-    if (hc->head == src_ind) {
-        hc->head = dest_ind;
-    }
-}
-
-// Clear the bucket
-template<typename Item>
-auto hash_table_clear_bucket(hash_table<Item> *hc, sizet bckt_ind)
-{
-    asrt(bckt_ind < hc->buckets.size);
-    if (!is_valid(hc->buckets[bckt_ind].prev)) {
-        return;
-    }
-
-    // If our next index is valid, use it to get the next bucket - set the next bucket's prev index to our prev index
-    if (is_valid(hc->buckets[bckt_ind].next)) {
-        hc->buckets[hc->buckets[bckt_ind].next].prev = hc->buckets[bckt_ind].prev;
-    }
-
-    // If head is pointing to us (we are the last bucket), then make head point to our prev
-    if (hc->buckets[hc->head].item.prev == bckt_ind) {
-        hc->buckets[hc->head].item.prev = hc->buckets[bckt_ind].item.prev;
-    }
-
-    // If head is us, then head should point to our next index
-    if (hc->head == bckt_ind && is_valid(hc->buckets[bckt_ind].item.next)) {
-        hc->head = hc->buckets[bckt_ind].item.next;
-    }
-
-    // If we are the tail node, we need to point the head node's prev to our prev. If we are the tail and the head node,
-    // this will just point the head nodes's (us) prev to our prev (us) essentially doing nothing, so we just skip it in
-    // that case (where the head node ind ends up as our ind)
-    if (!is_valid(hc->buckets[bckt_ind].next)) {
-        auto cur_bckt = bckt_ind;
-        while (hc->buckets[cur_bckt].prev != bckt_ind) {
-            cur_bckt = hc->buckets[cur_bckt].prev;
-        }
-        if (cur_bckt != bckt_ind) {
-            hc->buckets[cur_bckt].prev = hc->buckets[bckt_ind].prev;
-        }
-    }
-
-    // If the prev bucket's next index is invalid, it means we are the head node of the bucket. We only want to remove
-    // the node from the bucket ll if we are NOT the head node - or technically if we are the head node but the only
-    // node. The thing is, in that case, our next index will already be invalid anyways.
-    if (is_valid(hc->buckets[hc->buckets[bckt_ind].prev].next)) { // || hc->buckets[bckt_ind].prev == bckt_ind) {
-        hc->buckets[hc->buckets[bckt_ind].prev].next = hc->buckets[bckt_ind].next;
-        hc->buckets[bckt_ind].next = INVALID_ID;
-    }
-
-    // Set the previous ind to invalid - we don't set the hashed_v on purpose that is never used
-    hc->buckets[bckt_ind].prev = INVALID_ID;
-
-    // Do the same thing we did for the bucket indexes except now with the item indices
-    if (is_valid(hc->buckets[bckt_ind].item.next)) {
-        hc->buckets[hc->buckets[bckt_ind].item.next].item.prev = hc->buckets[bckt_ind].item.prev;
-    }
-    // If the previous item has a valid next index (ie if we are not the head node) then set the previous item's next
-    // index to our next index to continue the chain
-    if (is_valid(hc->buckets[hc->buckets[bckt_ind].item.prev].item.next)) {
-        hc->buckets[hc->buckets[bckt_ind].item.prev].item.next = hc->buckets[bckt_ind].item.next;
-    }
-
-    // Reset the bucket item
-    hc->buckets[bckt_ind].item = {};
+    hc->load_factor = load_factor;
+    arr_init(&hc->items, arena, 0);
+    arr_init(&hc->slots, arena, 0);
+    hash_table_rehash(hc, initial_capacity);
+    arr_reserve(&hc->items, hc->grow_at);
 }
 
 template<typename Item>
-void hash_table_remove_bucket(hash_table<Item> *hc, sizet bckt_ind)
+float hash_table_load_factor(const hash_table<Item> *hc, sizet entry_count)
 {
-
-    asrt(bckt_ind < hc->buckets.size);
-    if (!is_valid(hc->buckets[bckt_ind].prev)) {
-        return;
+    if (hc->slots.size == 0) {
+        return 0.0f;
     }
-    bool was_last = (hc->count == 1);
-    sizet hole_ind = bckt_ind;
-    sizet bckt_cnt = hc->buckets.size;
-    hash_table_clear_bucket(hc, bckt_ind);
-    sizet next_bckt = (hole_ind + 1) % bckt_cnt;
-    while (next_bckt != hole_ind) {
-        if (!is_valid(hc->buckets[next_bckt].prev)) {
-            break;
-        }
-        // Compare circular distance from the bucket's ideal slot to its current location
-        // versus the open hole; if the hole is closer, this entry must slide back.
-        sizet target_bckt = hc->buckets[next_bckt].hashed_v % bckt_cnt;
-        sizet dist_to_next = (next_bckt + bckt_cnt - target_bckt) % bckt_cnt;
-        sizet dist_to_hole = (hole_ind + bckt_cnt - target_bckt) % bckt_cnt;
-        if (dist_to_hole < dist_to_next) {
-            hash_table_copy_bucket(hc, hole_ind, next_bckt);
-            hole_ind = next_bckt;
-        }
-        next_bckt = (next_bckt + 1) % bckt_cnt;
-    }
-    hc->buckets[hole_ind] = {};
-    --hc->count;
-    if (was_last) {
-        hc->head = INVALID_ID;
-    }
+    return (float)entry_count / (float)hc->slots.size;
 }
 
+template<typename Item>
+float hash_table_current_load_factor(const hash_table<Item> *hc)
+{
+    return hash_table_load_factor(hc, hc->items.size);
+}
+
+// Remove the item at index idx from the items array. The last item is moved in to idx to keep the array dense.
+template<typename Item>
+void hash_table_erase_index(hash_table<Item> *hc, sizet idx)
+{
+    asrt(idx < hc->items.size);
+    hash_slot *slots = hc->slots.data;
+
+    // Find the slot pointing at idx - it is somewhere along the probe sequence from the item's home slot
+    u64 h = hash_table_hash(hc, hash_table_item_key(hc->items.data[idx]));
+    sizet si = hash_table_home_slot(hc, h);
+    while (slots[si].idx != idx || slots[si].dist_and_fp == 0) {
+        si = hash_table_next_slot(hc, si);
+    }
+
+    // Backward shift: pull every following entry that is not in its home slot back one step
+    sizet nsi = hash_table_next_slot(hc, si);
+    while (slots[nsi].dist_and_fp >= 2 * HASH_SLOT_DIST_INC) {
+        slots[si] = {slots[nsi].dist_and_fp - HASH_SLOT_DIST_INC, slots[nsi].idx};
+        si = nsi;
+        nsi = hash_table_next_slot(hc, nsi);
+    }
+    slots[si] = {};
+
+    // Swap remove from the items array, then repoint the moved item's slot
+    sizet last = hc->items.size - 1;
+    if (idx != last) {
+        hc->items.data[idx] = hc->items.data[last];
+        u64 mh = hash_table_hash(hc, hash_table_item_key(hc->items.data[idx]));
+        sizet msi = hash_table_home_slot(hc, mh);
+        while (slots[msi].idx != last || slots[msi].dist_and_fp == 0) {
+            msi = hash_table_next_slot(hc, msi);
+        }
+        slots[msi].idx = (u32)idx;
+    }
+    arr_pop_back(&hc->items);
+}
+
+template<typename Item>
+bool hash_table_remove(hash_table<Item> *hc, const typename hash_table<Item>::hash_key_type &k)
+{
+    sizet ind = hash_table_find_index(hc, k);
+    if (ind == INVALID_ID) {
+        return false;
+    }
+    hash_table_erase_index(hc, ind);
+    return true;
+}
+
+// Erase item and return the item now occupying its position (the previously last item), or null if it was the last.
+// Iterating forward and erasing with the returned pointer as the new current item visits every item exactly once.
 template<typename Item, typename IteratorT>
 IteratorT hash_table_erase(hash_table<Item> *hc, IteratorT item)
 {
-    IteratorT ret{};
-    if (!item || !is_valid(item->prev)) {
-        return ret;
+    if (!item) {
+        return nullptr;
     }
-    if (is_valid(item->next)) {
-        ret = &hc->buckets[item->next].item;
+    sizet idx = (sizet)(item - hc->items.data);
+    asrt(idx < hc->items.size);
+    if (idx >= hc->items.size) {
+        return nullptr;
     }
-
-    // Item is the first member of hash_bucket so the pointers align.
-    auto bckt = (hash_bucket<Item> *)(const_cast<Item *>(item));
-    sizet bckt_ind = (sizet)(bckt - hc->buckets.data);
-    asrt(bckt_ind < hc->buckets.size);
-    hash_table_remove_bucket(hc, bckt_ind);
-    return ret;
+    hash_table_erase_index(hc, idx);
+    if (idx < hc->items.size) {
+        return &hc->items.data[idx];
+    }
+    return nullptr;
 }
 
 template<typename Item>
 bool hash_table_empty(const hash_table<Item> *hc)
 {
-    return hc->count == 0;
+    return hc->items.size == 0;
 }
 
 template<typename Item>
 void hash_table_clear(hash_table<Item> *hc)
 {
-    hc->head = INVALID_ID;
-    hc->count = 0;
-    arr_clear_to(&hc->buckets, {});
+    arr_clear(&hc->items);
+    arr_clear_to(&hc->slots, hash_slot{});
 }
 
 template<typename Item>
 typename hash_table<Item>::iterator hash_table_begin(hash_table<Item> *hc)
 {
-    if (is_valid(hc->head)) {
-        return &hc->buckets[hc->head].item;
+    if (hc->items.size > 0) {
+        return hc->items.data;
     }
     return nullptr;
 }
@@ -439,8 +362,8 @@ typename hash_table<Item>::iterator hash_table_begin(hash_table<Item> *hc)
 template<typename Item>
 typename hash_table<Item>::const_iterator hash_table_begin(const hash_table<Item> *hc)
 {
-    if (is_valid(hc->head)) {
-        return &hc->buckets[hc->head].item;
+    if (hc->items.size > 0) {
+        return hc->items.data;
     }
     return nullptr;
 }
@@ -448,9 +371,8 @@ typename hash_table<Item>::const_iterator hash_table_begin(const hash_table<Item
 template<typename Item>
 typename hash_table<Item>::iterator hash_table_rbegin(hash_table<Item> *hc)
 {
-    if (is_valid(hc->head)) {
-        asrt(is_valid(hc->buckets[hc->head].item.prev));
-        return &hc->buckets[hc->buckets[hc->head].item.prev].item;
+    if (hc->items.size > 0) {
+        return &hc->items.data[hc->items.size - 1];
     }
     return nullptr;
 }
@@ -458,9 +380,8 @@ typename hash_table<Item>::iterator hash_table_rbegin(hash_table<Item> *hc)
 template<typename Item>
 typename hash_table<Item>::const_iterator hash_table_rbegin(const hash_table<Item> *hc)
 {
-    if (is_valid(hc->head)) {
-        asrt(is_valid(hc->buckets[hc->head].item.prev));
-        return &hc->buckets[hc->buckets[hc->head].item.prev].item;
+    if (hc->items.size > 0) {
+        return &hc->items.data[hc->items.size - 1];
     }
     return nullptr;
 }
@@ -471,8 +392,8 @@ typename hash_table<Item>::iterator hash_table_next(hash_table<Item> *hc, typena
     if (!item) {
         return hash_table_begin(hc);
     }
-    if (item && is_valid(item->next)) {
-        return &hc->buckets[item->next].item;
+    if (item + 1 < hc->items.data + hc->items.size) {
+        return item + 1;
     }
     return nullptr;
 }
@@ -483,8 +404,8 @@ typename hash_table<Item>::const_iterator hash_table_next(const hash_table<Item>
     if (!item) {
         return hash_table_begin(hc);
     }
-    if (item && is_valid(item->next)) {
-        return &hc->buckets[item->next].item;
+    if (item + 1 < hc->items.data + hc->items.size) {
+        return item + 1;
     }
     return nullptr;
 }
@@ -495,8 +416,8 @@ typename hash_table<Item>::iterator hash_table_prev(hash_table<Item> *hc, typena
     if (!item) {
         return hash_table_rbegin(hc);
     }
-    if (item && item != &hc->buckets[hc->head].item && is_valid(item->prev)) {
-        return &hc->buckets[item->prev].item;
+    if (item > hc->items.data) {
+        return item - 1;
     }
     return nullptr;
 }
@@ -507,8 +428,8 @@ typename hash_table<Item>::const_iterator hash_table_prev(const hash_table<Item>
     if (!item) {
         return hash_table_rbegin(hc);
     }
-    if (item && item != &hc->buckets[hc->head].item && is_valid(item->prev)) {
-        return &hc->buckets[item->prev].item;
+    if (item > hc->items.data) {
+        return item - 1;
     }
     return nullptr;
 }
@@ -516,7 +437,8 @@ typename hash_table<Item>::const_iterator hash_table_prev(const hash_table<Item>
 template<typename Item>
 void hash_table_terminate(hash_table<Item> *hc)
 {
-    arr_terminate(&hc->buckets);
+    arr_terminate(&hc->items);
+    arr_terminate(&hc->slots);
 }
 
 } // namespace nslib

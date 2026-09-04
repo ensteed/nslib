@@ -252,8 +252,8 @@ intern void init_resource_target_registry(renderer *rndr)
     init_slot_pool(&rndr->rtargets.textures, MAX_TEXTURE_TARGET_COUNT, &rndr->arenas.free_list);
     init_slot_pool(&rndr->rtargets.buffers, MAX_BUFFER_TARGET_COUNT, &rndr->arenas.free_list);
     // Load factor is .75 so two times size should make so table is never rehashed and still performant
-    hmap_init(&rndr->rtargets.texture_id_map, &rndr->arenas.free_list, hash_type, MAX_TEXTURE_TARGET_COUNT * 2);
-    hmap_init(&rndr->rtargets.buffer_id_map, &rndr->arenas.free_list, hash_type, MAX_BUFFER_TARGET_COUNT * 2);
+    hmap_init(&rndr->rtargets.texture_id_map, &rndr->arenas.free_list, MAX_TEXTURE_TARGET_COUNT * 2);
+    hmap_init(&rndr->rtargets.buffer_id_map, &rndr->arenas.free_list, MAX_BUFFER_TARGET_COUNT * 2);
 
     // We reserve the first render texture target as the swapchain image - and update the current fif texture to
     // reference the swapchain image at the start of every frame once we acquire it
@@ -698,7 +698,7 @@ intern void init_geometry_stream_groups(renderer *rndr)
 {
     // Geometry index/vertex buffers
     asrt(rndr->geom_groups.size == 0);
-    hmap_init(&rndr->geom_group_id_map, &rndr->arenas.free_list, hash_type);
+    hmap_init(&rndr->geom_group_id_map, &rndr->arenas.free_list);
 }
 
 intern void terminate_geometry_stream_groups(renderer *rndr)
@@ -725,7 +725,7 @@ template<typename T>
 intern void init_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *cache, u32 elements)
 {
     init_slot_pool(&cache->items, elements, &rndr->arenas.free_list);
-    hmap_init(&cache->key_lut, &rndr->arenas.free_list, hash_type, elements * 2);
+    hmap_init(&cache->key_lut, &rndr->arenas.free_list, elements * 2);
 }
 
 template<typename T, typename TermFunc>
@@ -745,7 +745,7 @@ intern void terminate_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *
 
 intern void init_blueprints(renderer *rndr)
 {
-    hmap_init(&rndr->blueprint_id_map, &rndr->arenas.free_list, hash_type);
+    hmap_init(&rndr->blueprint_id_map, &rndr->arenas.free_list);
     init_slot_pool(&rndr->blueprints, MAX_BP_COUNT, &rndr->arenas.free_list);
 }
 

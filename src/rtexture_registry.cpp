@@ -22,7 +22,7 @@ u32 get_slot_used_count(const rtexture_registry &reg)
 b8 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg)
 {
     ilog("Initializing texture registry with %u pools", cfg.pool_count);
-    hmap_init(&reg->pmap, cfg.persist_fl, hash_type, cfg.pool_count * 2);
+    hmap_init(&reg->pmap, cfg.persist_fl, cfg.pool_count * 2);
     arr_init(&reg->pools, cfg.persist_fl, cfg.pool_count);
     arr_resize(&reg->pools, cfg.pool_count, vkr_texture_pool{});
     for (u32 i = 0; i < reg->pools.size; ++i) {
