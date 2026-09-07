@@ -602,6 +602,70 @@ void init_pool_arena(mem_arena *arena, sizet chunk_size, sizet chunk_count, mem_
     init_arena(arena, arena->mpool.chunk_size * chunk_count, mem_alloc_type::POOL, upstream, name, pf_funcs);
 }
 
+// Walk a free-list arena linearly, skipping the (address sorted) free nodes, and log every block that is
+// still allocated. Blocks and free nodes tile the arena exactly, so the walk is exact - the only guess is
+// where the alloc_header sits inside the block, which we recover from its own algn_padding field.
+intern void dump_free_list_leaks(mem_arena *arena)
+{
+    sizet start = (sizet)arena->start;
+    sizet end = start + arena->total_size;
+    mem_node *fnode = arena->mfl.free_list.head;
+    sizet leaked = 0;
+    u32 leak_count = 0;
+
+    wlog("Arena %s has %lu bytes still allocated of %lu - dumping live blocks", arena->name, arena->used, arena->total_size);
+    sizet cur = start;
+    while (cur < end) {
+        if (fnode && (sizet)fnode == cur) {
+            // A zero sized free node would spin us forever - the list is corrupt, so say so and stop
+            if (fnode->data.block_size == 0) {
+                elog("Zero sized free node at %p (%lu bytes in) - aborting leak walk", (void *)cur, cur - start);
+                return;
+            }
+            cur += fnode->data.block_size;
+            fnode = fnode->next;
+            continue;
+        }
+
+        // Find the header inside the block - it lives algn_padding bytes in from the block start. Copy the
+        // candidate out rather than reading through a pointer as the probe offset can be unaligned. The
+        // min block size check also guarantees we always advance.
+        alloc_header hdr{};
+        b8 found = false;
+        for (sizet off = 0; off < 256 && (cur + off + sizeof(alloc_header)) <= end; ++off) {
+            alloc_header cand{};
+            memcpy(&cand, (void *)(cur + off), sizeof(alloc_header));
+            if (cand.algn_padding == off && cand.block_size >= (off + sizeof(alloc_header)) && cand.block_size >= sizeof(mem_node) &&
+                (cur + cand.block_size) <= end) {
+                hdr = cand;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            elog("Could not find alloc header for block at %p - aborting leak walk (%lu bytes in)", (void *)cur, cur - start);
+            return;
+        }
+
+        sizet user_sz = hdr.block_size - (hdr.algn_padding + sizeof(alloc_header));
+        wlog("Leaked block %u at %p offset %lu block_size %lu user_size %lu algn_padding %lu",
+             leak_count,
+             (void *)(cur + hdr.algn_padding + sizeof(alloc_header)),
+             cur - start,
+             hdr.block_size,
+             user_sz,
+             hdr.algn_padding);
+        leaked += hdr.block_size;
+        ++leak_count;
+        cur += hdr.block_size;
+    }
+    wlog("Arena %s leak walk found %u live blocks totalling %lu bytes (arena reports %lu used)",
+         arena->name,
+         leak_count,
+         leaked,
+         arena->used);
+}
+
 void terminate_arena(mem_arena *arena)
 {
     bool do_log = !test_flags(arena->flags, make_flag(MEM_ARENA_DISABLE_TERMINATE_LOG_BIT));
@@ -614,6 +678,9 @@ void terminate_arena(mem_arena *arena)
              arena->used,
              arena->total_size,
              arena->peak);
+    }
+    if (arena->used != 0 && arena->alloc_type == mem_alloc_type::FREE_LIST) {
+        dump_free_list_leaks(arena);
     }
     reset_arena(arena);
     if (arena->upstream_allocator) {

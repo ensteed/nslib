@@ -137,12 +137,19 @@ bool init_render_thread(render_thread *rt, mem_arena *upstream, const render_thr
 
 void terminate_render_thread(render_thread *rt)
 {
-    if (rt->cfg.mode == RENDER_THREAD_MODE_INLINE) {
-        return;
+    // Inline mode never created the thread, but the payload arenas are created in every mode
+    if (rt->cfg.mode != RENDER_THREAD_MODE_INLINE) {
+        rt->shutdown.store(true, std::memory_order_relaxed);
+        join_thread(&rt->thrd);
     }
-    rt->shutdown.store(true, std::memory_order_relaxed);
-    join_thread(&rt->thrd);
+    // Each slot's clone is normally freed when that slot cycles back around to being the write slot, so at
+    // shutdown the published and render owned slots are still holding one. We are on the platform thread here
+    // (the imgui allocator's owner) and the renderer outlives this call, so it is safe to free them now.
     for (u32 i = 0; i < RENDER_PAYLOAD_COUNT; ++i) {
+#if defined(USE_IMGUI)
+        free_imgui_draw_data((ImDrawData *)rt->tb.payloads[i].imgui_data);
+        rt->tb.payloads[i].imgui_data = nullptr;
+#endif
         terminate_arena(&rt->tb.payloads[i].arena);
     }
 }

@@ -976,6 +976,9 @@ u8 begin_render_frame(renderer *rndr)
     ptimer_split(&rndr->pt);
     auto dev = &rndr->vk.inst.device;
 
+    // Add all new proxy objects
+    process_frame_proxy_events(rndr);
+
     // Update finished frames which is used to get the current frame
     idx_t fif = get_fif_ind(rndr);
     auto *cur_fif = &rndr->fifs[fif];

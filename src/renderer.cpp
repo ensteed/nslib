@@ -1106,16 +1106,13 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
     return sref.hndl;
 }
 
-rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc)
+intern void process_rtechnique_create_event(renderer *rndr, const proxy_create_rtechnique_event &ev)
 {
-    if (tdesc.pass_count == 0) {
-        return {};
-    }
-    rtechnique_ref rtech = acquire_slot(&rndr->techniques);
-    strncpy(rtech.item->name, tdesc.name, SMALL_STR_LEN - 1);
+    rtechnique_info *rt_info = place_slot(&rndr->techniques, ev.hndl);
+    strncpy(rt_info->name, ev.name, SMALL_STR_LEN - 1);
 
-    for (u32 i = 0; i < tdesc.pass_count; ++i) {
-        auto cur_desc = &tdesc.passes[i];
+    for (u32 i = 0; i < ev.passes.size; ++i) {
+        auto cur_desc = &ev.passes[i];
         auto rbp_bp = get_render_blueprint(rndr, cur_desc->bp_info.bp);
         asrt(rbp_bp);
 
@@ -1269,7 +1266,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         /////////////////////
         // Create pipeline //
         /////////////////////
-        key_t key = ((u64)rtech.hndl.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;
+        key_t key = ((u64)ev.hndl.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;
         ilog("Creating new pipeline for key %lu", key);
         auto new_slot = acquire_slot(&rndr->pline_cache.items);
         asrt(is_valid(new_slot) && "Out of pipeline slots");
@@ -1278,15 +1275,50 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         asrt(hmap_insert(&rndr->pline_cache.key_lut, key, new_slot.hndl));
 
         // Set the technique values
-        rtech.item->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
-        rtech.item->rpass_plines[i].subpass = cur_desc->bp_info.spi;
-        rtech.item->rpass_plines[i].pline = new_slot.hndl;
+        rt_info->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
+        rt_info->rpass_plines[i].subpass = cur_desc->bp_info.spi;
+        rt_info->rpass_plines[i].pline = new_slot.hndl;
 
-        rtech.item->rpass_plines[i].dstate = cur_desc->dstate;
-        rtech.item->rpass_plines[i].can_override = cur_desc->dstate_can_override;
-        ++rtech.item->rpass_plines.size;
+        rt_info->rpass_plines[i].dstate = cur_desc->dstate;
+        rt_info->rpass_plines[i].can_override = cur_desc->dstate_can_override;
+        ++rt_info->rpass_plines.size;
     }
-    return rtech.hndl;
+}
+
+void process_frame_proxy_events(renderer *rndr)
+{
+    render_proxy_event ev{};
+    while (spsc_pop(&rndr->frame_proxy_events, &ev)) {
+        switch (ev.type) {
+        case (PROXY_EVENT_ADD_RMATERIAL):
+            break;
+        case (PROXY_EVENT_ADD_RTECHNIQUE):
+            process_rtechnique_create_event(rndr, ev.rtech);
+            break;
+        case (PROXY_EVENT_ADD_RMESH):
+            break;
+        default:
+            elog("No event type recognized for %d", (u32)ev.type);
+        }
+    }
+}
+
+rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc)
+{
+    if (tdesc.pass_count == 0) {
+        return {};
+    }
+    asrt(tdesc.pass_count <= MAX_BP_PASS_COUNT);
+    auto hndl = reserve_slot(&rndr->techniques);
+    render_proxy_event ev{.type = PROXY_EVENT_ADD_RTECHNIQUE};
+    ev.rtech.hndl = hndl;
+    strncpy(ev.rtech.name, tdesc.name, SMALL_STR_LEN - 1);
+    ev.rtech.passes.size = tdesc.pass_count;
+    for (sizet i = 0; i < tdesc.pass_count; ++i) {
+        ev.rtech.passes[i] = tdesc.passes[i];
+    }
+    asrt(spsc_push(&rndr->frame_proxy_events, ev));
+    return hndl;
 }
 
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo)
@@ -1492,10 +1524,8 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
 {
     asrt(p.upsream->alloc_type != mem_alloc_type::POOL); // Cannot use pool arena here
     init_mem_arena_group(&rndr->arenas, p.arena_sizes, p.upsream, "rndr");
-    init_linear_arena(&rndr->manifest_flinear,
-                   calculate_manifest_approximate_needed_capacity(p.mcounts, sizeof(mdraw_ssbo_data)),
-                   p.upsream,
-                   "rmanifest");
+    init_linear_arena(
+        &rndr->manifest_flinear, calculate_manifest_approximate_needed_capacity(p.mcounts, sizeof(mdraw_ssbo_data)), p.upsream, "rmanifest");
 
     vkr_arenas_cfg g_cfg = {.persistant_sz = 200 * MB_SIZE, .command_sz = 2 * MB_SIZE};
     vkr_arenas_cfg per_fift_cfg = {.persistant_sz = 10 * MB_SIZE, .command_sz = 2 * MB_SIZE};

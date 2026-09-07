@@ -1,5 +1,6 @@
 #pragma once
 
+#include "containers/spsc_queue.h"
 #include "math/matrix4.h"
 #include "profile_timer.h"
 #include "containers/slot_pool.h"
@@ -136,7 +137,7 @@ struct rtechnique_pass_desc
     rshader_handle shader;
     rbp_info bp_info{};
     idx_t geom_buffer_layout;
-    
+
     rdraw_dyn_state dstate;
     rdraw_state_override_flags dstate_can_override;
 };
@@ -230,7 +231,6 @@ struct geometry_stream_group_desc
 };
 
 struct imgui_ctxt;
-
 
 struct rmaterial_info
 {
@@ -526,6 +526,29 @@ using rtechnique_pool = slot_pool<rtechnique_info>;
 using rmaterial_pool = slot_pool<rmaterial_info>;
 using rgeometry_pool = slot_pool<rgeom_info>;
 
+enum proxy_event_type
+{
+    PROXY_EVENT_ADD_RMATERIAL,
+    PROXY_EVENT_ADD_RTECHNIQUE,
+    PROXY_EVENT_ADD_RMESH
+};
+
+struct proxy_create_rtechnique_event
+{
+    rtechnique_handle hndl;
+    static_array<rtechnique_pass_desc, MAX_BP_PASS_COUNT> passes;
+    small_str name;
+};
+
+struct render_proxy_event
+{
+    proxy_event_type type;
+    union
+    {
+        proxy_create_rtechnique_event rtech;
+    };
+};
+
 struct renderer
 {
     // Owned vulkan context and mem arenas used only for vulkan stuff
@@ -576,6 +599,8 @@ struct renderer
 
     rresource_target_registry rtargets{};
     profile_timepoints pt{};
+
+    spsc_queue<render_proxy_event, 100> frame_proxy_events;
 };
 
 struct sbuffer_cfg
@@ -656,10 +681,13 @@ void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool
     push_geometry_attribute(stream, {.shader_location = shader_location, .fmt = get_rformat_for_type<T>(normalize_in_shader)});
 }
 
+// These should be called from the sim thread, they create an event that is consumed on the render thread
+void process_frame_proxy_events(renderer *rndr);
+rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
+
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
-rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
