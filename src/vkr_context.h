@@ -523,11 +523,6 @@ struct vkr_desc_cfg
     u32 flags{0};
 };
 
-// struct vkr_fif_arenas
-// {
-//     static_array<vk_arenas, MAX_THREAD_COUNT> t_arenas{};
-// };
-
 struct vkr_cfg
 {
     const char *app_name;
@@ -559,7 +554,6 @@ struct vkr_context
     vkr_instance inst;
     vkr_cfg cfg;
     vk_arenas arenas;
-    //vkr_fif_arenas fif_arenas[MAX_FRAMES_IN_FLIGHT];
 };
 
 // Utility to create a fence, submit the command buf to queue, and wait for the fence to signal before destroying the
@@ -711,8 +705,6 @@ void vkr_terminate(vkr_context *vk);
 // thread_idx must be in [0, vkr_cfg::thread_count). The main thread is
 // pre-registered as index 0 inside vkr_init.
 void vkr_register_vk_thread(vk_arenas *arenas, u8 thread_idx);
-
-void vkr_reset_linear_arenas(vkr_context *vk, idx_t fif);
 
 s32 vkr_begin_cmd_buf(VkCommandBuffer hndl, VkCommandBufferUsageFlags flags);
 s32 vkr_end_cmd_buf(VkCommandBuffer hndl);

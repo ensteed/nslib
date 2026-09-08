@@ -64,7 +64,7 @@ u32 get_slot_used_count(const rtexture_registry &reg);
 
 b8 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg);
 void terminate_rtexture_registry(rtexture_registry *reg);
-rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tdesc, gpu_handle transient_pool);
+rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tdesc);
 
 
 

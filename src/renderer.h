@@ -526,27 +526,40 @@ using rtechnique_pool = slot_pool<rtechnique_info>;
 using rmaterial_pool = slot_pool<rmaterial_info>;
 using rgeometry_pool = slot_pool<rgeom_info>;
 
-enum proxy_event_type
+enum rproxy_event_type
 {
-    PROXY_EVENT_ADD_RMATERIAL,
-    PROXY_EVENT_ADD_RTECHNIQUE,
-    PROXY_EVENT_ADD_RMESH
+    RPROXY_EVENT_ADD_RMATERIAL,
+    RPROXY_EVENT_ADD_RTECHNIQUE,
+    RPROXY_EVENT_ADD_RTEXTURE,
+    RPROXY_EVENT_ADD_RMESH
 };
 
-struct proxy_create_rtechnique_event
+struct rproxy_create_rtechnique_event
 {
     rtechnique_handle hndl;
     static_array<rtechnique_pass_desc, MAX_BP_PASS_COUNT> passes;
     small_str name;
 };
 
+struct rproxy_create_rtexture_event
+{
+    rtexture_handle hndl;
+    vkr_buffer staging_buf;
+    small_str name;
+};
+
 struct render_proxy_event
 {
-    proxy_event_type type;
+    rproxy_event_type type;
     union
     {
-        proxy_create_rtechnique_event rtech;
+        rproxy_create_rtechnique_event rtech;
+        rproxy_create_rtexture_event rtex;
     };
+};
+
+struct rtexture_upload_op {
+    vkr_buffer staging_buf;
 };
 
 struct renderer
@@ -599,8 +612,9 @@ struct renderer
 
     rresource_target_registry rtargets{};
     profile_timepoints pt{};
-
+    
     spsc_queue<render_proxy_event, 100> frame_proxy_events;
+    array<vkr_buffer> pending_uploads;
 };
 
 struct sbuffer_cfg

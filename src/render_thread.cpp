@@ -85,6 +85,7 @@ intern void render_thread_proc(void *arg)
 {
     ilog("Starting render thread");
     auto rt = (render_thread *)arg;
+    vkr_register_vk_thread(&rt->cfg.rndr->vk.arenas, 1);
     while (!rt->shutdown.load(std::memory_order_relaxed)) {
         u32 cur = rt->tb.pub_idx.load(std::memory_order_relaxed);
         // Peek to see if the snapshot is fresh - if so get it and exchange in the read idx without the fresh bit set

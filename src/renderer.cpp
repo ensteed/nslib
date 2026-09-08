@@ -1070,14 +1070,43 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
         vkr_terminate_buffer(&staging_buffers[i], &rndr->vk);
     }
     arr_terminate(&staging_buffers);
-
     return geom_ref.hndl;
 }
+
+intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev) {
+    auto pool = &rndr->textures.pools[ev.hndl.pool_idx];
+    auto titem = place_slot(&pool->tpool, ev.hndl.hndl);
+    strncpy(titem->name, ev.name, SMALL_STR_LEN-1);
+
+    // Push an event to an internal queue
+    
+    vkr_upload_to_texture_slots(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, const rtexture_pool_item_ref *tslots, u32 slot_count, const vkr_buffer *staging)
+}
+
 
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
 {
     asrt(rndr);
-    return create_rtexture(&rndr->textures, tdesc, (gpu_handle)rndr->transient_pool);
+    asrt(tdesc.data);
+    asrt(tdesc.meta.dims > uvec2{});
+    asrt(tdesc.data_size > 0);
+    asrt(tdesc.name);
+    
+    // Create rtexture event
+    render_proxy_event ev{.type = RPROXY_EVENT_ADD_RTEXTURE};
+    strncpy(ev.rtex.name, tdesc.name, SMALL_STR_LEN-1);
+    
+    u64 key = hash_type(&tdesc.meta, sizeof(rtexture_meta));
+    auto pool_fiter = hmap_find(&rndr->textures.pmap, key);
+    if (!pool_fiter) return {};
+    ev.rtex.hndl.pool_idx = pool_fiter->val;
+
+    vkr_texture_pool *pool = &rndr->textures.pools[pool_fiter->val];
+    ev.rtex.hndl.hndl = reserve_slot(&pool->tpool);
+    
+    vkr_stage_texture_upload(pool, tdesc.data, 1, &ev.rtex.staging_buf);
+    while (!spsc_push(&rndr->frame_proxy_events, ev));
+    return ev.rtex.hndl;
 }
 
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
@@ -1106,7 +1135,7 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
     return sref.hndl;
 }
 
-intern void process_rtechnique_create_event(renderer *rndr, const proxy_create_rtechnique_event &ev)
+intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_rtechnique_event &ev)
 {
     rtechnique_info *rt_info = place_slot(&rndr->techniques, ev.hndl);
     strncpy(rt_info->name, ev.name, SMALL_STR_LEN - 1);
@@ -1290,12 +1319,16 @@ void process_frame_proxy_events(renderer *rndr)
     render_proxy_event ev{};
     while (spsc_pop(&rndr->frame_proxy_events, &ev)) {
         switch (ev.type) {
-        case (PROXY_EVENT_ADD_RMATERIAL):
+        case (RPROXY_EVENT_ADD_RMATERIAL):
             break;
-        case (PROXY_EVENT_ADD_RTECHNIQUE):
+        case (RPROXY_EVENT_ADD_RTECHNIQUE):
             process_rtechnique_create_event(rndr, ev.rtech);
             break;
-        case (PROXY_EVENT_ADD_RMESH):
+        case (RPROXY_EVENT_ADD_RTEXTURE):
+            process_rtexture_create_event(rndr, ev.rtex);
+            break;
+            
+        case (RPROXY_EVENT_ADD_RMESH):
             break;
         default:
             elog("No event type recognized for %d", (u32)ev.type);
@@ -1310,14 +1343,15 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
     }
     asrt(tdesc.pass_count <= MAX_BP_PASS_COUNT);
     auto hndl = reserve_slot(&rndr->techniques);
-    render_proxy_event ev{.type = PROXY_EVENT_ADD_RTECHNIQUE};
+    
+    render_proxy_event ev{.type = RPROXY_EVENT_ADD_RTECHNIQUE};
     ev.rtech.hndl = hndl;
     strncpy(ev.rtech.name, tdesc.name, SMALL_STR_LEN - 1);
     ev.rtech.passes.size = tdesc.pass_count;
     for (sizet i = 0; i < tdesc.pass_count; ++i) {
         ev.rtech.passes[i] = tdesc.passes[i];
     }
-    asrt(spsc_push(&rndr->frame_proxy_events, ev));
+    while(!spsc_push(&rndr->frame_proxy_events, ev));
     return hndl;
 }
 

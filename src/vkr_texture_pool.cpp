@@ -53,11 +53,11 @@ intern VkImageLayout get_layout_from_intent(vkr_texture_pool_layout intent, VkFo
 }
 
 intern b8 get_layout_transition_masks(VkImageLayout old_layout,
-                                       VkImageLayout new_layout,
-                                       VkAccessFlags *src_access,
-                                       VkAccessFlags *dst_access,
-                                       VkPipelineStageFlags *src_stage,
-                                       VkPipelineStageFlags *dst_stage)
+                                      VkImageLayout new_layout,
+                                      VkAccessFlags *src_access,
+                                      VkAccessFlags *dst_access,
+                                      VkPipelineStageFlags *src_stage,
+                                      VkPipelineStageFlags *dst_stage)
 {
     bool new_layout_depth_format = (new_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL ||
                                     new_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL ||
@@ -219,8 +219,6 @@ b8 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg
          cfg.tmeta.mip_levels);
 
     init_slot_pool(&pool->tpool, cfg.slot_count, cfg.persist_fl);
-    arr_init(&pool->pending_staging_buffers, cfg.persist_fl);
-
     bool is_cubemap = test_flags(cfg.tmeta.flags, RTEXTURE_FLAG_CUBEMAP);
     vkr_image_cfg img_cfg{};
     img_cfg.dims = {cfg.tmeta.dims.x, cfg.tmeta.dims.y, 1};
@@ -237,13 +235,12 @@ b8 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg
     img_cfg.mip_levels = cfg.tmeta.mip_levels;
     img_cfg.array_layers = (int)get_layers_per_slot(*pool) * cfg.slot_count;
     img_cfg.vma_alloc = &pool->vk->inst.device.vma_alloc;
-    
+
     // Pool name doesn't need to stay valid - vma keeps a local copy and copies this passed in str
     img_cfg.vma_alloc_name = cfg.pool_name;
 
     int err = vkr_init_image(&pool->image, img_cfg);
     if (err != err_code::VKR_NO_ERROR) {
-        vkr_cleanup_staging_buffers(pool);
         terminate_slot_pool(&pool->tpool);
         return false;
     }
@@ -259,31 +256,19 @@ b8 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg
     err = vkr_init_image_view(&pool->view, view_cfg, pool->vk);
     if (err != err_code::VKR_NO_ERROR) {
         vkr_terminate_image(&pool->image, pool->vk);
-        vkr_cleanup_staging_buffers(pool);
         terminate_slot_pool(&pool->tpool);
         return false;
     }
     return true;
 }
 
-void vkr_cleanup_staging_buffers(vkr_texture_pool *pool)
-{
-    asrt(pool && pool->vk);
-    for (sizet i = 0; i < pool->pending_staging_buffers.size; ++i) {
-        vkr_terminate_buffer(&pool->pending_staging_buffers[i], pool->vk);
-    }
-    arr_clear(&pool->pending_staging_buffers);
-}
-
 void vkr_terminate_texture_pool(vkr_texture_pool *pool)
 {
     asrt(pool && pool->vk);
     ilog("Terminating texture pool %s with %u of %u used", pool->image.mem_info.pName, get_slot_used_count(pool->tpool), pool->tpool.slots.size);
-    vkr_cleanup_staging_buffers(pool);
     vkr_terminate_image_view(pool->view, pool->vk);
     vkr_terminate_image(&pool->image, pool->vk);
     terminate_slot_pool(&pool->tpool);
-    arr_terminate(&pool->pending_staging_buffers);
     (*pool) = {};
 }
 
@@ -307,16 +292,11 @@ void vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf,
     transition_ranges_to_intent(pool, cmd_buf, &range, 1, intent);
 }
 
-b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
-                                VkCommandBuffer cmd_buf,
-                                const vkr_source_image_data *src_images,
-                                const rtexture_pool_item_ref *tslots,
-                                u32 count)
+b8 vkr_stage_texture_upload(vkr_texture_pool *pool, const void *img_data, u32 img_count, vkr_buffer *staging)
 {
     asrt(pool);
-    asrt(count > 0);
-    asrt(src_images);
-    asrt(tslots);
+    asrt(img_count > 0);
+    asrt(img_data);
 
     vk_format_info fmt_info = get_vk_format_info(pool->tmeta.fmt);
     vkr_buffer_cfg staging_cfg{};
@@ -326,10 +306,9 @@ b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     staging_cfg.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
     staging_cfg.vma_alloc = &pool->vk->inst.device.vma_alloc;
     staging_cfg.vma_alloc_name = "staging-buffer";
-    staging_cfg.buffer_size =
-        calculate_vk_image_buffer_size(fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, pool->tmeta.mip_levels, get_layers_per_slot(*pool) * count);
-    vkr_buffer staging{};
-    s32 result = vkr_init_buffer(&staging, staging_cfg);
+    staging_cfg.buffer_size = calculate_vk_image_buffer_size(
+        fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, pool->tmeta.mip_levels, get_layers_per_slot(*pool) * img_count);
+    s32 result = vkr_init_buffer(staging, staging_cfg);
     if (result != err_code::VKR_NO_ERROR) {
         return false;
     }
@@ -337,25 +316,36 @@ b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
     // Each image has its mips included with the data, bug the staged buffer needs to be formatted with mip level having
     // all images for that layer (ie im 1 mip 0, im 2 mip 0, im 3 mip 0, im 1 mip 1, im 2 mip 1, im 3 mip 1, etc) so
     // that we can only have one buffer image copy per mip level to do all images at that level at once
-    for (u32 im_i = 0; im_i < count; ++im_i) {
+    for (u32 im_i = 0; im_i < img_count; ++im_i) {
         sizet src_offset = 0;
         sizet dest_offset = 0;
         for (u32 mipi = 0; mipi < pool->tmeta.mip_levels; ++mipi) {
             sizet mip_sz = calculate_vk_image_size(fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, mipi, 1);
-            auto src = (const void*)((sizet)src_images[im_i].data + src_offset);
-            auto dest = (void*)((sizet)staging.mem_info.pMappedData + im_i * mip_sz + dest_offset);
+            auto src = (const void *)((sizet)img_data[im_i].data + src_offset);
+            auto dest = (void *)((sizet)staging->mem_info.pMappedData + im_i * mip_sz + dest_offset);
             memcpy(dest, src, mip_sz);
-            dest_offset += mip_sz * count;
+            dest_offset += mip_sz * img_count;
             src_offset += mip_sz;
         }
-        strncpy(tslots[im_i].item->name, src_images[im_i].name, SMALL_STR_LEN-1);
+        // strncpy(tslots[im_i].item->name, src_images[im_i].name, SMALL_STR_LEN - 1);
     }
-    arr_push_back(&pool->pending_staging_buffers, staging);
+    return true;
+}
+
+b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
+                               VkCommandBuffer cmd_buf,
+                               const rtexture_pool_item_ref *tslots,
+                               u32 slot_count,
+                               const vkr_buffer *staging)
+{
+    asrt(pool);
+    asrt(slot_count > 0);
+    asrt(tslots);
 
     array<pool_slot_range> ranges;
     arr_init(&ranges, pool->scratch_stack);
-    build_contiguous_slot_ranges(tslots, count, &ranges);
-
+    build_contiguous_slot_ranges(tslots, slot_count, &ranges);
+    vk_format_info fmt_info = get_vk_format_info(pool->tmeta.fmt);
     transition_ranges_to_intent(pool, cmd_buf, ranges.data, ranges.size, VKR_TEXTURE_POOL_LAYOUT_TRANSFER_DST);
 
     // Because we moved the data to the staging buffer as all images per mip level we can now do image buffer copy per
@@ -376,45 +366,17 @@ b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
             region.imageOffset = {0, 0, 0};
             region.imageExtent = {pool->tmeta.dims.x, pool->tmeta.dims.y, 1};
             arr_push_back(&regions, region);
-            buff_offset += calculate_vk_image_size(fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, mipi, region.imageSubresource.layerCount);
+            buff_offset +=
+                calculate_vk_image_size(fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, mipi, region.imageSubresource.layerCount);
         }
     }
-    vkCmdCopyBufferToImage(cmd_buf, staging.hndl, pool->image.hndl, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions.size, regions.data);
+    vkCmdCopyBufferToImage(cmd_buf, staging->hndl, pool->image.hndl, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions.size, regions.data);
     arr_terminate(&regions);
-    
+
     transition_ranges_to_intent(pool, cmd_buf, ranges.data, ranges.size, VKR_TEXTURE_POOL_LAYOUT_SHADER_READ);
 
     arr_terminate(&ranges);
     return true;
-}
-
-b8 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, rtexture_pool_item_ref *slots_out)
-{
-    asrt(pool);
-    asrt(slots_out);
-    asrt(src_image_count > 0);
-
-    u32 remaining_slots = get_slots_available_count(pool->tpool);
-    if (remaining_slots < src_image_count) {
-        wlog("Not enough slots (requested:%u available:%u)", src_image_count, remaining_slots);
-        return false;
-    }
-
-    for (u32 i = 0; i < src_image_count; ++i) {
-        slots_out[i] = acquire_slot(&pool->tpool);
-        asrt(is_valid(slots_out[i]));
-    }
-    return true;
-}
-
-u32 vkr_release_texture_slots(vkr_texture_pool *pool, const rtexture_pool_handle *tslots, u32 tslot_count)
-{
-    asrt(pool);
-    u32 cnt{0};
-    for (u32 i = 0; i < tslot_count; ++i) {
-        cnt += (u32)release_slot(&pool->tpool, tslots[i]);
-    }
-    return cnt;
 }
 
 } // namespace nslib

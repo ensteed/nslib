@@ -492,7 +492,6 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     update_transforms(&app->rgn);
 }
 
-// This happens on the render thread
 intern void build_manifest(rmanifest *m, const sim_snapshot *rfp, rdev_app_ctxt *app)
 {
     material_pool *mat_pool = get_asset_pool<material>(&app->cg);

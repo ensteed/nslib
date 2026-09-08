@@ -1021,7 +1021,6 @@ u8 begin_render_frame(renderer *rndr)
     }
 
     reset_arena(&rndr->manifest_flinear);
-    // vkr_reset_linear_arenas(&rndr->vk, fif);
 
     /////////////////////
     // Reset FIF Fence //

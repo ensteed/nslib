@@ -45,23 +45,13 @@ struct vkr_texture_pool
 
     // These buffers back pending transfer commands and must stay alive until the caller
     // has finished submitting and waiting on the command buffer using this pool.
-    array<vkr_buffer> pending_staging_buffers;
+
     mem_arena *scratch_stack;
     vkr_context *vk;
 };
 
-struct vkr_source_image_data {
-    // The data should be packed tightly with each consecutive mip layer
-    // The size of the data is determined by the underlying format, dimensions, and mip level count of the pool so if
-    // these things don't line up with what is passed in crashy town or worse
-    const void *data;
-    const char *name;
-};
-
 b8 vkr_init_texture_pool(vkr_texture_pool *pool, const vkr_texture_pool_cfg &cfg);
 void vkr_terminate_texture_pool(vkr_texture_pool *pool);
-
-void vkr_cleanup_staging_buffers(vkr_texture_pool *pool);
 
 void vkr_transition_texture_layouts(vkr_texture_pool *pool,
                                     VkCommandBuffer cmd_buf,
@@ -71,16 +61,15 @@ void vkr_transition_texture_layouts(vkr_texture_pool *pool,
 
 void vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, vkr_texture_pool_layout intent);
 
+// The data should be packed tightly with each consecutive mip layer
+// The size of the data is determined by the underlying format, dimensions, and mip level count of the pool so if
+// these things don't line up with what is passed in crashy town or worse
+b8 vkr_stage_texture_upload(vkr_texture_pool *pool, const void *img_data, u32 img_count, vkr_buffer *staging);
+
 b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
-                                VkCommandBuffer cmd_buf,
-                                const vkr_source_image_data *src_images,
-                                const rtexture_pool_item_ref *tslots,
-                                u32 count);
-
-// Handles out must be large enough to store a handle for each source image or there will be crashes/undefined behavior
-b8 vkr_acquire_texture_slots(vkr_texture_pool *pool, u32 src_image_count, rtexture_pool_item_ref *slots_out);
-
-// Returns the number of successful slots released. If a handle is no longer valid, the slot release will return false
-u32 vkr_release_texture_slots(vkr_texture_pool *pool, const rtexture_pool_handle *tslots, u32 tslot_count);
+                               VkCommandBuffer cmd_buf,
+                               const rtexture_pool_item_ref *tslots,
+                               u32 slot_count,
+                               const vkr_buffer *staging);
 
 } // namespace nslib

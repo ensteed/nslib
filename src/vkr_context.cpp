@@ -1763,10 +1763,11 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
     asrt(cfg->upstream);
     vk->cfg = *cfg;
 
-    vk->arenas.thread_count = 1;
-    init_free_list_arena(&vk->arenas.t_arenas[0].persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
-    init_free_list_arena(&vk->arenas.t_arenas[0].command_arena, cfg->g_arena_cfg.command_sz, cfg->upstream, "vkr_command");
-
+    vk->arenas.thread_count = cfg->thread_count;
+    for (u32 i = 0; i < cfg->thread_count; ++i) {
+        init_free_list_arena(&vk->arenas.t_arenas[i].persistent_arena, cfg->g_arena_cfg.persistant_sz, cfg->upstream, "vkr_persistent");
+        init_free_list_arena(&vk->arenas.t_arenas[i].command_arena, cfg->g_arena_cfg.command_sz, cfg->upstream, "vkr_command");
+    }
     vk->arenas.alloc_cbs.pUserData = &vk->arenas;
     vk->arenas.alloc_cbs.pfnAllocation = vk_alloc;
     vk->arenas.alloc_cbs.pfnFree = vk_free;
@@ -1958,16 +1959,6 @@ sizet vkr_uniform_buffer_offset_alignment(vkr_context *vk, sizet uniform_block_s
     else {
         return (uniform_block_size / min_alignment + 1) * min_alignment;
     }
-}
-
-void vkr_reset_linear_arenas(vkr_context *vk, idx_t fif)
-{
-    for (u8 t = 0; t < vk->arenas.thread_count; ++t) {
-        reset_arena(&vk->arenas.t_arenas[t].command_arena);
-    }
-    // for (u32 i = 0; i < vk->fif_arenas[fif].t_arenas.size; ++i) {
-    //     reset_arena(&vk->fif_arenas[fif].t_arenas[i].command_arena);
-    // }
 }
 
 void vkr_cmd_begin_rpass(VkCommandBuffer cmd_buf,
