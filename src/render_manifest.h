@@ -353,9 +353,10 @@ void draw_imgui(const render_job_cb_params &, void *);
 #endif
 void draw_geometry(const render_job_cb_params &, void *);
 
-u8 begin_render_frame(renderer *rndr);
 rmanifest *create_manifest(const create_rmanifest_params &p);
-bool end_render_frame(rmanifest *m);
+// Records the manifest into the frame's command buffer. Called by end_render_frame - the recorded buffer is
+// submitted and presented there.
+bool execute_manifest(rmanifest *m);
 
 void update_view_data(rmanifest *m, idx_t view, const void *data);
 void update_instance_data(rmanifest *m, idx_t inst, const void *data);

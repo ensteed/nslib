@@ -531,7 +531,7 @@ enum rproxy_event_type
     RPROXY_EVENT_ADD_RMATERIAL,
     RPROXY_EVENT_ADD_RTECHNIQUE,
     RPROXY_EVENT_ADD_RTEXTURE,
-    RPROXY_EVENT_ADD_RMESH
+    RPROXY_EVENT_ADD_RGEOM
 };
 
 struct rproxy_create_rtechnique_event
@@ -548,6 +548,21 @@ struct rproxy_create_rtexture_event
     small_str name;
 };
 
+struct rproxy_create_rgeom_event
+{
+    rgeom_handle hndl;
+    small_str name;    
+    u32 group;
+    u32 layout;
+    u32 vert_count;
+    u32 ind_count;
+    
+    static_array<rsubgeom_range, MAX_SUBGEOM_COUNT> subgeom_vert_ind_counts;
+    // Enough staging buffers for each vert stream plus index buffer
+    static_array<vkr_buffer, MAX_VERT_BINDINGS+1> staging_bufs;
+    static_array<VkBufferCopy, MAX_VERT_BINDINGS+1> regions;
+};
+
 struct render_proxy_event
 {
     rproxy_event_type type;
@@ -555,11 +570,60 @@ struct render_proxy_event
     {
         rproxy_create_rtechnique_event rtech;
         rproxy_create_rtexture_event rtex;
+        rproxy_create_rgeom_event rgeom;
     };
 };
 
-struct rtexture_upload_op {
+enum rupload_op_type {
+    RUPLOAD_OP_INVALID,
+    RUPLOAD_OP_TEXTURE,
+    RUPLOAD_OP_GEOMETRY
+};
+
+struct rupload_texture_op
+{
+    rtexture_handle tslot;
     vkr_buffer staging_buf;
+};
+
+struct rupload_geometry_op
+{
+    rgeom_handle gslot;
+    u32 group;
+    u32 layout;
+    static_array<vkr_buffer, MAX_VERT_BINDINGS + 1> staging_bufs;
+    static_array<VkBufferCopy, MAX_VERT_BINDINGS+1> regions;
+};
+
+struct rupload_op
+{
+    rupload_op_type type;
+    union {
+        rupload_texture_op texture;
+        rupload_geometry_op geom;
+    };
+};
+
+enum deferred_free_type
+{
+    DEFERRED_FREE_TYPE_INVALID,
+    DEFERRED_FREE_TYPE_BUFFER,
+    DEFERRED_FREE_TYPE_IMAGE,
+    DEFERRED_FREE_TYPE_IMAGE_VIEW
+};
+
+// A GPU resource that can't be destroyed the moment we are done with it CPU side - the frame that last used it may
+// still be executing. Push one of these on to the fif it was recorded in to, and it gets freed in begin_render_frame
+// once that fif's fence has come back around (which is MAX_FRAMES_IN_FLIGHT frames later)
+struct deferred_free
+{
+    deferred_free_type type{DEFERRED_FREE_TYPE_INVALID};
+    union
+    {
+        vkr_buffer buf{};
+        vkr_image img;
+        VkImageView iv;
+    };
 };
 
 struct renderer
@@ -612,9 +676,11 @@ struct renderer
 
     rresource_target_registry rtargets{};
     profile_timepoints pt{};
-    
+
+    // 100 is arbitrary and temporary here - don't know what the value should be really but i need something for now
     spsc_queue<render_proxy_event, 100> frame_proxy_events;
-    array<vkr_buffer> pending_uploads;
+    static_array<rupload_op, 100> pending_uploads;
+    static_array<deferred_free, 100> deferred_frees[MAX_FRAMES_IN_FLIGHT];
 };
 
 struct sbuffer_cfg
@@ -698,9 +764,9 @@ void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool
 // These should be called from the sim thread, they create an event that is consumed on the render thread
 void process_frame_proxy_events(renderer *rndr);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
-
-rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
+rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
+
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
@@ -711,6 +777,16 @@ rtexture_target_handle find_rtexture_target(renderer *rndr, rid id);
 rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci);
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
 rbuffer_target_handle find_rbuffer_target(renderer *rndr, rid id);
+
+// Records any textures staged since the last frame in to cmd_buf, and queues their staging buffers for a deferred
+// free on fif. cmd_buf must already be open, and this must be recorded before any pass that samples those textures.
+void record_pending_uploads(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif);
+
+// Waits on the FIF fence, acquires the swapchain image and preps the frame's pools/arenas. Returns the frame in
+// flight index to build the manifest with, or INVALID_U8_IDX when the swapchain went out of date (skip the frame).
+u8 begin_render_frame(renderer *rndr);
+// Records the manifest, then submits and presents the frame.
+bool end_render_frame(rmanifest *m);
 
 bool init_renderer(renderer *rndr, const renderer_cfg &p);
 void terminate_renderer(renderer *rndr);

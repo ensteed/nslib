@@ -12,8 +12,6 @@
 namespace nslib
 {
 
-intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
-
 struct track_rdraw_dyn_state
 {
     idx_t last_pline{INVALID_IDX};
@@ -294,15 +292,13 @@ void draw_geometry(const render_job_cb_params &p, void *)
         const rgeom_info *geom = &p.geometry->slots[dc->geom].item;
         const rmaterial_info *mat = &p.materials->slots[dc->mat].item;
         const rpipeline_entry *pl = &p.plines->items.slots[dc->pl].item;
-
-        asrt(geom && mat && pl);
         if (p.dyn_state->last_pline != dc->pl) {
             vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)pl->gpu_d);
         }
         setup_pline_dynamic_state(cb, *p.fns, *dc, p.dyn_state);
 
         const rsubgeom_range *cur_r = &geom->subgeom_vert_ind_counts[dc->subgeom];
-        u32 voffset = geom->vert_offset + cur_r->offset;
+        u32 voffset = geom->vert_offset;
         u32 ioffset = geom->ind_offset + cur_r->offset;
         vkCmdDrawIndexed(cb, cur_r->count, dc->inst_count, ioffset, voffset, inst_draw_id);
 
@@ -317,23 +313,6 @@ void draw_imgui(const render_job_cb_params &p, void *user)
     ImGui_ImplVulkan_RenderDrawData(img_data, (VkCommandBuffer)p.cmd_buf);
 }
 #endif
-
-intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
-{
-    if (window_resized_this_frame(rndr->vk.cfg.window)) {
-        cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
-    }
-
-    if (cur_fif->swapchain_resize > 0.0f) {
-        cur_fif->swapchain_resize -= rndr->pt.dt;
-        if (cur_fif->swapchain_resize > 0.0f) {
-            return false;
-        }
-        handle_window_resize(rndr);
-        cur_fif->swapchain_resize = false;
-    }
-    return true;
-}
 
 // We can let this "leak" as it doesn't leak due to using frame linear allocator
 rmanifest *create_manifest(const create_rmanifest_params &p)
@@ -663,41 +642,46 @@ intern void update_global_target_state(rmanifest *m, u32 fif)
     }
 }
 
-intern void sort_draw_list(mrender_job *rjob)
+intern void sort_and_collapse_draw_list(mrender_job *rjob)
 {
     sizet n = rjob->dcs.size;
-    if (n <= 1) return;
+    if (n == 0) return;
 
-    // Initialize index arrays
+    // Initialize the index array - a single draw call is trivially sorted so we skip the radix passes entirely and go
+    // straight to the collapse below
     u32 *src = rjob->sorted_dcs.data;
-    u32 *tmp = rjob->instanced_dcs.data;
     for (u32 i = 0; i < n; ++i)
         src[i] = i;
 
-    for (u32 byte = 0; byte < 8; ++byte) {
-        u32 shift = byte * 8;
+    if (n > 1) {
+        u32 *tmp = rjob->instanced_dcs.data;
+        for (u32 byte = 0; byte < 8; ++byte) {
+            u32 shift = byte * 8;
 
-        u32 counts[256]{};
-        for (sizet i = 0; i < n; ++i)
-            ++counts[(u8)(rjob->dcs.data[src[i]].sort_key >> shift)];
+            u32 counts[256]{};
+            for (sizet i = 0; i < n; ++i)
+                ++counts[(u8)(rjob->dcs.data[src[i]].sort_key >> shift)];
 
-        u32 total = 0;
-        for (u32 b = 0; b < 256; ++b) {
-            u32 c = counts[b];
-            counts[b] = total;
-            total += c;
+            u32 total = 0;
+            for (u32 b = 0; b < 256; ++b) {
+                u32 c = counts[b];
+                counts[b] = total;
+                total += c;
+            }
+
+            for (sizet i = 0; i < n; ++i)
+                tmp[counts[(u8)(rjob->dcs.data[src[i]].sort_key >> shift)]++] = src[i];
+
+            u32 *swap = src;
+            src = tmp;
+            tmp = swap;
         }
 
-        for (sizet i = 0; i < n; ++i)
-            tmp[counts[(u8)(rjob->dcs.data[src[i]].sort_key >> shift)]++] = src[i];
-
-        u32 *swap = src;
-        src = tmp;
-        tmp = swap;
+        // src is the final sorted index array (8 swaps = even, so src == original alloc). If the pass count ever
+        // becomes variable this stops being a no-op - an odd number of swaps leaves src on the instanced_dcs buffer,
+        // which the collapse below is about to overwrite while it reads sorted_dcs
+        rjob->sorted_dcs.data = src;
     }
-
-    // src is the final sorted index array (8 swaps = even, so src == original alloc)
-    rjob->sorted_dcs.data = src;
     rjob->sorted_dcs.size = n;
 
     rjob->instanced_dcs.size = 1;
@@ -712,17 +696,6 @@ intern void sort_draw_list(mrender_job *rjob)
             ++rjob->dcs[*arr_back(&rjob->instanced_dcs)].inst_count;
         }
     }
-
-    // for (u32 i = 1; i < n; ++i) {
-    //     if (rjob->dcs[rjob->sorted_dcs[i]].sort_key != rjob->dcs[rjob->sorted_dcs[last_match]].sort_key) {
-    //         rjob->sorted_dcs[last_match+1] = rjob->sorted_dcs[i];
-    //         last_match = i;
-    //         ++rjob->sorted_dcs.size;
-    //     }
-    //     else {
-    //         ++rjob->dcs[rjob->sorted_dcs[last_match]].inst_count;
-    //     }
-    // }
 }
 
 intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, sizet job_ssbo_base)
@@ -742,12 +715,30 @@ intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, sizet job_ssbo_b
     }
 }
 
-intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
+bool execute_manifest(rmanifest *m)
 {
+    idx_t fif = m->fif;
+    auto buf = m->rndr->fifs[fif].thread_pools[0].buf;
+
+    // UBO per pass frame update - the block size was already aligned to UBO min offset so no need to do any alignment
+    // funny business here
+    sizet blocksz = m->rndr->desc_info.frame_ubo.block_size;
+    sizet buf_offset = fif * blocksz * m->rndr->desc_info.frame_ubo.fif_block_count;
+    void *dst = (void *)((sizet)m->rndr->desc_info.frame_ubo.buffer.mem_info.pMappedData + buf_offset);
+    if (m->frame_sdata) {
+        memcpy(dst, m->frame_sdata, blocksz);
+    }
+    else {
+        memset(dst, 0, blocksz);
+    }
+
     int err = vkr_begin_cmd_buf(buf, {});
     if (err != err_code::VKR_NO_ERROR) {
         return false;
     }
+
+    // Upload any textures that need to be uploaded
+    record_pending_uploads(m->rndr, buf, fif);
 
     track_rdraw_dyn_state dyn_state{};
 
@@ -764,7 +755,7 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
         asrt(rbp_pass->slots.size == mp->slot_assignments.size);
 
         // Sort it baby boo
-        sort_draw_list(cur_rj);
+        sort_and_collapse_draw_list(cur_rj);
 
         update_draw_ssbo(m, cur_rj, job_ssbo_base);
         job_ssbo_base += cur_rj->dcs.size;
@@ -817,6 +808,9 @@ intern bool execute_manifest(rmanifest *m, VkCommandBuffer buf, idx_t fif)
         update_manifest_pass_states(m, *rbp_pass, *mp, fif);
     }
     vkr_end_cmd_buf(buf);
+
+    // Copy the working copy manifest states over to the global renderer target states
+    update_global_target_state(m, fif);
     return true;
 }
 
@@ -938,6 +932,23 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
     u32 push_cnt{0};
     rtechnique_info *tptr = get_slot_item(&m->rndr->techniques, dp.tech);
     rmaterial_info *mptr = get_slot_item(&m->rndr->materials, dp.mat);
+    rgeom_info *gptr = get_slot_item(&m->rndr->geometry, dp.geom);
+
+    // Any of these can come back dead - the create hands the handle to the caller before the render thread has
+    // placed the item, so a failed create or a failed place shows up here rather than at create time
+    if (!tptr || !mptr || !gptr) {
+        wlog("Skipping draw - dead %s%s%shandle (tech %u:%u mat %u:%u geom %u:%u)",
+             !tptr ? "technique " : "",
+             !mptr ? "material " : "",
+             !gptr ? "geometry " : "",
+             dp.tech.si,
+             dp.tech.gen_id,
+             dp.mat.si,
+             dp.mat.gen_id,
+             dp.geom.si,
+             dp.geom.gen_id);
+        return push_cnt;
+    }
 
     for (u32 i = 0; i < tptr->rpass_plines.size; ++i) {
         auto cur_pl = &tptr->rpass_plines[i];
@@ -963,165 +974,6 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
         }
     }
     return push_cnt;
-}
-
-intern u8 get_fif_ind(renderer *rndr)
-{
-    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
-}
-
-u8 begin_render_frame(renderer *rndr)
-{
-    PROFILE_SCOPE("begin_render_frame");
-    ptimer_split(&rndr->pt);
-    auto dev = &rndr->vk.inst.device;
-
-    // Add all new proxy objects
-    process_frame_proxy_events(rndr);
-
-    // Update finished frames which is used to get the current frame
-    idx_t fif = get_fif_ind(rndr);
-    auto *cur_fif = &rndr->fifs[fif];
-
-    // Window resize
-    if (!window_resize_continue_check(rndr, cur_fif)) {
-        return INVALID_U8_IDX;
-    }
-
-    // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
-    // triggered state so there will be no waiting on the first time. We then reset the fence (aka set it to
-    // untriggered) and it is passed to the vkQueueSubmit call to trigger it again. So if not the first time rendering
-    // this FIF, we are waiting for the vkQueueSubmit from the previous time this FIF was rendered to complete
-    int vk_res = vkWaitForFences(dev->hndl, 1, &cur_fif->in_flight, VK_TRUE, UINT64_MAX);
-    asrt(vk_res == VK_SUCCESS);
-
-    /////////////////////////////////
-    // Acquire Swapchain Image Ind //
-    /////////////////////////////////
-    // Acquire the image, signal the image_avail semaphore once the image has been acquired. We get the index back, but
-    // that doesn't mean the image is ready. The image is only ready (on the GPU side) once the image avail semaphore is triggered
-    vk_res =
-        vkAcquireNextImageKHR(dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_fif->image_avail, VK_NULL_HANDLE, &cur_fif->cur_im_ind);
-
-    // If the image is out of date we need to recreate the swapchain and our caller needs to exit early as
-    // well. It seems that on some platforms, if the result from above is out of date or suboptimal, the semaphore
-    // associated with it will never get triggered. So if we were to continue and just resize at the end of frame it
-    // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
-    // At least.. i think?
-    if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
-        cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
-        return INVALID_U8_IDX;
-    }
-    asrt(vk_res == VK_SUCCESS || vk_res == VK_SUBOPTIMAL_KHR);
-
-    // Reset command pool
-    for (u32 ti = 0; ti < cur_fif->thread_pools.size; ++ti) {
-        vk_res = vkResetCommandPool(dev->hndl, cur_fif->thread_pools[ti].pool, {});
-        asrt(vk_res == VK_SUCCESS);
-    }
-
-    reset_arena(&rndr->manifest_flinear);
-
-    /////////////////////
-    // Reset FIF Fence //
-    /////////////////////
-    // Here we reset the fence for the current frame fence as we know we are going to call queue submit which is the
-    // only thing that will trigger the fence - so this is why this reset needs to come here (rather than right after
-    // waiting) because if we return early due to swapchain resize, and we had reset the fence, then the next time our
-    // frame came around we would just be stuck waiting forever
-    vk_res = vkResetFences(dev->hndl, 1, &cur_fif->in_flight);
-    asrt(vk_res == VK_SUCCESS);
-
-    // Update our special swapchain handle
-    auto sw = &rndr->vk.inst.device.swapchain;
-    auto sw_hndl = find_rtexture_target(rndr, SWAPCHAIN_ID);
-    auto swapchain = get_rtexture_target(rndr, sw_hndl);
-    swapchain->frames[fif].view = sw->image_views[cur_fif->cur_im_ind];
-    swapchain->frames[fif].image = sw->images[cur_fif->cur_im_ind];
-    swapchain->frames[fif].state = {};
-
-// Start GUI frame
-#ifdef USE_IMGUI
-    ImGui_ImplVulkan_NewFrame();
-#endif
-    return fif;
-}
-
-bool end_render_frame(rmanifest *m)
-{
-    PROFILE_SCOPE("end_render_frame");
-    asrt(m);
-    asrt(is_valid(m->rbp));
-    auto dev = &m->rndr->vk.inst.device;
-    auto *cur_frame = &m->rndr->fifs[m->fif];
-
-    // UBO per pass frame update - the block size was already aligned to UBO min offset so no need to do any alignment
-    // funny business here
-    sizet blocksz = m->rndr->desc_info.frame_ubo.block_size;
-    sizet buf_offset = m->fif * blocksz * m->rndr->desc_info.frame_ubo.fif_block_count;
-    void *dst = (void *)((sizet)m->rndr->desc_info.frame_ubo.buffer.mem_info.pMappedData + buf_offset);
-    if (m->frame_sdata) {
-        memcpy(dst, m->frame_sdata, blocksz);
-    }
-    else {
-        memset(dst, 0, blocksz);
-    }
-
-    ////////////////////////////
-    // Record Command Buffers //
-    ////////////////////////////
-    // Just use buf 0 for now
-    auto buf = cur_frame->thread_pools[0].buf;
-    bool result = execute_manifest(m, buf, m->fif);
-    if (!result) {
-        return false;
-    }
-
-    //////////////////////////////////
-    // Submit command buffer to GPU //
-    //////////////////////////////////
-    // Get the info ready to submit our command buffer to the queue. We need to wait until the image avail semaphore has
-    // signaled, and then we need to trigger the render finished signal once the the command buffer completes
-    VkSubmitInfo submit_info{};
-    VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &cur_frame->image_avail;
-    submit_info.pWaitDstStageMask = wait_stages;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &buf;
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
-    s32 vk_res = vkQueueSubmit(dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE], 1, &submit_info, cur_frame->in_flight);
-    asrt(vk_res == VK_SUCCESS);
-
-    ///////////////////
-    // Present Image //
-    ///////////////////
-    // Once the rendering signal has fired, present the image (show it on screen)
-    VkPresentInfoKHR present_info{};
-    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
-    present_info.swapchainCount = 1;
-    present_info.pSwapchains = &dev->swapchain.swapchain;
-    present_info.pImageIndices = &cur_frame->cur_im_ind;
-    present_info.pResults = nullptr; // Optional - check for individual swaps
-    vk_res = vkQueuePresentKHR(dev->qfams[VKR_QUEUE_FAM_TYPE_PRESENT].qs[VKR_RENDER_QUEUE], &present_info);
-
-    // Update global state from manifest
-    update_global_target_state(m, m->fif);
-
-    // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
-    // the next frame, but it seems to resize more smoothly doing it here
-    if (vk_res == VK_ERROR_OUT_OF_DATE_KHR || vk_res == VK_SUBOPTIMAL_KHR) {
-        cur_frame->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
-    }
-    else {
-        asrt(vk_res == VK_SUCCESS);
-        ++m->rndr->finished_frames;
-    }
-    return true;
 }
 
 } // namespace nslib

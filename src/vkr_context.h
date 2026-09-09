@@ -643,19 +643,15 @@ void vkr_terminate_buffer(vkr_buffer *buffer, vkr_context *vk);
 void *vkr_map_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
 void vkr_unmap_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma);
 
-int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
-                                     vkr_buffer *staging_buffer,
-                                     const void *src_data,
-                                     const VkBufferCopy *regions,
-                                     u32 region_count,
-                                     VkCommandBuffer cmd_buf,
-                                     vkr_context *vk);
-s32 vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
-                                     vkr_buffer *staging_buffer,
-                                     const void *src_data,
-                                     sizet src_data_size,
-                                     VkCommandBuffer cmd_buf,
-                                     vkr_context *vk);
+int vkr_stage_buffer_data(vkr_buffer *staging_buffer, const void *src_data, VkBufferCopy *regions, u32 region_count, const vkr_context *vk);
+int vkr_stage_buffer_data(vkr_buffer *staging_buffer, const void *src_data, sizet src_data_size, const vkr_context *vk);
+
+void vkr_upload_buffer_data(vkr_buffer *dest_buffer,
+                            const vkr_buffer *staging_buffer,
+                            const VkBufferCopy *regions,
+                            u32 region_count,
+                            VkCommandBuffer cmd_buf);
+void vkr_upload_buffer_data(vkr_buffer *dest_buffer, const vkr_buffer *staging_buffer, sizet src_data_size, VkCommandBuffer cmd_buf);
 
 // Images
 s32 vkr_init_image(vkr_image *image, const vkr_image_cfg &cfg);

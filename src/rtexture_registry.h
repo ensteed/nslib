@@ -19,13 +19,15 @@ struct rtexture_registry
     const vkr_context *vk;
 };
 
-enum rtexture_flag {
+enum rtexture_flag
+{
     RTEXTURE_FLAG_NONE = 0,
     RTEXTURE_FLAG_CUBEMAP = make_flag(0),
 };
 using rtexture_flags = u32;
 
-struct rtexture_meta {
+struct rtexture_meta
+{
     rformat fmt;
     uvec2 dims;
     u32 mip_levels;
@@ -36,7 +38,7 @@ struct rtexture_pool_cfg
 {
     rtexture_meta tmeta;
     const char *pool_name;
-    u32 slot_count;    
+    u32 slot_count;
 };
 
 struct rtexture_regisitry_cfg
@@ -58,14 +60,10 @@ struct rtexture_desc
     rtexture_meta meta;
 };
 
-
 b8 is_valid(const rtexture_handle &h);
 u32 get_slot_used_count(const rtexture_registry &reg);
 
 b8 init_rtexture_registry(rtexture_registry *reg, const rtexture_regisitry_cfg &cfg);
 void terminate_rtexture_registry(rtexture_registry *reg);
-rtexture_handle create_rtexture(rtexture_registry *reg, const rtexture_desc &tdesc);
-
-
 
 } // namespace nslib

@@ -34,6 +34,8 @@ struct rtexture_info
 using rtexture_pool_handle = slot_handle<rtexture_info>;
 using rtexture_pool_item_ref = slot_item_ref<rtexture_info>;
 
+using src_image_data = const void *;
+
 struct vkr_texture_pool
 {
     // Pool name is stored in vma pName
@@ -64,7 +66,7 @@ void vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf,
 // The data should be packed tightly with each consecutive mip layer
 // The size of the data is determined by the underlying format, dimensions, and mip level count of the pool so if
 // these things don't line up with what is passed in crashy town or worse
-b8 vkr_stage_texture_upload(vkr_texture_pool *pool, const void *img_data, u32 img_count, vkr_buffer *staging);
+b8 vkr_stage_texture_upload(vkr_texture_pool *pool, const src_image_data *img_data, u32 img_count, vkr_buffer *staging);
 
 b8 vkr_upload_to_texture_slots(vkr_texture_pool *pool,
                                VkCommandBuffer cmd_buf,

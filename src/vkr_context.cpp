@@ -1465,18 +1465,11 @@ void vkr_unmap_buffer(vkr_buffer *buf, const vkr_gpu_allocator *vma)
     vmaUnmapMemory(vma->hndl, buf->mem_hndl);
 }
 
-int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
-                                     vkr_buffer *staging_buffer,
-                                     const void *src_data,
-                                     const VkBufferCopy *regions,
-                                     u32 region_count,
-                                     VkCommandBuffer cmd_buf,
-                                     vkr_context *vk)
+int vkr_stage_buffer_data(vkr_buffer *staging_buffer, const void *src_data, VkBufferCopy *regions, u32 region_count, const vkr_context *vk)
 {
     sizet tot_region_size{};
-    for (int i = 0; i < region_count; ++i) {
+    for (int i = 0; i < region_count; ++i)
         tot_region_size += regions[i].size;
-    }
 
     vkr_buffer_cfg buf_cfg{};
     buf_cfg.buffer_size = tot_region_size;
@@ -1490,38 +1483,39 @@ int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
         return err;
     }
 
-    array<VkBufferCopy> new_regions;
-    arr_init(&new_regions, &vk->arenas.t_arenas[g_vk_thread_idx].command_arena);
-    arr_resize(&new_regions, region_count);
-
     // Translate all regions from source buffers to regions from staging buffer
     sizet cur_offset{};
     for (int i = 0; i < region_count; ++i) {
         auto src_addr = (void *)((sizet)src_data + regions[i].srcOffset);
         auto dst_addr = (void *)((sizet)staging_buffer->mem_info.pMappedData + cur_offset);
         memcpy(dst_addr, src_addr, regions[i].size);
-
-        new_regions[i].size = regions[i].size;
-        new_regions[i].srcOffset = cur_offset;
-        new_regions[i].dstOffset = regions[i].dstOffset;
-        cur_offset += new_regions[i].size;
+        regions[i].srcOffset = cur_offset;
+        cur_offset += regions[i].size;
     }
-
-    vkCmdCopyBuffer(cmd_buf, staging_buffer->hndl, dest_buffer->hndl, region_count, new_regions.data);
-    arr_terminate(&new_regions);
     return err;
 }
 
-int vkr_stage_and_upload_buffer_data(vkr_buffer *dest_buffer,
-                                     vkr_buffer *staging_buffer,
-                                     const void *src_data,
-                                     sizet src_data_size,
-                                     VkCommandBuffer cmd_buf,
-                                     vkr_context *vk)
+int vkr_stage_buffer_data(vkr_buffer *staging_buffer, const void *src_data, sizet src_data_size, const vkr_context *vk)
 {
     VkBufferCopy region{};
     region.size = src_data_size;
-    return vkr_stage_and_upload_buffer_data(dest_buffer, staging_buffer, src_data, &region, 1, cmd_buf, vk);
+    return vkr_stage_buffer_data(staging_buffer, src_data, &region, 1, vk);
+}
+
+void vkr_upload_buffer_data(vkr_buffer *dest_buffer,
+                            const vkr_buffer *staging_buffer,
+                            const VkBufferCopy *regions,
+                            u32 region_count,
+                            VkCommandBuffer cmd_buf)
+{
+    vkCmdCopyBuffer(cmd_buf, staging_buffer->hndl, dest_buffer->hndl, region_count, regions);
+}
+
+void vkr_upload_buffer_data(vkr_buffer *dest_buffer, const vkr_buffer *staging_buffer, sizet src_data_size, VkCommandBuffer cmd_buf)
+{
+    VkBufferCopy region{};
+    region.size = src_data_size;
+    vkr_upload_buffer_data(dest_buffer, staging_buffer, &region, 1, cmd_buf);
 }
 
 int vkr_init_buffer(vkr_buffer *buffer, const vkr_buffer_cfg &cfg)

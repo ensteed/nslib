@@ -289,6 +289,7 @@ u32 setup_geometry_stream_group(renderer *rndr)
     push_geometry_attribute<vec2>(norm_tan_uv, shader_location++);
 
     geometry_vert_layout_desc *skinned_geom_layout = push_geometry_layout(&desc, MAX_SKINNED_GEOM_VERT_COUNT);
+    shader_location = 0;
     pos_col = push_geometry_stream(skinned_geom_layout, "skinned-pos-col");
     push_geometry_attribute<vec3>(pos_col, shader_location++);
     push_geometry_attribute<u8vec4>(pos_col, shader_location++, true);

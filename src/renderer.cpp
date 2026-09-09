@@ -89,10 +89,10 @@ intern bool fill_geometry_layout_entry(geom_buffer_layout_entry *layout,
     layout->vert_layout.bindings.size = desc.streams.size;
     layout->vert_streams.size = desc.streams.size;
 
-    // Virtual block used for this layout entry - we use vert stream 0 as the guide for all other vert streams.. that is
-    // it dictates at what range (in vertices) each buffer uses for each geom.. this is not the most "efficient" thing
-    // since other buffers might do better with space usage if they had their own block, but it allows us to bind all
-    // vert buffers at once and use them in shaders
+    // Virtual block for this layout entry - vert stream 0 is the guide for all other streams, ie it dictates the
+    // vertex range each buffer uses for a given geom. This isn't optional: vkCmdDrawIndexed has a single vertexOffset
+    // applied to every bound binding, so a geom has to land at the same vertex index in all of its streams. Per stream
+    // blocks would mean per stream byte offsets and a rebind per geom - we bind the whole group once per pass instead.
     VmaVirtualBlockCreateInfo ci{};
 
     // Create the vert buffers
@@ -862,6 +862,198 @@ void handle_window_resize(renderer *rndr)
     }
 }
 
+intern constexpr f32 WINDOW_RESIZE_DEBOUNCE_DURATION = 0.05;
+
+intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
+{
+    if (window_resized_this_frame(rndr->vk.cfg.window)) {
+        cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
+    }
+
+    if (cur_fif->swapchain_resize > 0.0f) {
+        cur_fif->swapchain_resize -= rndr->pt.dt;
+        if (cur_fif->swapchain_resize > 0.0f) {
+            return false;
+        }
+        handle_window_resize(rndr);
+        cur_fif->swapchain_resize = false;
+    }
+    return true;
+}
+
+// Everything on a fif's list was recorded in to that fif's command buffer, so that fif's fence being signaled is the
+// all clear that the GPU is done with all of it. Must be called after waiting on the fence and before anything gets
+// pushed on to the list again this frame
+intern void process_deferred_frees(renderer *rndr, idx_t fif)
+{
+    auto frees = &rndr->deferred_frees[fif];
+    for (sizet i = 0; i < frees->size; ++i) {
+        auto cur = &(*frees)[i];
+        switch (cur->type) {
+        case (DEFERRED_FREE_TYPE_BUFFER):
+            vkr_terminate_buffer(&cur->buf, &rndr->vk);
+            break;
+        case (DEFERRED_FREE_TYPE_IMAGE):
+            vkr_terminate_image(&cur->img, &rndr->vk);
+            break;
+        case (DEFERRED_FREE_TYPE_IMAGE_VIEW):
+            vkr_terminate_image_view(cur->iv, &rndr->vk);
+            break;
+        default:
+            elog("Invalid deferred free type recognized for %d", (u32)cur->type);
+        }
+    }
+    // Don't need to call any dtors
+    frees->size = 0;
+}
+
+intern u8 get_fif_ind(renderer *rndr)
+{
+    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
+}
+
+u8 begin_render_frame(renderer *rndr)
+{
+    PROFILE_SCOPE("begin_render_frame");
+    ptimer_split(&rndr->pt);
+    auto dev = &rndr->vk.inst.device;
+
+    // Add all new proxy objects
+    process_frame_proxy_events(rndr);
+
+    // Update finished frames which is used to get the current frame
+    idx_t fif = get_fif_ind(rndr);
+    auto *cur_fif = &rndr->fifs[fif];
+
+    // Window resize
+    if (!window_resize_continue_check(rndr, cur_fif)) {
+        return INVALID_U8_IDX;
+    }
+
+    // We wait until this FIF's fence has been triggered before rendering the frame. FIF fences are created in a
+    // triggered state so there will be no waiting on the first time. We then reset the fence (aka set it to
+    // untriggered) and it is passed to the vkQueueSubmit call to trigger it again. So if not the first time rendering
+    // this FIF, we are waiting for the vkQueueSubmit from the previous time this FIF was rendered to complete
+    int vk_res = vkWaitForFences(dev->hndl, 1, &cur_fif->in_flight, VK_TRUE, UINT64_MAX);
+    asrt(vk_res == VK_SUCCESS);
+
+    // The fence going off means the GPU is done with everything this fif submitted last go-round, so anything that was
+    // waiting on that to be destroyed can go now
+    process_deferred_frees(rndr, fif);
+
+    /////////////////////////////////
+    // Acquire Swapchain Image Ind //
+    /////////////////////////////////
+    // Acquire the image, signal the image_avail semaphore once the image has been acquired. We get the index back, but
+    // that doesn't mean the image is ready. The image is only ready (on the GPU side) once the image avail semaphore is triggered
+    vk_res =
+        vkAcquireNextImageKHR(dev->hndl, dev->swapchain.swapchain, UINT64_MAX, cur_fif->image_avail, VK_NULL_HANDLE, &cur_fif->cur_im_ind);
+
+    // If the image is out of date we need to recreate the swapchain and our caller needs to exit early as
+    // well. It seems that on some platforms, if the result from above is out of date or suboptimal, the semaphore
+    // associated with it will never get triggered. So if we were to continue and just resize at the end of frame it
+    // wouldn't work because the queue submit would never fire as it depends on this image available semaphore.
+    // At least.. i think?
+    if (vk_res == VK_ERROR_OUT_OF_DATE_KHR) {
+        cur_fif->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
+        return INVALID_U8_IDX;
+    }
+    asrt(vk_res == VK_SUCCESS || vk_res == VK_SUBOPTIMAL_KHR);
+
+    // Reset command pool
+    for (u32 ti = 0; ti < cur_fif->thread_pools.size; ++ti) {
+        vk_res = vkResetCommandPool(dev->hndl, cur_fif->thread_pools[ti].pool, {});
+        asrt(vk_res == VK_SUCCESS);
+    }
+
+    reset_arena(&rndr->manifest_flinear);
+
+    /////////////////////
+    // Reset FIF Fence //
+    /////////////////////
+    // Here we reset the fence for the current frame fence as we know we are going to call queue submit which is the
+    // only thing that will trigger the fence - so this is why this reset needs to come here (rather than right after
+    // waiting) because if we return early due to swapchain resize, and we had reset the fence, then the next time our
+    // frame came around we would just be stuck waiting forever
+    vk_res = vkResetFences(dev->hndl, 1, &cur_fif->in_flight);
+    asrt(vk_res == VK_SUCCESS);
+
+    // Update our special swapchain handle
+    auto sw = &rndr->vk.inst.device.swapchain;
+    auto sw_hndl = find_rtexture_target(rndr, SWAPCHAIN_ID);
+    auto swapchain = get_rtexture_target(rndr, sw_hndl);
+    swapchain->frames[fif].view = sw->image_views[cur_fif->cur_im_ind];
+    swapchain->frames[fif].image = sw->images[cur_fif->cur_im_ind];
+    swapchain->frames[fif].state = {};
+
+// Start GUI frame
+#ifdef USE_IMGUI
+    ImGui_ImplVulkan_NewFrame();
+#endif
+    return fif;
+}
+
+bool end_render_frame(rmanifest *m)
+{
+    PROFILE_SCOPE("end_render_frame");
+    asrt(m);
+    asrt(is_valid(m->rbp));
+    auto dev = &m->rndr->vk.inst.device;
+    auto *cur_frame = &m->rndr->fifs[m->fif];
+
+    ////////////////////////////
+    // Record Command Buffers //
+    ////////////////////////////
+    if (!execute_manifest(m)) {
+        return false;
+    }
+    // Just use buf 0 for now
+    auto buf = cur_frame->thread_pools[0].buf;
+
+    //////////////////////////////////
+    // Submit command buffer to GPU //
+    //////////////////////////////////
+    // Get the info ready to submit our command buffer to the queue. We need to wait until the image avail semaphore has
+    // signaled, and then we need to trigger the render finished signal once the the command buffer completes
+    VkSubmitInfo submit_info{};
+    VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = &cur_frame->image_avail;
+    submit_info.pWaitDstStageMask = wait_stages;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &buf;
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
+    s32 vk_res = vkQueueSubmit(dev->qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE], 1, &submit_info, cur_frame->in_flight);
+    asrt(vk_res == VK_SUCCESS);
+
+    ///////////////////
+    // Present Image //
+    ///////////////////
+    // Once the rendering signal has fired, present the image (show it on screen)
+    VkPresentInfoKHR present_info{};
+    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = &m->rndr->vk.inst.device.swapchain.renders_finished[cur_frame->cur_im_ind];
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = &dev->swapchain.swapchain;
+    present_info.pImageIndices = &cur_frame->cur_im_ind;
+    present_info.pResults = nullptr; // Optional - check for individual swaps
+    vk_res = vkQueuePresentKHR(dev->qfams[VKR_QUEUE_FAM_TYPE_PRESENT].qs[VKR_RENDER_QUEUE], &present_info);
+
+    // This purely helps with smoothness - it works fine without recreating the swapchain here and instead doing it on
+    // the next frame, but it seems to resize more smoothly doing it here
+    if (vk_res == VK_ERROR_OUT_OF_DATE_KHR || vk_res == VK_SUBOPTIMAL_KHR) {
+        cur_frame->swapchain_resize = WINDOW_RESIZE_DEBOUNCE_DURATION;
+    }
+    else {
+        asrt(vk_res == VK_SUCCESS);
+        ++m->rndr->finished_frames;
+    }
+    return true;
+}
+
 idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc)
 {
     asrt(desc.max_ind_count > 0);
@@ -944,6 +1136,84 @@ void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &a
     stream->attribs[ind] = att_desc;
 }
 
+intern void process_rgeom_create_event(renderer *rndr, const rproxy_create_rgeom_event &ev)
+{
+    auto gp = &rndr->geom_groups[ev.group];
+    auto layout = &gp->layouts[ev.layout];
+    auto geom_item = place_slot(&rndr->geometry, ev.hndl);
+
+    // Set the vert/ind blocks
+    geom_item->vert_block = layout->vert_block;
+    geom_item->ind_block = gp->indices_block;
+    strncpy(geom_item->name, ev.name, SMALL_STR_LEN - 1);
+
+    // Copy subgeom data
+    arr_copy(&geom_item->subgeom_vert_ind_counts, &ev.subgeom_vert_ind_counts);
+
+    // This info is shared between the vert stream and ind stream virtual alloc
+    VmaVirtualAllocationCreateInfo alloc_ci{};
+    alloc_ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
+    alloc_ci.pUserData = geom_item->name;
+
+    // Create the virtual allocation using vert stream 0 which dictates the vert offset in to each stream
+    alloc_ci.alignment = layout->vert_layout.bindings[0].stride;
+    alloc_ci.size = ev.vert_count * alloc_ci.alignment;
+
+    VkDeviceSize vert_stream_byte_offset{};
+    s32 result = vmaVirtualAllocate(geom_item->vert_block, &alloc_ci, &geom_item->vert_mem, &vert_stream_byte_offset);
+    if (result != err_code::VKR_NO_ERROR) {
+        wlog("Vma virtual allocate for vert stream failed with code %d", result);
+        for (u32 i = 0; i < ev.staging_bufs.size; ++i) {
+            auto buf = ev.staging_bufs[i];
+            vkr_terminate_buffer(&buf, &rndr->vk);
+        }
+        terminate_geometry(rndr, geom_item);
+        asrt(clear_slot(&rndr->geometry, ev.hndl));
+        return;
+    }
+    asrt(vert_stream_byte_offset % alloc_ci.alignment == 0);
+    geom_item->vert_offset = vert_stream_byte_offset / alloc_ci.alignment;
+
+    // Create the virtual allocation for indices
+    alloc_ci.alignment = sizeof(ind_t);
+    alloc_ci.size = ev.ind_count * alloc_ci.alignment;
+    VkDeviceSize ind_stream_byte_offset{};
+    result = vmaVirtualAllocate(geom_item->ind_block, &alloc_ci, &geom_item->ind_mem, &ind_stream_byte_offset);
+    if (result != err_code::VKR_NO_ERROR) {
+        wlog("Vma virtual allocate indices stream failed with code %d", result);
+        for (u32 i = 0; i < ev.staging_bufs.size; ++i) {
+            auto buf = ev.staging_bufs[i];
+            vkr_terminate_buffer(&buf, &rndr->vk);
+        }
+        terminate_geometry(rndr, geom_item);
+        asrt(clear_slot(&rndr->geometry, ev.hndl));
+        return;
+    }
+    asrt(ind_stream_byte_offset % alloc_ci.alignment == 0);
+    geom_item->ind_offset = ind_stream_byte_offset / alloc_ci.alignment;
+
+    rupload_op uop{.type = RUPLOAD_OP_GEOMETRY};
+    uop.geom.gslot = ev.hndl;
+    uop.geom.group = ev.group;
+    uop.geom.layout = ev.layout;
+    // Copy our regions - these have size and srcOffset set correctly, we still need to fill dstOffset
+    arr_copy(&uop.geom.regions, &ev.regions);
+    // Copy the staging buf handles
+    arr_copy(&uop.geom.staging_bufs, &ev.staging_bufs);
+
+    // Now set the region dstOffsets
+    for (u32 i = 0; i < ev.regions.size; ++i) {
+        b8 is_ind_region = (i == ev.regions.size - 1);
+        // If we are the last region, it is the index buffer
+        sizet offset = is_ind_region ? geom_item->ind_offset : geom_item->vert_offset;
+        u32 stride = is_ind_region ? sizeof(ind_t) : layout->vert_layout.bindings[i].stride;
+        uop.geom.regions[i].dstOffset = offset * stride;
+    }
+
+    // Add the upload to our list
+    arr_push_back(&rndr->pending_uploads, uop);
+}
+
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
 {
     // Make sure we have valid data
@@ -953,136 +1223,134 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     asrt(ci.ind_data);
     asrt(ci.subgeom_cnt > 0);
     asrt(ci.subgeoms);
+    asrt(ci.name);
     asrt(ci.group < rndr->geom_groups.size);
-
-    // Verify we have room for a geom
     auto gp = &rndr->geom_groups[ci.group];
     asrt(ci.layout < gp->layouts.size);
     auto layout = &gp->layouts[ci.layout];
 
-    rgeom_ref geom_ref = acquire_slot(&rndr->geometry);
-    if (!is_valid(geom_ref)) {
-        wlog("Out of geometry slots");
+    render_proxy_event ev{.type = RPROXY_EVENT_ADD_RGEOM};
+    ev.rgeom.hndl = reserve_slot(&rndr->geometry);
+    if (!is_valid(ev.rgeom.hndl)) {
+        wlog("No more slots left for %s", ci.name);
         return {};
     }
 
-    // Set the vert/ind blocks
-    geom_ref.item->vert_block = layout->vert_block;
-    geom_ref.item->ind_block = gp->indices_block;
+    ev.rgeom.group = ci.group;
+    ev.rgeom.layout = ci.layout;
+    ev.rgeom.vert_count = ci.vert_count;
+    ev.rgeom.ind_count = ci.ind_count;
+    strncpy(ev.rgeom.name, ci.name, SMALL_STR_LEN - 1);
+    arr_copy(&ev.rgeom.subgeom_vert_ind_counts, ci.subgeoms, ci.subgeom_cnt);
 
-    // Set the name if it was filled in
-    strncpy(geom_ref.item->name, ci.name ? ci.name : "unnamed", SMALL_STR_LEN - 1);
+    // Create staging buffers
+    arr_resize(&ev.rgeom.staging_bufs, layout->vert_streams.size + 1);
+    arr_resize(&ev.rgeom.regions, layout->vert_streams.size + 1);
 
-    // Copy subgeom data
-    geom_ref.item->subgeom_vert_ind_counts.size = ci.subgeom_cnt;
-    for (u32 i = 0; i < ci.subgeom_cnt; ++i) {
-        geom_ref.item->subgeom_vert_ind_counts[i] = ci.subgeoms[i];
-    }
-
-    // This info is shared between the vert stream and ind stream virtual alloc
-    VmaVirtualAllocationCreateInfo alloc_ci{};
-    alloc_ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
-    alloc_ci.pUserData = geom_ref.item->name;
-
-    // Create the virtual allocation using vert stream 0 which dictates the vert offset in to each stream
-    alloc_ci.alignment = layout->vert_layout.bindings[0].stride;
-    alloc_ci.size = ci.vert_count * alloc_ci.alignment;
-    VkDeviceSize vert_stream_byte_offset{};
-    s32 result = vmaVirtualAllocate(geom_ref.item->vert_block, &alloc_ci, &geom_ref.item->vert_mem, &vert_stream_byte_offset);
-    if (result != err_code::VKR_NO_ERROR) {
-        wlog("Vma virtual allocate for vert stream failed with code %d", result);
-        terminate_geometry(rndr, geom_ref.item);
-        asrt(release_slot(&rndr->geometry, geom_ref.hndl));
-        return {};
-    }
-    asrt(vert_stream_byte_offset % alloc_ci.alignment == 0);
-    geom_ref.item->vert_offset = vert_stream_byte_offset / alloc_ci.alignment;
-
-    // Create the virtual allocation for indices
-    alloc_ci.alignment = sizeof(ind_t);
-    alloc_ci.size = ci.ind_count * alloc_ci.alignment;
-    VkDeviceSize ind_stream_byte_offset{};
-    result = vmaVirtualAllocate(geom_ref.item->ind_block, &alloc_ci, &geom_ref.item->ind_mem, &ind_stream_byte_offset);
-    if (result != err_code::VKR_NO_ERROR) {
-        wlog("Vma virtual allocate indices stream failed with code %d", result);
-        terminate_geometry(rndr, geom_ref.item);
-        asrt(release_slot(&rndr->geometry, geom_ref.hndl));
-        return {};
-    }
-    asrt(ind_stream_byte_offset % alloc_ci.alignment == 0);
-    geom_ref.item->ind_offset = ind_stream_byte_offset / alloc_ci.alignment;
-
-    // Create staging buffer and get the queue we will use
-    VkCommandBuffer tmp_cmd_buf{};
-    result = vkr_alloc_cmd_bufs(&tmp_cmd_buf, {.pool = rndr->transient_pool}, &rndr->vk);
-    if (result != err_code::VKR_NO_ERROR) {
-        wlog("Failed to create command buffer - error code: %d", result);
-        terminate_geometry(rndr, geom_ref.item);
-        asrt(release_slot(&rndr->geometry, geom_ref.hndl));
-        return {};
-    }
-    VkQueue tmp_q = rndr->vk.inst.device.qfams[VKR_QUEUE_FAM_TYPE_GFX].qs[VKR_RENDER_QUEUE];
-
-    array<vkr_buffer> staging_buffers;
-    arr_init(&staging_buffers, &rndr->arenas.stack);
-    arr_resize(&staging_buffers, layout->vert_streams.size + 1);
-
-    asrt(vkr_begin_cmd_buf(tmp_cmd_buf, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == err_code::VKR_NO_ERROR);
+    // Regions have their size/src offset filled here, and the render side fills the destination offset when it Vma
+    // allocates as it gets the offset from that
 
     // Copy data for the vert buffers
     for (u32 streami = 0; streami < layout->vert_streams.size; ++streami) {
-        VkBufferCopy region{};
-        region.size = ci.vert_count * layout->vert_layout.bindings[streami].stride;
-        region.dstOffset = geom_ref.item->vert_offset * layout->vert_layout.bindings[streami].stride;
-        result = vkr_stage_and_upload_buffer_data(
-            &layout->vert_streams[streami].buffer, &staging_buffers[streami], ci.vert_data[streami], &region, 1, tmp_cmd_buf, &rndr->vk);
+        auto cur_region = &ev.rgeom.regions[streami];
+        auto cur_stage_buf = &ev.rgeom.staging_bufs[streami];
 
+        // We can fill in the size for the region
+        cur_region->size = ci.vert_count * layout->vert_layout.bindings[streami].stride;
+
+        // And staging uses the size and fills in the source offset for the region
+        s8 result = vkr_stage_buffer_data(cur_stage_buf, ci.vert_data[streami], cur_region, 1, &rndr->vk);
+
+        // Kill everything and return empty handle if fail
         if (result != err_code::VKR_NO_ERROR) {
-            for (u32 i = 0; i <= streami; ++i) {
-                vkr_terminate_buffer(&staging_buffers[i], &rndr->vk);
+            for (u32 i = 0; i < streami; ++i) {
+                vkr_terminate_buffer(&ev.rgeom.staging_bufs[i], &rndr->vk);
             }
-            arr_terminate(&staging_buffers);
-
-            terminate_geometry(rndr, geom_ref.item);
-            asrt(release_slot(&rndr->geometry, geom_ref.hndl));
-            vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
+            asrt(free_slot(&rndr->geometry, ev.rgeom.hndl));
             return {};
         }
     }
 
-    VkBufferCopy region{};
-    region.size = ci.ind_count * sizeof(ind_t);
-    region.dstOffset = geom_ref.item->ind_offset * sizeof(ind_t);
-    result = vkr_stage_and_upload_buffer_data(
-        &gp->indice_stream.buffer, arr_back(&staging_buffers), ci.ind_data, &region, 1, tmp_cmd_buf, &rndr->vk);
-
+    // Copy the ind buf data and fill what we can for region
+    auto ind_region = &ev.rgeom.regions[layout->vert_streams.size];
+    auto ind_stage_buf = &ev.rgeom.staging_bufs[layout->vert_streams.size];
+    ind_region->size = ci.ind_count * sizeof(ind_t);
+    s8 result = vkr_stage_buffer_data(ind_stage_buf, ci.ind_data, ind_region, 1, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
-        terminate_geometry(rndr, geom_ref.item);
-        asrt(release_slot(&rndr->geometry, geom_ref.hndl));
-        vkr_free_cmd_bufs(&tmp_cmd_buf, 1, rndr->transient_pool, &rndr->vk);
-        geom_ref = {};
+        for (u32 i = 0; i < layout->vert_streams.size; ++i) {
+            vkr_terminate_buffer(&ev.rgeom.staging_bufs[i], &rndr->vk);
+        }
+        asrt(free_slot(&rndr->geometry, ev.rgeom.hndl));
+        return {};
     }
 
-    asrt(vkr_end_cmd_buf(tmp_cmd_buf) == err_code::VKR_NO_ERROR);
-    asrt(vkr_blocking_queue_submit(tmp_q, &tmp_cmd_buf, 1, &rndr->vk) == err_code::VKR_NO_ERROR);
-
-    for (u32 i = 0; i < staging_buffers.size; ++i) {
-        vkr_terminate_buffer(&staging_buffers[i], &rndr->vk);
-    }
-    arr_terminate(&staging_buffers);
-    return geom_ref.hndl;
+    asrt(spsc_push(&rndr->frame_proxy_events, ev));
+    return ev.rgeom.hndl;
 }
 
-intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev) {
+intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev)
+{
     auto pool = &rndr->textures.pools[ev.hndl.pool_idx];
     auto titem = place_slot(&pool->tpool, ev.hndl.hndl);
-    strncpy(titem->name, ev.name, SMALL_STR_LEN-1);
+    strncpy(titem->name, ev.name, SMALL_STR_LEN - 1);
 
     // Push an event to an internal queue
-    
-    vkr_upload_to_texture_slots(vkr_texture_pool *pool, VkCommandBuffer cmd_buf, const rtexture_pool_item_ref *tslots, u32 slot_count, const vkr_buffer *staging)
+    rupload_op uop{.type = RUPLOAD_OP_TEXTURE};
+    uop.texture.staging_buf = ev.staging_buf;
+    uop.texture.tslot = ev.hndl;
+    arr_push_back(&rndr->pending_uploads, uop);
 }
 
+intern void record_pending_texture_upload(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif, const rupload_texture_op &top)
+{
+    rtexture_pool_item_ref rt{.hndl = top.tslot.hndl};
+    auto pool = &rndr->textures.pools[top.tslot.pool_idx];
+    rt.item = get_slot_item(&pool->tpool, rt.hndl);
+    asrt(rt.item);
+    vkr_upload_to_texture_slots(pool, cmd_buf, &rt, 1, &top.staging_buf);
+
+    // The copy above only just got recorded - the staging buffer has to stay alive until this fif's submit has
+    // actually completed on the GPU
+    deferred_free df{.type = DEFERRED_FREE_TYPE_BUFFER, .buf = top.staging_buf};
+    arr_push_back(&rndr->deferred_frees[fif], df);
+}
+
+intern void record_pending_geom_upload(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif, const rupload_geometry_op &gop)
+{
+    auto gp = &rndr->geom_groups[gop.group];
+    auto layout = &gp->layouts[gop.layout];
+    asrt(gop.regions.size == gop.staging_bufs.size);
+    asrt(gop.staging_bufs.size == layout->vert_streams.size + 1);
+    for (u32 i = 0; i < gop.staging_bufs.size; ++i) {
+        bool is_ind_buf = (i == gop.staging_bufs.size - 1);
+        auto *buf = is_ind_buf ? &gp->indice_stream.buffer : &layout->vert_streams[i].buffer;
+        vkr_upload_buffer_data(buf, &gop.staging_bufs[i], &gop.regions[i], 1, cmd_buf);
+
+        // The copy above only just got recorded - the staging buffer has to stay alive until this fif's submit has
+        // actually completed on the GPU
+        deferred_free df{.type = DEFERRED_FREE_TYPE_BUFFER, .buf = gop.staging_bufs[i]};
+        arr_push_back(&rndr->deferred_frees[fif], df);
+    }
+}
+
+void record_pending_uploads(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif)
+{
+    for (sizet i = 0; i < rndr->pending_uploads.size; ++i) {
+        auto cur_op = &rndr->pending_uploads[i];
+        switch (cur_op->type) {
+        case (RUPLOAD_OP_TEXTURE):
+            record_pending_texture_upload(rndr, cmd_buf, fif, cur_op->texture);
+            break;
+        case (RUPLOAD_OP_GEOMETRY):
+            record_pending_geom_upload(rndr, cmd_buf, fif, cur_op->geom);
+            break;
+        default:
+            elog("Failure - invalid type %d", (u32)cur_op->type);
+        }
+    }
+    // Don't need to call any dtors
+    rndr->pending_uploads.size = 0;
+}
 
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
 {
@@ -1091,11 +1359,11 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
     asrt(tdesc.meta.dims > uvec2{});
     asrt(tdesc.data_size > 0);
     asrt(tdesc.name);
-    
+
     // Create rtexture event
     render_proxy_event ev{.type = RPROXY_EVENT_ADD_RTEXTURE};
-    strncpy(ev.rtex.name, tdesc.name, SMALL_STR_LEN-1);
-    
+    strncpy(ev.rtex.name, tdesc.name, SMALL_STR_LEN - 1);
+
     u64 key = hash_type(&tdesc.meta, sizeof(rtexture_meta));
     auto pool_fiter = hmap_find(&rndr->textures.pmap, key);
     if (!pool_fiter) return {};
@@ -1103,9 +1371,18 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
 
     vkr_texture_pool *pool = &rndr->textures.pools[pool_fiter->val];
     ev.rtex.hndl.hndl = reserve_slot(&pool->tpool);
-    
-    vkr_stage_texture_upload(pool, tdesc.data, 1, &ev.rtex.staging_buf);
-    while (!spsc_push(&rndr->frame_proxy_events, ev));
+    if (!is_valid(ev.rtex.hndl.hndl)) {
+        wlog("No more slots left for %s", tdesc.name);
+        return {};
+    }
+
+    src_image_data im_data = tdesc.data;
+
+    if (!vkr_stage_texture_upload(pool, &im_data, 1, &ev.rtex.staging_buf)) {
+        asrt(free_slot(&pool->tpool, ev.rtex.hndl.hndl));
+        return {};
+    }
+    asrt(spsc_push(&rndr->frame_proxy_events, ev));
     return ev.rtex.hndl;
 }
 
@@ -1327,8 +1604,8 @@ void process_frame_proxy_events(renderer *rndr)
         case (RPROXY_EVENT_ADD_RTEXTURE):
             process_rtexture_create_event(rndr, ev.rtex);
             break;
-            
-        case (RPROXY_EVENT_ADD_RMESH):
+        case (RPROXY_EVENT_ADD_RGEOM):
+            process_rgeom_create_event(rndr, ev.rgeom);
             break;
         default:
             elog("No event type recognized for %d", (u32)ev.type);
@@ -1343,7 +1620,12 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
     }
     asrt(tdesc.pass_count <= MAX_BP_PASS_COUNT);
     auto hndl = reserve_slot(&rndr->techniques);
+    if (!is_valid(hndl)) {
+        wlog("No more slots left for %s", tdesc.name);
+        return {};
+    }
     
+
     render_proxy_event ev{.type = RPROXY_EVENT_ADD_RTECHNIQUE};
     ev.rtech.hndl = hndl;
     strncpy(ev.rtech.name, tdesc.name, SMALL_STR_LEN - 1);
@@ -1351,7 +1633,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
     for (sizet i = 0; i < tdesc.pass_count; ++i) {
         ev.rtech.passes[i] = tdesc.passes[i];
     }
-    while(!spsc_push(&rndr->frame_proxy_events, ev));
+    asrt(spsc_push(&rndr->frame_proxy_events, ev));
     return hndl;
 }
 

@@ -292,7 +292,7 @@ void vkr_transition_pool_layout(vkr_texture_pool *pool, VkCommandBuffer cmd_buf,
     transition_ranges_to_intent(pool, cmd_buf, &range, 1, intent);
 }
 
-b8 vkr_stage_texture_upload(vkr_texture_pool *pool, const void *img_data, u32 img_count, vkr_buffer *staging)
+b8 vkr_stage_texture_upload(vkr_texture_pool *pool, const src_image_data *img_data, u32 img_count, vkr_buffer *staging)
 {
     asrt(pool);
     asrt(img_count > 0);
@@ -321,7 +321,7 @@ b8 vkr_stage_texture_upload(vkr_texture_pool *pool, const void *img_data, u32 im
         sizet dest_offset = 0;
         for (u32 mipi = 0; mipi < pool->tmeta.mip_levels; ++mipi) {
             sizet mip_sz = calculate_vk_image_size(fmt_info, pool->tmeta.dims.w, pool->tmeta.dims.h, mipi, 1);
-            auto src = (const void *)((sizet)img_data[im_i].data + src_offset);
+            auto src = (const void *)((sizet)img_data[im_i] + src_offset);
             auto dest = (void *)((sizet)staging->mem_info.pMappedData + im_i * mip_sz + dest_offset);
             memcpy(dest, src, mip_sz);
             dest_offset += mip_sz * img_count;
