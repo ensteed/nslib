@@ -37,15 +37,16 @@ inline constexpr u8 MAX_BUFFER_RRESOURCE_COUNT = 16;
 // Max number of descriptor set layouts which are referenced by techniques
 inline constexpr u8 MAX_DESCRIPTOR_SET_LAYOUT_COUNT = 32;
 // Max subpasses supported in a blueprint pass
-inline constexpr u8 MAX_BP_SUBPASS_COUNT = 16;
+inline constexpr u8 MAX_BP_SUBPASS_COUNT = 8;
 // Max number of blueprint passes in a render blueprint
-inline constexpr u8 MAX_BP_PASS_COUNT = 16;
+inline constexpr u8 MAX_BP_PASS_COUNT = 8;
 // Max number of blueprints
 inline constexpr u8 MAX_BP_COUNT = 8;
 // Max number of resource requirements per subpass
 inline constexpr u8 MAX_BP_RESOURCE_REQUIREMENT_COUNT = 8;
 // Max number of blueprint pass attachments supported
 inline constexpr u8 MAX_BP_PASS_SLOT_COUNT = 16;
+inline constexpr u8 MAX_UPLOADS_PER_FRAME = 64;
 
 inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
 // Cannot be constexpr since make_rid is not

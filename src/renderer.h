@@ -526,14 +526,6 @@ using rtechnique_pool = slot_pool<rtechnique_info>;
 using rmaterial_pool = slot_pool<rmaterial_info>;
 using rgeometry_pool = slot_pool<rgeom_info>;
 
-enum rproxy_event_type
-{
-    RPROXY_EVENT_ADD_RMATERIAL,
-    RPROXY_EVENT_ADD_RTECHNIQUE,
-    RPROXY_EVENT_ADD_RTEXTURE,
-    RPROXY_EVENT_ADD_RGEOM
-};
-
 struct rproxy_create_rtechnique_event
 {
     rtechnique_handle hndl;
@@ -563,21 +555,13 @@ struct rproxy_create_rgeom_event
     static_array<VkBufferCopy, MAX_VERT_BINDINGS+1> regions;
 };
 
-struct render_proxy_event
-{
-    rproxy_event_type type;
-    union
-    {
-        rproxy_create_rtechnique_event rtech;
-        rproxy_create_rtexture_event rtex;
-        rproxy_create_rgeom_event rgeom;
-    };
-};
-
+// There is one pending upload list per type and they are recorded in this order, so the order here is the order the
+// upload types get recorded in to the frame's command buffer
 enum rupload_op_type {
-    RUPLOAD_OP_INVALID,
+    RUPLOAD_OP_INVALID = -1,
     RUPLOAD_OP_TEXTURE,
-    RUPLOAD_OP_GEOMETRY
+    RUPLOAD_OP_GEOMETRY,
+    RUPLOAD_OP_TYPE_COUNT
 };
 
 struct rupload_texture_op
@@ -597,7 +581,7 @@ struct rupload_geometry_op
 
 struct rupload_op
 {
-    rupload_op_type type;
+    rupload_op_type type{RUPLOAD_OP_INVALID};
     union {
         rupload_texture_op texture;
         rupload_geometry_op geom;
@@ -611,6 +595,11 @@ enum deferred_free_type
     DEFERRED_FREE_TYPE_IMAGE,
     DEFERRED_FREE_TYPE_IMAGE_VIEW
 };
+
+// A geometry upload queues one free per staging buffer (one per vert stream plus the index buffer) and a texture
+// upload queues one, so a frame's frees are a multiple of that frame's uploads rather than 1:1 with them. Lives
+// here rather than render_defs.h because it needs MAX_VERT_BINDINGS out of the vk context.
+inline constexpr u32 MAX_DEFERRED_FREES_PER_FRAME = MAX_UPLOADS_PER_FRAME * (MAX_VERT_BINDINGS + 1) + MAX_UPLOADS_PER_FRAME;
 
 // A GPU resource that can't be destroyed the moment we are done with it CPU side - the frame that last used it may
 // still be executing. Push one of these on to the fif it was recorded in to, and it gets freed in begin_render_frame
@@ -676,11 +665,14 @@ struct renderer
 
     rresource_target_registry rtargets{};
     profile_timepoints pt{};
-
-    // 100 is arbitrary and temporary here - don't know what the value should be really but i need something for now
-    spsc_queue<render_proxy_event, 100> frame_proxy_events;
-    static_array<rupload_op, 100> pending_uploads;
-    static_array<deferred_free, 100> deferred_frees[MAX_FRAMES_IN_FLIGHT];
+    
+    // One queue per event type - process_frame_proxy_events drains them in a fixed order, and that drain order is
+    // the order the types get processed in each frame
+    spsc_queue<rproxy_create_rtechnique_event, MAX_UPLOADS_PER_FRAME> rtechnique_events;
+    spsc_queue<rproxy_create_rtexture_event, MAX_UPLOADS_PER_FRAME> rtexture_events;
+    spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom_events;
+    static_array<rupload_op, MAX_UPLOADS_PER_FRAME> pending_uploads[RUPLOAD_OP_TYPE_COUNT];
+    static_array<deferred_free, MAX_DEFERRED_FREES_PER_FRAME> deferred_frees[MAX_FRAMES_IN_FLIGHT];
 };
 
 struct sbuffer_cfg

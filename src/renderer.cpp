@@ -1211,7 +1211,7 @@ intern void process_rgeom_create_event(renderer *rndr, const rproxy_create_rgeom
     }
 
     // Add the upload to our list
-    arr_push_back(&rndr->pending_uploads, uop);
+    arr_push_back(&rndr->pending_uploads[uop.type], uop);
 }
 
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
@@ -1229,31 +1229,31 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     asrt(ci.layout < gp->layouts.size);
     auto layout = &gp->layouts[ci.layout];
 
-    render_proxy_event ev{.type = RPROXY_EVENT_ADD_RGEOM};
-    ev.rgeom.hndl = reserve_slot(&rndr->geometry);
-    if (!is_valid(ev.rgeom.hndl)) {
+    rproxy_create_rgeom_event ev{};
+    ev.hndl = reserve_slot(&rndr->geometry);
+    if (!is_valid(ev.hndl)) {
         wlog("No more slots left for %s", ci.name);
         return {};
     }
 
-    ev.rgeom.group = ci.group;
-    ev.rgeom.layout = ci.layout;
-    ev.rgeom.vert_count = ci.vert_count;
-    ev.rgeom.ind_count = ci.ind_count;
-    strncpy(ev.rgeom.name, ci.name, SMALL_STR_LEN - 1);
-    arr_copy(&ev.rgeom.subgeom_vert_ind_counts, ci.subgeoms, ci.subgeom_cnt);
+    ev.group = ci.group;
+    ev.layout = ci.layout;
+    ev.vert_count = ci.vert_count;
+    ev.ind_count = ci.ind_count;
+    strncpy(ev.name, ci.name, SMALL_STR_LEN - 1);
+    arr_copy(&ev.subgeom_vert_ind_counts, ci.subgeoms, ci.subgeom_cnt);
 
     // Create staging buffers
-    arr_resize(&ev.rgeom.staging_bufs, layout->vert_streams.size + 1);
-    arr_resize(&ev.rgeom.regions, layout->vert_streams.size + 1);
+    arr_resize(&ev.staging_bufs, layout->vert_streams.size + 1);
+    arr_resize(&ev.regions, layout->vert_streams.size + 1);
 
     // Regions have their size/src offset filled here, and the render side fills the destination offset when it Vma
     // allocates as it gets the offset from that
 
     // Copy data for the vert buffers
     for (u32 streami = 0; streami < layout->vert_streams.size; ++streami) {
-        auto cur_region = &ev.rgeom.regions[streami];
-        auto cur_stage_buf = &ev.rgeom.staging_bufs[streami];
+        auto cur_region = &ev.regions[streami];
+        auto cur_stage_buf = &ev.staging_bufs[streami];
 
         // We can fill in the size for the region
         cur_region->size = ci.vert_count * layout->vert_layout.bindings[streami].stride;
@@ -1264,28 +1264,28 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
         // Kill everything and return empty handle if fail
         if (result != err_code::VKR_NO_ERROR) {
             for (u32 i = 0; i < streami; ++i) {
-                vkr_terminate_buffer(&ev.rgeom.staging_bufs[i], &rndr->vk);
+                vkr_terminate_buffer(&ev.staging_bufs[i], &rndr->vk);
             }
-            asrt(free_slot(&rndr->geometry, ev.rgeom.hndl));
+            asrt(free_slot(&rndr->geometry, ev.hndl));
             return {};
         }
     }
 
     // Copy the ind buf data and fill what we can for region
-    auto ind_region = &ev.rgeom.regions[layout->vert_streams.size];
-    auto ind_stage_buf = &ev.rgeom.staging_bufs[layout->vert_streams.size];
+    auto ind_region = &ev.regions[layout->vert_streams.size];
+    auto ind_stage_buf = &ev.staging_bufs[layout->vert_streams.size];
     ind_region->size = ci.ind_count * sizeof(ind_t);
     s8 result = vkr_stage_buffer_data(ind_stage_buf, ci.ind_data, ind_region, 1, &rndr->vk);
     if (result != err_code::VKR_NO_ERROR) {
         for (u32 i = 0; i < layout->vert_streams.size; ++i) {
-            vkr_terminate_buffer(&ev.rgeom.staging_bufs[i], &rndr->vk);
+            vkr_terminate_buffer(&ev.staging_bufs[i], &rndr->vk);
         }
-        asrt(free_slot(&rndr->geometry, ev.rgeom.hndl));
+        asrt(free_slot(&rndr->geometry, ev.hndl));
         return {};
     }
 
-    asrt(spsc_push(&rndr->frame_proxy_events, ev));
-    return ev.rgeom.hndl;
+    asrt(spsc_push(&rndr->rgeom_events, ev));
+    return ev.hndl;
 }
 
 intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev)
@@ -1298,7 +1298,7 @@ intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rt
     rupload_op uop{.type = RUPLOAD_OP_TEXTURE};
     uop.texture.staging_buf = ev.staging_buf;
     uop.texture.tslot = ev.hndl;
-    arr_push_back(&rndr->pending_uploads, uop);
+    arr_push_back(&rndr->pending_uploads[uop.type], uop);
 }
 
 intern void record_pending_texture_upload(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif, const rupload_texture_op &top)
@@ -1335,21 +1335,26 @@ intern void record_pending_geom_upload(renderer *rndr, VkCommandBuffer cmd_buf, 
 
 void record_pending_uploads(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif)
 {
-    for (sizet i = 0; i < rndr->pending_uploads.size; ++i) {
-        auto cur_op = &rndr->pending_uploads[i];
-        switch (cur_op->type) {
-        case (RUPLOAD_OP_TEXTURE):
-            record_pending_texture_upload(rndr, cmd_buf, fif, cur_op->texture);
-            break;
-        case (RUPLOAD_OP_GEOMETRY):
-            record_pending_geom_upload(rndr, cmd_buf, fif, cur_op->geom);
-            break;
-        default:
-            elog("Failure - invalid type %d", (u32)cur_op->type);
+    // Recorded in enum order - each list holds only its own type so this loop order is the type recording order
+    for (u32 ti = 0; ti < RUPLOAD_OP_TYPE_COUNT; ++ti) {
+        auto cur_list = &rndr->pending_uploads[ti];
+        for (sizet i = 0; i < cur_list->size; ++i) {
+            auto cur_op = &(*cur_list)[i];
+            asrt(cur_op->type == ti);
+            switch (cur_op->type) {
+            case (RUPLOAD_OP_TEXTURE):
+                record_pending_texture_upload(rndr, cmd_buf, fif, cur_op->texture);
+                break;
+            case (RUPLOAD_OP_GEOMETRY):
+                record_pending_geom_upload(rndr, cmd_buf, fif, cur_op->geom);
+                break;
+            default:
+                elog("Failure - invalid type %d", (s32)cur_op->type);
+            }
         }
+        // Don't need to call any dtors
+        cur_list->size = 0;
     }
-    // Don't need to call any dtors
-    rndr->pending_uploads.size = 0;
 }
 
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
@@ -1361,29 +1366,29 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
     asrt(tdesc.name);
 
     // Create rtexture event
-    render_proxy_event ev{.type = RPROXY_EVENT_ADD_RTEXTURE};
-    strncpy(ev.rtex.name, tdesc.name, SMALL_STR_LEN - 1);
+    rproxy_create_rtexture_event ev{};
+    strncpy(ev.name, tdesc.name, SMALL_STR_LEN - 1);
 
     u64 key = hash_type(&tdesc.meta, sizeof(rtexture_meta));
     auto pool_fiter = hmap_find(&rndr->textures.pmap, key);
     if (!pool_fiter) return {};
-    ev.rtex.hndl.pool_idx = pool_fiter->val;
+    ev.hndl.pool_idx = pool_fiter->val;
 
     vkr_texture_pool *pool = &rndr->textures.pools[pool_fiter->val];
-    ev.rtex.hndl.hndl = reserve_slot(&pool->tpool);
-    if (!is_valid(ev.rtex.hndl.hndl)) {
+    ev.hndl.hndl = reserve_slot(&pool->tpool);
+    if (!is_valid(ev.hndl.hndl)) {
         wlog("No more slots left for %s", tdesc.name);
         return {};
     }
 
     src_image_data im_data = tdesc.data;
 
-    if (!vkr_stage_texture_upload(pool, &im_data, 1, &ev.rtex.staging_buf)) {
-        asrt(free_slot(&pool->tpool, ev.rtex.hndl.hndl));
+    if (!vkr_stage_texture_upload(pool, &im_data, 1, &ev.staging_buf)) {
+        asrt(free_slot(&pool->tpool, ev.hndl.hndl));
         return {};
     }
-    asrt(spsc_push(&rndr->frame_proxy_events, ev));
-    return ev.rtex.hndl;
+    asrt(spsc_push(&rndr->rtexture_events, ev));
+    return ev.hndl;
 }
 
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
@@ -1593,23 +1598,20 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
 
 void process_frame_proxy_events(renderer *rndr)
 {
-    render_proxy_event ev{};
-    while (spsc_pop(&rndr->frame_proxy_events, &ev)) {
-        switch (ev.type) {
-        case (RPROXY_EVENT_ADD_RMATERIAL):
-            break;
-        case (RPROXY_EVENT_ADD_RTECHNIQUE):
-            process_rtechnique_create_event(rndr, ev.rtech);
-            break;
-        case (RPROXY_EVENT_ADD_RTEXTURE):
-            process_rtexture_create_event(rndr, ev.rtex);
-            break;
-        case (RPROXY_EVENT_ADD_RGEOM):
-            process_rgeom_create_event(rndr, ev.rgeom);
-            break;
-        default:
-            elog("No event type recognized for %d", (u32)ev.type);
-        }
+    // Drained in this order - the queue a create pushed to is what decides when it gets processed
+    rproxy_create_rtechnique_event tech{};
+    while (spsc_pop(&rndr->rtechnique_events, &tech)) {
+        process_rtechnique_create_event(rndr, tech);
+    }
+
+    rproxy_create_rtexture_event tex{};
+    while (spsc_pop(&rndr->rtexture_events, &tex)) {
+        process_rtexture_create_event(rndr, tex);
+    }
+
+    rproxy_create_rgeom_event geom{};
+    while (spsc_pop(&rndr->rgeom_events, &geom)) {
+        process_rgeom_create_event(rndr, geom);
     }
 }
 
@@ -1626,14 +1628,14 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
     }
     
 
-    render_proxy_event ev{.type = RPROXY_EVENT_ADD_RTECHNIQUE};
-    ev.rtech.hndl = hndl;
-    strncpy(ev.rtech.name, tdesc.name, SMALL_STR_LEN - 1);
-    ev.rtech.passes.size = tdesc.pass_count;
+    rproxy_create_rtechnique_event ev{};
+    ev.hndl = hndl;
+    strncpy(ev.name, tdesc.name, SMALL_STR_LEN - 1);
+    ev.passes.size = tdesc.pass_count;
     for (sizet i = 0; i < tdesc.pass_count; ++i) {
-        ev.rtech.passes[i] = tdesc.passes[i];
+        ev.passes[i] = tdesc.passes[i];
     }
-    asrt(spsc_push(&rndr->frame_proxy_events, ev));
+    asrt(spsc_push(&rndr->rtechnique_events, ev));
     return hndl;
 }
 

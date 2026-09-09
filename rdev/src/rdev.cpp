@@ -614,8 +614,8 @@ intern void terminate_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
 int main(int argc, char **argv)
 {
-    rdev_app_ctxt app{};
-    platform_ctxt ctxt{};
+    static rdev_app_ctxt app{};
+    static platform_ctxt ctxt{};
 
     platform_init_info pf_config{argc, argv};
     pf_config.flags = PLATFORM_INIT_FLAG_AUDIO | PLATFORM_INIT_FLAG_WINDOW;
