@@ -817,7 +817,7 @@ intern void terminate_render_resources(renderer *rndr)
     terminate_slot_pool(&rndr->shaders);
 }
 
-void handle_window_resize(renderer *rndr)
+intern void handle_window_resize(renderer *rndr)
 {
     ilog("Recreating swapchain");
     // Recreating the swapchain will wait on all semaphores and fences before continuing
@@ -881,6 +881,11 @@ intern bool window_resize_continue_check(renderer *rndr, frame_context *cur_fif)
     return true;
 }
 
+intern u8 get_fif_ind(renderer *rndr)
+{
+    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
+}
+
 // Everything on a fif's list was recorded in to that fif's command buffer, so that fif's fence being signaled is the
 // all clear that the GPU is done with all of it. Must be called after waiting on the fence and before anything gets
 // pushed on to the list again this frame
@@ -907,10 +912,354 @@ intern void process_deferred_frees(renderer *rndr, idx_t fif)
     frees->size = 0;
 }
 
-intern u8 get_fif_ind(renderer *rndr)
+intern void process_rgeom_create_event(renderer *rndr, const rproxy_create_rgeom_event &ev)
 {
-    return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
+    auto gp = &rndr->geom_groups[ev.group];
+    auto layout = &gp->layouts[ev.layout];
+    auto geom_item = place_slot(&rndr->geometry, ev.hndl);
+
+    // Set the vert/ind blocks
+    geom_item->vert_block = layout->vert_block;
+    geom_item->ind_block = gp->indices_block;
+    strncpy(geom_item->name, ev.name, SMALL_STR_LEN - 1);
+
+    // Copy subgeom data
+    arr_copy(&geom_item->subgeom_vert_ind_counts, &ev.subgeom_vert_ind_counts);
+
+    // This info is shared between the vert stream and ind stream virtual alloc
+    VmaVirtualAllocationCreateInfo alloc_ci{};
+    alloc_ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
+    alloc_ci.pUserData = geom_item->name;
+
+    // Create the virtual allocation using vert stream 0 which dictates the vert offset in to each stream
+    alloc_ci.alignment = layout->vert_layout.bindings[0].stride;
+    alloc_ci.size = ev.vert_count * alloc_ci.alignment;
+
+    VkDeviceSize vert_stream_byte_offset{};
+    s32 result = vmaVirtualAllocate(geom_item->vert_block, &alloc_ci, &geom_item->vert_mem, &vert_stream_byte_offset);
+    if (result != err_code::VKR_NO_ERROR) {
+        wlog("Vma virtual allocate for vert stream failed with code %d", result);
+        for (u32 i = 0; i < ev.staging_bufs.size; ++i) {
+            auto buf = ev.staging_bufs[i];
+            vkr_terminate_buffer(&buf, &rndr->vk);
+        }
+        terminate_geometry(rndr, geom_item);
+        asrt(clear_slot(&rndr->geometry, ev.hndl));
+        return;
+    }
+    asrt(vert_stream_byte_offset % alloc_ci.alignment == 0);
+    geom_item->vert_offset = vert_stream_byte_offset / alloc_ci.alignment;
+
+    // Create the virtual allocation for indices
+    alloc_ci.alignment = sizeof(ind_t);
+    alloc_ci.size = ev.ind_count * alloc_ci.alignment;
+    VkDeviceSize ind_stream_byte_offset{};
+    result = vmaVirtualAllocate(geom_item->ind_block, &alloc_ci, &geom_item->ind_mem, &ind_stream_byte_offset);
+    if (result != err_code::VKR_NO_ERROR) {
+        wlog("Vma virtual allocate indices stream failed with code %d", result);
+        for (u32 i = 0; i < ev.staging_bufs.size; ++i) {
+            auto buf = ev.staging_bufs[i];
+            vkr_terminate_buffer(&buf, &rndr->vk);
+        }
+        terminate_geometry(rndr, geom_item);
+        asrt(clear_slot(&rndr->geometry, ev.hndl));
+        return;
+    }
+    asrt(ind_stream_byte_offset % alloc_ci.alignment == 0);
+    geom_item->ind_offset = ind_stream_byte_offset / alloc_ci.alignment;
+
+    rupload_op uop{.type = RUPLOAD_OP_GEOMETRY};
+    uop.geom.gslot = ev.hndl;
+    uop.geom.group = ev.group;
+    uop.geom.layout = ev.layout;
+    // Copy our regions - these have size and srcOffset set correctly, we still need to fill dstOffset
+    arr_copy(&uop.geom.regions, &ev.regions);
+    // Copy the staging buf handles
+    arr_copy(&uop.geom.staging_bufs, &ev.staging_bufs);
+
+    // Now set the region dstOffsets
+    for (u32 i = 0; i < ev.regions.size; ++i) {
+        b8 is_ind_region = (i == ev.regions.size - 1);
+        // If we are the last region, it is the index buffer
+        sizet offset = is_ind_region ? geom_item->ind_offset : geom_item->vert_offset;
+        u32 stride = is_ind_region ? sizeof(ind_t) : layout->vert_layout.bindings[i].stride;
+        uop.geom.regions[i].dstOffset = offset * stride;
+    }
+
+    // Add the upload to our list
+    arr_push_back(&rndr->pending_uploads[uop.type], uop);
 }
+
+intern void process_rmaterial_create_event(renderer *rndr, const rproxy_create_rmaterial_event &ev)
+{
+    rmaterial_info *mat = place_slot(&rndr->materials, ev.hndl);
+    mat->dstate = ev.dstate;
+    mat->override_mask = ev.override_mask;
+    mat->mat_ssbo = vkr_acquire_chunk(&rndr->desc_info.material_ssbo);
+}
+
+intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev)
+{
+    auto pool = &rndr->textures.pools[ev.hndl.pool_idx];
+    auto titem = place_slot(&pool->tpool, ev.hndl.hndl);
+    strncpy(titem->name, ev.name, SMALL_STR_LEN - 1);
+
+    // Push an event to an internal queue
+    rupload_op uop{.type = RUPLOAD_OP_TEXTURE};
+    uop.texture.staging_buf = ev.staging_buf;
+    uop.texture.tslot = ev.hndl;
+    arr_push_back(&rndr->pending_uploads[uop.type], uop);
+}
+
+intern void process_rshader_create_event(renderer *rndr, const rproxy_create_rshader_event &ev)
+{
+    rshader_info *shdr = place_slot(&rndr->shaders, ev.hndl);
+    strncpy(shdr->name, ev.name, SMALL_STR_LEN - 1);
+    for (u8 i = 0; i < RSHADER_STAGE_TYPE_COUNT; ++i) {
+        shdr->stages[i] = ev.stages[i];
+    }
+}
+
+intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_rtechnique_event &ev)
+{
+    rtechnique_info *rt_info = place_slot(&rndr->techniques, ev.hndl);
+    strncpy(rt_info->name, ev.name, SMALL_STR_LEN - 1);
+
+    for (u32 i = 0; i < ev.passes.size; ++i) {
+        auto cur_desc = &ev.passes[i];
+        auto rbp_bp = get_render_blueprint(rndr, cur_desc->bp_info.bp);
+        asrt(rbp_bp);
+
+        asrt(cur_desc->bp_info.pid < rbp_bp->passes.size);
+        auto rbp_pass = &rbp_bp->passes[cur_desc->bp_info.pid];
+        asrt(cur_desc->bp_info.spi < rbp_pass->subpasses.size);
+
+        auto shdr = get_slot_item(&rndr->shaders, cur_desc->shader);
+        asrt(shdr);
+
+        // Stream group stuff
+        idx_t geom_gp = find_geometry_stream_group(rndr, rbp_pass->geom_streams_group);
+        geom_stream_group *gsg = get_idxn_arr_item(rndr->geom_groups, geom_gp);
+        asrt(gsg);
+        asrt(cur_desc->geom_buffer_layout < gsg->layouts.size);
+        auto vert_layout = get_idxn_arr_item(gsg->layouts, cur_desc->geom_buffer_layout);
+        asrt(vert_layout);
+
+        vkr_pipeline_cfg cfg{};
+        cfg.rpass = (VkRenderPass)rbp_pass->vk_handle;
+        cfg.subpass = cur_desc->bp_info.spi;
+        cfg.vert_desc = vert_layout->vert_layout;
+        cfg.layout_hndl = rndr->desc_info.pline_layout;
+
+        ////////////////////
+        // Shader Modules //
+        ////////////////////
+        vkr_pipeline_cfg_shader_stage stages[RSHADER_STAGE_TYPE_COUNT];
+        cfg.stage_cnt = 0;
+        for (u32 i = 0; i < RSHADER_STAGE_TYPE_COUNT; ++i) {
+            if (shdr->stages[i].sm != VK_NULL_HANDLE) {
+                auto stype = (rshader_stage_type)i;
+                ++cfg.stage_cnt;
+                stages[i].stage = get_vk_shader_stage_flag_bit(stype);
+                stages[i].entry_point = shdr->stages[i].entry_point;
+                stages[i].module = shdr->stages[i].sm;
+                stages[i].specialized_info = shdr->stages[i].specialized_info;
+            }
+        }
+        cfg.stages = stages;
+
+        ////////////////////
+        // Dynamic States //
+        ////////////////////
+        VkDynamicState dyn_states[] = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR,
+            VK_DYNAMIC_STATE_DEPTH_BIAS,
+            VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+            VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+            VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+            VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+            VK_DYNAMIC_STATE_CULL_MODE,
+            VK_DYNAMIC_STATE_FRONT_FACE,
+            VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE,
+            VK_DYNAMIC_STATE_STENCIL_OP,
+        };
+        cfg.dynamic_states = dyn_states;
+        cfg.dynamic_state_count = ARR_SIZE(dyn_states);
+
+        //////////////
+        // Viewports //
+        //////////////
+        // Dynamic - don't care
+        cfg.viewports = nullptr;
+        // Fixed
+        cfg.vp_count = 1;
+
+        /////////////
+        // Scissor //
+        /////////////
+        // Dynamic - don't care
+        cfg.scissors = nullptr;
+        // Fixed
+        cfg.scissor_count = 1;
+
+        ////////////////////
+        // Input Assembly //
+        ////////////////////
+        cfg.input_assembly.primitive_restart_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_PRIMITIVE_RESTART_ENABLED);
+        cfg.input_assembly.primitive_topology = get_vk_prim_topoloty(cur_desc->topology);
+
+        /////////////////
+        // Tesselation //
+        /////////////////
+        cfg.tessellation.patch_control_points = cur_desc->tess_patch_control_points;
+
+        ///////////////////
+        // Rasterization //
+        ///////////////////
+        cfg.raster.depth_clamp_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_CLAMP_DEPTH);
+        cfg.raster.rasterizer_discard_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DISCARD_RASTERIZER);
+        cfg.raster.polygon_mode = get_vk_polygon_mode(cur_desc->poly_mode);
+        // Fixed
+        cfg.raster.line_width = 1.0f;
+        cfg.raster.depth_bias_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_BIAS);
+        // Dynamic - don't care
+        cfg.raster.cull_mode = VK_CULL_MODE_BACK_BIT;
+        // Dynamic - don't care
+        cfg.raster.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        // All of these valuess are dynamic - don't care
+        cfg.raster.depth_bias_constant_factor = 0.0f;
+        cfg.raster.depth_bias_slope_factor = 0.0f;
+        cfg.raster.depth_bias_clamp = 0.0f;
+
+        ///////////////
+        // Blending  //
+        ///////////////
+        // Dynmic - don't care
+        cfg.col_blend.blend_constants = {1.0f};
+        cfg.col_blend.logic_op = get_vk_logic_op(cur_desc->logic_op);
+        cfg.col_blend.logic_op_enabled = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_BLEND_LOGIC_OP);
+
+        // We are setting all color attachments to have same blending - not all GPUs support different blending per att, so this is easier
+        // to manage and more compatible.
+        cfg.col_blend.attachments.size = get_rbp_slot_count(*rbp_pass, RBP_RES_USAGE_FLAG_COLOR_ATTACHMENT);
+        for (u32 i = 0; i < cfg.col_blend.attachments.size; ++i) {
+            auto cfg_att = &cfg.col_blend.attachments[i];
+            auto desc_att = &cur_desc->atts_blending[i];
+            cfg_att->blendEnable = desc_att->blend_enable;
+            // Directly converts - just typedeffed u32
+            cfg_att->colorWriteMask = desc_att->write_mask;
+
+            // Color op
+            cfg_att->colorBlendOp = get_vk_blend_op(desc_att->color.op);
+            cfg_att->srcColorBlendFactor = get_vk_blend_factor(desc_att->color.src);
+            cfg_att->dstColorBlendFactor = get_vk_blend_factor(desc_att->color.dst);
+
+            // Alpha op
+            cfg_att->alphaBlendOp = get_vk_blend_op(desc_att->alpha.op);
+            cfg_att->srcAlphaBlendFactor = get_vk_blend_factor(desc_att->alpha.src);
+            cfg_att->dstAlphaBlendFactor = get_vk_blend_factor(desc_att->alpha.dst);
+        }
+
+        ///////////////////
+        // Depth Stencil //
+        ///////////////////
+        cfg.depth_stencil.depth_test_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_TEST);
+        cfg.depth_stencil.depth_write_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_WRITE);
+        cfg.depth_stencil.depth_compare_op = get_vk_compare_op(cur_desc->depth_compare_op);
+        cfg.depth_stencil.depth_bounds_test_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_BOUNDS_TEST);
+        cfg.depth_stencil.min_depth_bounds = cur_desc->depth_bounds.x;
+        cfg.depth_stencil.max_depth_bounds = cur_desc->depth_bounds.y;
+        // Dynamic - don't care
+        cfg.depth_stencil.stencil_test_enable = false;
+        // Dynamic - don't care
+        cfg.depth_stencil.front = {};
+        // Dynamic - don't care
+        cfg.depth_stencil.back = {};
+
+        /////////////////////
+        // Create pipeline //
+        /////////////////////
+        key_t key = ((u64)ev.hndl.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;
+        ilog("Creating new pipeline for key %lu", key);
+        auto new_slot = acquire_slot(&rndr->pline_cache.items);
+        asrt(is_valid(new_slot) && "Out of pipeline slots");
+        int result = vkr_init_pipeline((VkPipeline *)&new_slot.item->gpu_d, cfg, &rndr->vk);
+        asrt(result == err_code::VKR_NO_ERROR);
+        asrt(hmap_insert(&rndr->pline_cache.key_lut, key, new_slot.hndl));
+
+        // Set the technique values
+        rt_info->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
+        rt_info->rpass_plines[i].subpass = cur_desc->bp_info.spi;
+        rt_info->rpass_plines[i].pline = new_slot.hndl;
+
+        rt_info->rpass_plines[i].dstate = cur_desc->dstate;
+        rt_info->rpass_plines[i].can_override = cur_desc->dstate_can_override;
+        ++rt_info->rpass_plines.size;
+    }
+}
+
+intern void process_frame_proxy_events(renderer *rndr)
+{
+    // Drained in this order - the queue a create pushed to is what decides when it gets processed
+    rproxy_create_rshader_event shdr{};
+    while (spsc_pop(&rndr->proxy_events.rshader, &shdr)) {
+        process_rshader_create_event(rndr, shdr);
+    }
+
+    rproxy_create_rtechnique_event tech{};
+    while (spsc_pop(&rndr->proxy_events.rtechnique, &tech)) {
+        process_rtechnique_create_event(rndr, tech);
+    }
+
+    rproxy_create_rmaterial_event mat{};
+    while (spsc_pop(&rndr->proxy_events.rmaterial, &mat)) {
+        process_rmaterial_create_event(rndr, mat);
+    }
+
+    rproxy_create_rtexture_event tex{};
+    while (spsc_pop(&rndr->proxy_events.rtexture, &tex)) {
+        process_rtexture_create_event(rndr, tex);
+    }
+
+    rproxy_create_rgeom_event geom{};
+    while (spsc_pop(&rndr->proxy_events.rgeom, &geom)) {
+        process_rgeom_create_event(rndr, geom);
+    }
+}
+
+intern void record_pending_texture_upload(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif, const rupload_texture_op &top)
+{
+    rtexture_pool_item_ref rt{.hndl = top.tslot.hndl};
+    auto pool = &rndr->textures.pools[top.tslot.pool_idx];
+    rt.item = get_slot_item(&pool->tpool, rt.hndl);
+    asrt(rt.item);
+    vkr_upload_to_texture_slots(pool, cmd_buf, &rt, 1, &top.staging_buf);
+
+    // The copy above only just got recorded - the staging buffer has to stay alive until this fif's submit has
+    // actually completed on the GPU
+    deferred_free df{.type = DEFERRED_FREE_TYPE_BUFFER, .buf = top.staging_buf};
+    arr_push_back(&rndr->deferred_frees[fif], df);
+}
+
+intern void record_pending_geom_upload(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif, const rupload_geometry_op &gop)
+{
+    auto gp = &rndr->geom_groups[gop.group];
+    auto layout = &gp->layouts[gop.layout];
+    asrt(gop.regions.size == gop.staging_bufs.size);
+    asrt(gop.staging_bufs.size == layout->vert_streams.size + 1);
+    for (u32 i = 0; i < gop.staging_bufs.size; ++i) {
+        bool is_ind_buf = (i == gop.staging_bufs.size - 1);
+        auto *buf = is_ind_buf ? &gp->indice_stream.buffer : &layout->vert_streams[i].buffer;
+        vkr_upload_buffer_data(buf, &gop.staging_bufs[i], &gop.regions[i], 1, cmd_buf);
+
+        // The copy above only just got recorded - the staging buffer has to stay alive until this fif's submit has
+        // actually completed on the GPU
+        deferred_free df{.type = DEFERRED_FREE_TYPE_BUFFER, .buf = gop.staging_bufs[i]};
+        arr_push_back(&rndr->deferred_frees[fif], df);
+    }
+}
+
 
 u8 begin_render_frame(renderer *rndr)
 {
@@ -1136,82 +1485,86 @@ void push_geometry_attribute(vert_stream_desc *stream, const vert_attrib_desc &a
     stream->attribs[ind] = att_desc;
 }
 
-intern void process_rgeom_create_event(renderer *rndr, const rproxy_create_rgeom_event &ev)
+void record_pending_uploads(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif)
 {
-    auto gp = &rndr->geom_groups[ev.group];
-    auto layout = &gp->layouts[ev.layout];
-    auto geom_item = place_slot(&rndr->geometry, ev.hndl);
-
-    // Set the vert/ind blocks
-    geom_item->vert_block = layout->vert_block;
-    geom_item->ind_block = gp->indices_block;
-    strncpy(geom_item->name, ev.name, SMALL_STR_LEN - 1);
-
-    // Copy subgeom data
-    arr_copy(&geom_item->subgeom_vert_ind_counts, &ev.subgeom_vert_ind_counts);
-
-    // This info is shared between the vert stream and ind stream virtual alloc
-    VmaVirtualAllocationCreateInfo alloc_ci{};
-    alloc_ci.flags = VMA_VIRTUAL_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
-    alloc_ci.pUserData = geom_item->name;
-
-    // Create the virtual allocation using vert stream 0 which dictates the vert offset in to each stream
-    alloc_ci.alignment = layout->vert_layout.bindings[0].stride;
-    alloc_ci.size = ev.vert_count * alloc_ci.alignment;
-
-    VkDeviceSize vert_stream_byte_offset{};
-    s32 result = vmaVirtualAllocate(geom_item->vert_block, &alloc_ci, &geom_item->vert_mem, &vert_stream_byte_offset);
-    if (result != err_code::VKR_NO_ERROR) {
-        wlog("Vma virtual allocate for vert stream failed with code %d", result);
-        for (u32 i = 0; i < ev.staging_bufs.size; ++i) {
-            auto buf = ev.staging_bufs[i];
-            vkr_terminate_buffer(&buf, &rndr->vk);
+    // Recorded in enum order - each list holds only its own type so this loop order is the type recording order
+    for (u32 ti = 0; ti < RUPLOAD_OP_TYPE_COUNT; ++ti) {
+        auto cur_list = &rndr->pending_uploads[ti];
+        for (sizet i = 0; i < cur_list->size; ++i) {
+            auto cur_op = &(*cur_list)[i];
+            asrt(cur_op->type == ti);
+            switch (cur_op->type) {
+            case (RUPLOAD_OP_TEXTURE):
+                record_pending_texture_upload(rndr, cmd_buf, fif, cur_op->texture);
+                break;
+            case (RUPLOAD_OP_GEOMETRY):
+                record_pending_geom_upload(rndr, cmd_buf, fif, cur_op->geom);
+                break;
+            default:
+                elog("Failure - invalid type %d", (s32)cur_op->type);
+            }
         }
-        terminate_geometry(rndr, geom_item);
-        asrt(clear_slot(&rndr->geometry, ev.hndl));
-        return;
+        // Don't need to call any dtors
+        cur_list->size = 0;
     }
-    asrt(vert_stream_byte_offset % alloc_ci.alignment == 0);
-    geom_item->vert_offset = vert_stream_byte_offset / alloc_ci.alignment;
+}
 
-    // Create the virtual allocation for indices
-    alloc_ci.alignment = sizeof(ind_t);
-    alloc_ci.size = ev.ind_count * alloc_ci.alignment;
-    VkDeviceSize ind_stream_byte_offset{};
-    result = vmaVirtualAllocate(geom_item->ind_block, &alloc_ci, &geom_item->ind_mem, &ind_stream_byte_offset);
-    if (result != err_code::VKR_NO_ERROR) {
-        wlog("Vma virtual allocate indices stream failed with code %d", result);
-        for (u32 i = 0; i < ev.staging_bufs.size; ++i) {
-            auto buf = ev.staging_bufs[i];
-            vkr_terminate_buffer(&buf, &rndr->vk);
-        }
-        terminate_geometry(rndr, geom_item);
-        asrt(clear_slot(&rndr->geometry, ev.hndl));
-        return;
+rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc)
+{
+    if (tdesc.pass_count == 0) {
+        return {};
     }
-    asrt(ind_stream_byte_offset % alloc_ci.alignment == 0);
-    geom_item->ind_offset = ind_stream_byte_offset / alloc_ci.alignment;
+    asrt(tdesc.pass_count <= MAX_BP_PASS_COUNT);
+    auto hndl = reserve_slot(&rndr->techniques);
+    if (!is_valid(hndl)) {
+        wlog("No more slots left for %s", tdesc.name);
+        return {};
+    }
+    
 
-    rupload_op uop{.type = RUPLOAD_OP_GEOMETRY};
-    uop.geom.gslot = ev.hndl;
-    uop.geom.group = ev.group;
-    uop.geom.layout = ev.layout;
-    // Copy our regions - these have size and srcOffset set correctly, we still need to fill dstOffset
-    arr_copy(&uop.geom.regions, &ev.regions);
-    // Copy the staging buf handles
-    arr_copy(&uop.geom.staging_bufs, &ev.staging_bufs);
+    rproxy_create_rtechnique_event ev{};
+    ev.hndl = hndl;
+    strncpy(ev.name, tdesc.name, SMALL_STR_LEN - 1);
+    ev.passes.size = tdesc.pass_count;
+    for (sizet i = 0; i < tdesc.pass_count; ++i) {
+        ev.passes[i] = tdesc.passes[i];
+    }
+    asrt(spsc_push(&rndr->proxy_events.rtechnique, ev));
+    return hndl;
+}
 
-    // Now set the region dstOffsets
-    for (u32 i = 0; i < ev.regions.size; ++i) {
-        b8 is_ind_region = (i == ev.regions.size - 1);
-        // If we are the last region, it is the index buffer
-        sizet offset = is_ind_region ? geom_item->ind_offset : geom_item->vert_offset;
-        u32 stride = is_ind_region ? sizeof(ind_t) : layout->vert_layout.bindings[i].stride;
-        uop.geom.regions[i].dstOffset = offset * stride;
+rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
+{
+    asrt(rndr);
+    asrt(tdesc.data);
+    asrt(tdesc.meta.dims > uvec2{});
+    asrt(tdesc.data_size > 0);
+    asrt(tdesc.name);
+
+    // Create rtexture event
+    rproxy_create_rtexture_event ev{};
+    strncpy(ev.name, tdesc.name, SMALL_STR_LEN - 1);
+
+    u64 key = hash_type(&tdesc.meta, sizeof(rtexture_meta));
+    auto pool_fiter = hmap_find(&rndr->textures.pmap, key);
+    if (!pool_fiter) return {};
+    ev.hndl.pool_idx = pool_fiter->val;
+
+    vkr_texture_pool *pool = &rndr->textures.pools[pool_fiter->val];
+    ev.hndl.hndl = reserve_slot(&pool->tpool);
+    if (!is_valid(ev.hndl.hndl)) {
+        wlog("No more slots left for %s", tdesc.name);
+        return {};
     }
 
-    // Add the upload to our list
-    arr_push_back(&rndr->pending_uploads[uop.type], uop);
+    src_image_data im_data = tdesc.data;
+
+    if (!vkr_stage_texture_upload(pool, &im_data, 1, &ev.staging_buf)) {
+        asrt(free_slot(&pool->tpool, ev.hndl.hndl));
+        return {};
+    }
+    asrt(spsc_push(&rndr->proxy_events.rtexture, ev));
+    return ev.hndl;
 }
 
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
@@ -1284,128 +1637,39 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
         return {};
     }
 
-    asrt(spsc_push(&rndr->rgeom_events, ev));
-    return ev.hndl;
-}
-
-intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev)
-{
-    auto pool = &rndr->textures.pools[ev.hndl.pool_idx];
-    auto titem = place_slot(&pool->tpool, ev.hndl.hndl);
-    strncpy(titem->name, ev.name, SMALL_STR_LEN - 1);
-
-    // Push an event to an internal queue
-    rupload_op uop{.type = RUPLOAD_OP_TEXTURE};
-    uop.texture.staging_buf = ev.staging_buf;
-    uop.texture.tslot = ev.hndl;
-    arr_push_back(&rndr->pending_uploads[uop.type], uop);
-}
-
-intern void record_pending_texture_upload(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif, const rupload_texture_op &top)
-{
-    rtexture_pool_item_ref rt{.hndl = top.tslot.hndl};
-    auto pool = &rndr->textures.pools[top.tslot.pool_idx];
-    rt.item = get_slot_item(&pool->tpool, rt.hndl);
-    asrt(rt.item);
-    vkr_upload_to_texture_slots(pool, cmd_buf, &rt, 1, &top.staging_buf);
-
-    // The copy above only just got recorded - the staging buffer has to stay alive until this fif's submit has
-    // actually completed on the GPU
-    deferred_free df{.type = DEFERRED_FREE_TYPE_BUFFER, .buf = top.staging_buf};
-    arr_push_back(&rndr->deferred_frees[fif], df);
-}
-
-intern void record_pending_geom_upload(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif, const rupload_geometry_op &gop)
-{
-    auto gp = &rndr->geom_groups[gop.group];
-    auto layout = &gp->layouts[gop.layout];
-    asrt(gop.regions.size == gop.staging_bufs.size);
-    asrt(gop.staging_bufs.size == layout->vert_streams.size + 1);
-    for (u32 i = 0; i < gop.staging_bufs.size; ++i) {
-        bool is_ind_buf = (i == gop.staging_bufs.size - 1);
-        auto *buf = is_ind_buf ? &gp->indice_stream.buffer : &layout->vert_streams[i].buffer;
-        vkr_upload_buffer_data(buf, &gop.staging_bufs[i], &gop.regions[i], 1, cmd_buf);
-
-        // The copy above only just got recorded - the staging buffer has to stay alive until this fif's submit has
-        // actually completed on the GPU
-        deferred_free df{.type = DEFERRED_FREE_TYPE_BUFFER, .buf = gop.staging_bufs[i]};
-        arr_push_back(&rndr->deferred_frees[fif], df);
-    }
-}
-
-void record_pending_uploads(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif)
-{
-    // Recorded in enum order - each list holds only its own type so this loop order is the type recording order
-    for (u32 ti = 0; ti < RUPLOAD_OP_TYPE_COUNT; ++ti) {
-        auto cur_list = &rndr->pending_uploads[ti];
-        for (sizet i = 0; i < cur_list->size; ++i) {
-            auto cur_op = &(*cur_list)[i];
-            asrt(cur_op->type == ti);
-            switch (cur_op->type) {
-            case (RUPLOAD_OP_TEXTURE):
-                record_pending_texture_upload(rndr, cmd_buf, fif, cur_op->texture);
-                break;
-            case (RUPLOAD_OP_GEOMETRY):
-                record_pending_geom_upload(rndr, cmd_buf, fif, cur_op->geom);
-                break;
-            default:
-                elog("Failure - invalid type %d", (s32)cur_op->type);
-            }
-        }
-        // Don't need to call any dtors
-        cur_list->size = 0;
-    }
-}
-
-rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
-{
-    asrt(rndr);
-    asrt(tdesc.data);
-    asrt(tdesc.meta.dims > uvec2{});
-    asrt(tdesc.data_size > 0);
-    asrt(tdesc.name);
-
-    // Create rtexture event
-    rproxy_create_rtexture_event ev{};
-    strncpy(ev.name, tdesc.name, SMALL_STR_LEN - 1);
-
-    u64 key = hash_type(&tdesc.meta, sizeof(rtexture_meta));
-    auto pool_fiter = hmap_find(&rndr->textures.pmap, key);
-    if (!pool_fiter) return {};
-    ev.hndl.pool_idx = pool_fiter->val;
-
-    vkr_texture_pool *pool = &rndr->textures.pools[pool_fiter->val];
-    ev.hndl.hndl = reserve_slot(&pool->tpool);
-    if (!is_valid(ev.hndl.hndl)) {
-        wlog("No more slots left for %s", tdesc.name);
-        return {};
-    }
-
-    src_image_data im_data = tdesc.data;
-
-    if (!vkr_stage_texture_upload(pool, &im_data, 1, &ev.staging_buf)) {
-        asrt(free_slot(&pool->tpool, ev.hndl.hndl));
-        return {};
-    }
-    asrt(spsc_push(&rndr->rtexture_events, ev));
+    asrt(spsc_push(&rndr->proxy_events.rgeom, ev));
     return ev.hndl;
 }
 
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
 {
-    if (sdr_info.stage_cnt == 0) {
+    if (sdr_info.stage_cnt == 0) return {};
+    asrt(sdr_info.name);
+    asrt(sdr_info.stages);
+
+    auto hndl = reserve_slot(&rndr->shaders);
+    if (!is_valid(hndl)) {
+        wlog("No more slots left for %s", sdr_info.name);
         return {};
     }
-    rshader_ref sref = acquire_slot(&rndr->shaders);
-    strncpy(sref.item->name, sdr_info.name, SMALL_STR_LEN - 1);
+
+    // Shader modules are created here on the sim thread - vkCreate* calls don't need external sync on the device
+    // and the host allocator is thread aware. The render thread only copies the module handles into the pool item.
+    rproxy_create_rshader_event ev{};
+    ev.hndl = hndl;
+    strncpy(ev.name, sdr_info.name, SMALL_STR_LEN - 1);
     for (u8 i = 0; i < sdr_info.stage_cnt; ++i) {
         auto cur_desc = &sdr_info.stages[i];
-        auto cur_st = &sref.item->stages[cur_desc->stype];
+        auto cur_st = &ev.stages[cur_desc->stype];
 
         s32 result = vkr_init_shader_module(&cur_st->sm, cur_desc->src, cur_desc->src_byte_size, &rndr->vk);
         if (result != err_code::VKR_NO_ERROR) {
-            terminate_shader(rndr, sref.item);
-            release_slot(&rndr->shaders, sref.hndl);
+            for (u8 t = 0; t < RSHADER_STAGE_TYPE_COUNT; ++t) {
+                if (ev.stages[t].sm) {
+                    vkr_terminate_shader_module(ev.stages[t].sm, &rndr->vk);
+                }
+            }
+            asrt(free_slot(&rndr->shaders, hndl));
             return {};
         }
 
@@ -1414,239 +1678,26 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
         // Might want to add stuff here in the future - for now, null
         cur_st->specialized_info = nullptr;
     }
-    return sref.hndl;
-}
 
-intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_rtechnique_event &ev)
-{
-    rtechnique_info *rt_info = place_slot(&rndr->techniques, ev.hndl);
-    strncpy(rt_info->name, ev.name, SMALL_STR_LEN - 1);
-
-    for (u32 i = 0; i < ev.passes.size; ++i) {
-        auto cur_desc = &ev.passes[i];
-        auto rbp_bp = get_render_blueprint(rndr, cur_desc->bp_info.bp);
-        asrt(rbp_bp);
-
-        asrt(cur_desc->bp_info.pid < rbp_bp->passes.size);
-        auto rbp_pass = &rbp_bp->passes[cur_desc->bp_info.pid];
-        asrt(cur_desc->bp_info.spi < rbp_pass->subpasses.size);
-
-        auto shdr = get_slot_item(&rndr->shaders, cur_desc->shader);
-        asrt(shdr);
-
-        // Stream group stuff
-        idx_t geom_gp = find_geometry_stream_group(rndr, rbp_pass->geom_streams_group);
-        geom_stream_group *gsg = get_idxn_arr_item(rndr->geom_groups, geom_gp);
-        asrt(gsg);
-        asrt(cur_desc->geom_buffer_layout < gsg->layouts.size);
-        auto vert_layout = get_idxn_arr_item(gsg->layouts, cur_desc->geom_buffer_layout);
-        asrt(vert_layout);
-
-        vkr_pipeline_cfg cfg{};
-        cfg.rpass = (VkRenderPass)rbp_pass->vk_handle;
-        cfg.subpass = cur_desc->bp_info.spi;
-        cfg.vert_desc = vert_layout->vert_layout;
-        cfg.layout_hndl = rndr->desc_info.pline_layout;
-
-        ////////////////////
-        // Shader Modules //
-        ////////////////////
-        vkr_pipeline_cfg_shader_stage stages[RSHADER_STAGE_TYPE_COUNT];
-        cfg.stage_cnt = 0;
-        for (u32 i = 0; i < RSHADER_STAGE_TYPE_COUNT; ++i) {
-            if (shdr->stages[i].sm != VK_NULL_HANDLE) {
-                auto stype = (rshader_stage_type)i;
-                ++cfg.stage_cnt;
-                stages[i].stage = get_vk_shader_stage_flag_bit(stype);
-                stages[i].entry_point = shdr->stages[i].entry_point;
-                stages[i].module = shdr->stages[i].sm;
-                stages[i].specialized_info = shdr->stages[i].specialized_info;
-            }
-        }
-        cfg.stages = stages;
-
-        ////////////////////
-        // Dynamic States //
-        ////////////////////
-        VkDynamicState dyn_states[] = {
-            VK_DYNAMIC_STATE_VIEWPORT,
-            VK_DYNAMIC_STATE_SCISSOR,
-            VK_DYNAMIC_STATE_DEPTH_BIAS,
-            VK_DYNAMIC_STATE_BLEND_CONSTANTS,
-            VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
-            VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
-            VK_DYNAMIC_STATE_STENCIL_REFERENCE,
-            VK_DYNAMIC_STATE_CULL_MODE,
-            VK_DYNAMIC_STATE_FRONT_FACE,
-            VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE,
-            VK_DYNAMIC_STATE_STENCIL_OP,
-        };
-        cfg.dynamic_states = dyn_states;
-        cfg.dynamic_state_count = ARR_SIZE(dyn_states);
-
-        //////////////
-        // Viewports //
-        //////////////
-        // Dynamic - don't care
-        cfg.viewports = nullptr;
-        // Fixed
-        cfg.vp_count = 1;
-
-        /////////////
-        // Scissor //
-        /////////////
-        // Dynamic - don't care
-        cfg.scissors = nullptr;
-        // Fixed
-        cfg.scissor_count = 1;
-
-        ////////////////////
-        // Input Assembly //
-        ////////////////////
-        cfg.input_assembly.primitive_restart_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_PRIMITIVE_RESTART_ENABLED);
-        cfg.input_assembly.primitive_topology = get_vk_prim_topoloty(cur_desc->topology);
-
-        /////////////////
-        // Tesselation //
-        /////////////////
-        cfg.tessellation.patch_control_points = cur_desc->tess_patch_control_points;
-
-        ///////////////////
-        // Rasterization //
-        ///////////////////
-        cfg.raster.depth_clamp_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_CLAMP_DEPTH);
-        cfg.raster.rasterizer_discard_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DISCARD_RASTERIZER);
-        cfg.raster.polygon_mode = get_vk_polygon_mode(cur_desc->poly_mode);
-        // Fixed
-        cfg.raster.line_width = 1.0f;
-        cfg.raster.depth_bias_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_BIAS);
-        // Dynamic - don't care
-        cfg.raster.cull_mode = VK_CULL_MODE_BACK_BIT;
-        // Dynamic - don't care
-        cfg.raster.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        // All of these valuess are dynamic - don't care
-        cfg.raster.depth_bias_constant_factor = 0.0f;
-        cfg.raster.depth_bias_slope_factor = 0.0f;
-        cfg.raster.depth_bias_clamp = 0.0f;
-
-        ///////////////
-        // Blending  //
-        ///////////////
-        // Dynmic - don't care
-        cfg.col_blend.blend_constants = {1.0f};
-        cfg.col_blend.logic_op = get_vk_logic_op(cur_desc->logic_op);
-        cfg.col_blend.logic_op_enabled = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_BLEND_LOGIC_OP);
-
-        // We are setting all color attachments to have same blending - not all GPUs support different blending per att, so this is easier
-        // to manage and more compatible.
-        cfg.col_blend.attachments.size = get_rbp_slot_count(*rbp_pass, RBP_RES_USAGE_FLAG_COLOR_ATTACHMENT);
-        for (u32 i = 0; i < cfg.col_blend.attachments.size; ++i) {
-            auto cfg_att = &cfg.col_blend.attachments[i];
-            auto desc_att = &cur_desc->atts_blending[i];
-            cfg_att->blendEnable = desc_att->blend_enable;
-            // Directly converts - just typedeffed u32
-            cfg_att->colorWriteMask = desc_att->write_mask;
-
-            // Color op
-            cfg_att->colorBlendOp = get_vk_blend_op(desc_att->color.op);
-            cfg_att->srcColorBlendFactor = get_vk_blend_factor(desc_att->color.src);
-            cfg_att->dstColorBlendFactor = get_vk_blend_factor(desc_att->color.dst);
-
-            // Alpha op
-            cfg_att->alphaBlendOp = get_vk_blend_op(desc_att->alpha.op);
-            cfg_att->srcAlphaBlendFactor = get_vk_blend_factor(desc_att->alpha.src);
-            cfg_att->dstAlphaBlendFactor = get_vk_blend_factor(desc_att->alpha.dst);
-        }
-
-        ///////////////////
-        // Depth Stencil //
-        ///////////////////
-        cfg.depth_stencil.depth_test_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_TEST);
-        cfg.depth_stencil.depth_write_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_WRITE);
-        cfg.depth_stencil.depth_compare_op = get_vk_compare_op(cur_desc->depth_compare_op);
-        cfg.depth_stencil.depth_bounds_test_enable = test_flags(cur_desc->tmask, RTECHNIQUE_DESC_FLAG_DEPTH_BOUNDS_TEST);
-        cfg.depth_stencil.min_depth_bounds = cur_desc->depth_bounds.x;
-        cfg.depth_stencil.max_depth_bounds = cur_desc->depth_bounds.y;
-        // Dynamic - don't care
-        cfg.depth_stencil.stencil_test_enable = false;
-        // Dynamic - don't care
-        cfg.depth_stencil.front = {};
-        // Dynamic - don't care
-        cfg.depth_stencil.back = {};
-
-        /////////////////////
-        // Create pipeline //
-        /////////////////////
-        key_t key = ((u64)ev.hndl.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;
-        ilog("Creating new pipeline for key %lu", key);
-        auto new_slot = acquire_slot(&rndr->pline_cache.items);
-        asrt(is_valid(new_slot) && "Out of pipeline slots");
-        int result = vkr_init_pipeline((VkPipeline *)&new_slot.item->gpu_d, cfg, &rndr->vk);
-        asrt(result == err_code::VKR_NO_ERROR);
-        asrt(hmap_insert(&rndr->pline_cache.key_lut, key, new_slot.hndl));
-
-        // Set the technique values
-        rt_info->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
-        rt_info->rpass_plines[i].subpass = cur_desc->bp_info.spi;
-        rt_info->rpass_plines[i].pline = new_slot.hndl;
-
-        rt_info->rpass_plines[i].dstate = cur_desc->dstate;
-        rt_info->rpass_plines[i].can_override = cur_desc->dstate_can_override;
-        ++rt_info->rpass_plines.size;
-    }
-}
-
-void process_frame_proxy_events(renderer *rndr)
-{
-    // Drained in this order - the queue a create pushed to is what decides when it gets processed
-    rproxy_create_rtechnique_event tech{};
-    while (spsc_pop(&rndr->rtechnique_events, &tech)) {
-        process_rtechnique_create_event(rndr, tech);
-    }
-
-    rproxy_create_rtexture_event tex{};
-    while (spsc_pop(&rndr->rtexture_events, &tex)) {
-        process_rtexture_create_event(rndr, tex);
-    }
-
-    rproxy_create_rgeom_event geom{};
-    while (spsc_pop(&rndr->rgeom_events, &geom)) {
-        process_rgeom_create_event(rndr, geom);
-    }
-}
-
-rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc)
-{
-    if (tdesc.pass_count == 0) {
-        return {};
-    }
-    asrt(tdesc.pass_count <= MAX_BP_PASS_COUNT);
-    auto hndl = reserve_slot(&rndr->techniques);
-    if (!is_valid(hndl)) {
-        wlog("No more slots left for %s", tdesc.name);
-        return {};
-    }
-    
-
-    rproxy_create_rtechnique_event ev{};
-    ev.hndl = hndl;
-    strncpy(ev.name, tdesc.name, SMALL_STR_LEN - 1);
-    ev.passes.size = tdesc.pass_count;
-    for (sizet i = 0; i < tdesc.pass_count; ++i) {
-        ev.passes[i] = tdesc.passes[i];
-    }
-    asrt(spsc_push(&rndr->rtechnique_events, ev));
+    asrt(spsc_push(&rndr->proxy_events.rshader, ev));
     return hndl;
 }
 
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo)
 {
-    rmaterial_ref mref = acquire_slot(&rndr->materials);
-    if (!is_valid(mref)) return {};
-    mref.item->dstate = ctinfo.dstate;
-    mref.item->override_mask = ctinfo.dstate_override_mask;
-    mref.item->mat_ssbo = vkr_acquire_chunk(&rndr->desc_info.material_ssbo);
-    return mref.hndl;
+    auto hndl = reserve_slot(&rndr->materials);
+    if (!is_valid(hndl)) {
+        wlog("No more slots left for %s", ctinfo.name);
+        return {};
+    }
+
+    // The SSBO chunk is acquired on the render thread when the item is placed - the chunk free list is render owned
+    rproxy_create_rmaterial_event ev{};
+    ev.hndl = hndl;
+    ev.dstate = ctinfo.dstate;
+    ev.override_mask = ctinfo.dstate_override_mask;
+    asrt(spsc_push(&rndr->proxy_events.rmaterial, ev));
+    return hndl;
 }
 
 rformat get_swapchain_format(renderer *rnd)

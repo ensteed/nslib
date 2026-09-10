@@ -526,11 +526,26 @@ using rtechnique_pool = slot_pool<rtechnique_info>;
 using rmaterial_pool = slot_pool<rmaterial_info>;
 using rgeometry_pool = slot_pool<rgeom_info>;
 
+struct rproxy_create_rshader_event
+{
+    rshader_handle hndl;
+    small_str name;
+    // Modules are created on the sim thread - the render thread only copies these into the pool item
+    rshader_stage_info stages[RSHADER_STAGE_TYPE_COUNT]{};
+};
+
 struct rproxy_create_rtechnique_event
 {
     rtechnique_handle hndl;
     static_array<rtechnique_pass_desc, MAX_BP_PASS_COUNT> passes;
     small_str name;
+};
+
+struct rproxy_create_rmaterial_event
+{
+    rmaterial_handle hndl;
+    rdraw_dyn_state dstate;
+    rdraw_state_override_flags override_mask;
 };
 
 struct rproxy_create_rtexture_event
@@ -553,6 +568,17 @@ struct rproxy_create_rgeom_event
     // Enough staging buffers for each vert stream plus index buffer
     static_array<vkr_buffer, MAX_VERT_BINDINGS+1> staging_bufs;
     static_array<VkBufferCopy, MAX_VERT_BINDINGS+1> regions;
+};
+
+// One queue per event type - process_frame_proxy_events drains them in a fixed order, and that drain order is
+// the order the types get processed in each frame
+struct rproxy_event_queues
+{
+    spsc_queue<rproxy_create_rshader_event, MAX_UPLOADS_PER_FRAME> rshader;
+    spsc_queue<rproxy_create_rtechnique_event, MAX_UPLOADS_PER_FRAME> rtechnique;
+    spsc_queue<rproxy_create_rmaterial_event, MAX_UPLOADS_PER_FRAME> rmaterial;
+    spsc_queue<rproxy_create_rtexture_event, MAX_UPLOADS_PER_FRAME> rtexture;
+    spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom;
 };
 
 // There is one pending upload list per type and they are recorded in this order, so the order here is the order the
@@ -666,11 +692,8 @@ struct renderer
     rresource_target_registry rtargets{};
     profile_timepoints pt{};
     
-    // One queue per event type - process_frame_proxy_events drains them in a fixed order, and that drain order is
-    // the order the types get processed in each frame
-    spsc_queue<rproxy_create_rtechnique_event, MAX_UPLOADS_PER_FRAME> rtechnique_events;
-    spsc_queue<rproxy_create_rtexture_event, MAX_UPLOADS_PER_FRAME> rtexture_events;
-    spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom_events;
+    // Sim thread pushes, render thread pops (see process_frame_proxy_events)
+    rproxy_event_queues proxy_events{};
     static_array<rupload_op, MAX_UPLOADS_PER_FRAME> pending_uploads[RUPLOAD_OP_TYPE_COUNT];
     static_array<deferred_free, MAX_DEFERRED_FREES_PER_FRAME> deferred_frees[MAX_FRAMES_IN_FLIGHT];
 };
@@ -731,7 +754,7 @@ constexpr sizet calculate_manifest_approximate_needed_capacity(const manifest_ma
 
 void init_imgui(renderer *rndr, const rbp_pass &pass);
 void terminate_imgui(renderer *rndr);
-void handle_window_resize(renderer *rndr);
+
 rformat get_swapchain_format(renderer *rnd);
 idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
 idx_t find_geometry_stream_group(renderer *rndr, rid group_id);
@@ -754,12 +777,11 @@ void push_geometry_attribute(vert_stream_desc *stream, u32 shader_location, bool
 }
 
 // These should be called from the sim thread, they create an event that is consumed on the render thread
-void process_frame_proxy_events(renderer *rndr);
 rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc);
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
-
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
+
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
