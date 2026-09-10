@@ -1011,6 +1011,78 @@ intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rt
     arr_push_back(&rndr->pending_uploads[uop.type], uop);
 }
 
+intern void process_rtexture_target_create_event(renderer *rndr, const rproxy_create_rtexture_target_event &ev)
+{
+    const rtexture_target_desc *ci = &ev.desc;
+    rtexture_target *item = place_slot(&rndr->rtargets.textures, ev.hndl);
+
+    strncpy(item->name, ev.name, SMALL_STR_LEN - 1);
+    item->id = make_rid(item->name);
+    item->flags = ci->flags;
+
+    // If parameter not here its cause I want to leave at default on purpose
+    item->cfg.format = get_vk_format(ci->format);
+    bool is_color = (ci->type == RTARGET_TEXTURE_TYPE_COLOR || ci->type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
+    item->cfg.usage =
+        VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    item->cfg.im_create_flags = ci->type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+    // Default dims were already resolved to the window size on the sim thread in create_rtexture_target
+    item->cfg.dims = {ci->dims, 1u};
+    item->cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    item->cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    item->cfg.array_layers = ci->type > RTARGET_TEXTURE_TYPE_DEPTH ? 6u : 1u;
+    item->cfg.priority = 1.0f;
+    item->cfg.user_data = item->name;
+    item->cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
+
+    item->iv_cfg.view_type = ci->type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+    item->iv_cfg.srange.baseArrayLayer = 0;
+    item->iv_cfg.srange.layerCount = 1;
+    item->iv_cfg.srange.baseMipLevel = 0;
+    item->iv_cfg.srange.levelCount = 1;
+    item->iv_cfg.srange.aspectMask = is_color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto cur_i = &item->frames[i];
+
+        // Set config pointers
+        cur_i->cfg = &item->cfg;
+        cur_i->iv_cfg = &item->iv_cfg;
+
+        int result = vkr_init_image(&cur_i->image, *cur_i->cfg);
+        asrt(result == err_code::VKR_NO_ERROR);
+
+        // Update image pointer, set config
+        item->iv_cfg.image = &cur_i->image;
+        result = vkr_init_image_view(&cur_i->view, *cur_i->iv_cfg, &rndr->vk);
+        asrt(result == err_code::VKR_NO_ERROR);
+    }
+
+    // So we don't forget to update this to each per fif image on doing any resizes
+    item->iv_cfg.image = nullptr;
+
+    hmap_insert(&rndr->rtargets.texture_id_map, item->id, ev.hndl);
+}
+
+intern void process_rbuffer_target_create_event(renderer *rndr, const rproxy_create_rbuffer_target_event &ev)
+{
+    rbuffer_target *item = place_slot(&rndr->rtargets.buffers, ev.hndl);
+    strncpy(item->name, ev.name, SMALL_STR_LEN - 1);
+    item->id = make_rid(item->name);
+    // TODO: Don't actually just have cfg in the ci - edit this to only include actual needed things - for now we just
+    // use it
+    item->cfg = ev.desc.cfg;
+    item->cfg.user_data = item->name;
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto cur_b = &item->frames[i];
+        // Update config pointer
+        cur_b->cfg = &item->cfg;
+        int result = vkr_init_buffer(&cur_b->buffer, *cur_b->cfg);
+        asrt(result == err_code::VKR_NO_ERROR);
+    }
+    hmap_insert(&rndr->rtargets.buffer_id_map, item->id, ev.hndl);
+}
+
 intern void process_rshader_create_event(renderer *rndr, const rproxy_create_rshader_event &ev)
 {
     rshader_info *shdr = place_slot(&rndr->shaders, ev.hndl);
@@ -1202,6 +1274,16 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
 intern void process_frame_proxy_events(renderer *rndr)
 {
     // Drained in this order - the queue a create pushed to is what decides when it gets processed
+    rproxy_create_rtexture_target_event ttarg{};
+    while (spsc_pop(&rndr->proxy_events.rtexture_target, &ttarg)) {
+        process_rtexture_target_create_event(rndr, ttarg);
+    }
+
+    rproxy_create_rbuffer_target_event btarg{};
+    while (spsc_pop(&rndr->proxy_events.rbuffer_target, &btarg)) {
+        process_rbuffer_target_create_event(rndr, btarg);
+    }
+
     rproxy_create_rshader_event shdr{};
     while (spsc_pop(&rndr->proxy_events.rshader, &shdr)) {
         process_rshader_create_event(rndr, shdr);
@@ -1259,7 +1341,6 @@ intern void record_pending_geom_upload(renderer *rndr, VkCommandBuffer cmd_buf, 
         arr_push_back(&rndr->deferred_frees[fif], df);
     }
 }
-
 
 u8 begin_render_frame(renderer *rndr)
 {
@@ -1520,7 +1601,6 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         wlog("No more slots left for %s", tdesc.name);
         return {};
     }
-    
 
     rproxy_create_rtechnique_event ev{};
     ev.hndl = hndl;
@@ -1707,57 +1787,23 @@ rformat get_swapchain_format(renderer *rnd)
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci)
 {
-    rtexture_target_ref tref = acquire_slot(&rndr->rtargets.textures);
-    if (!is_valid(tref)) {
+    auto hndl = reserve_slot(&rndr->rtargets.textures);
+    if (!is_valid(hndl)) {
+        wlog("No more slots left for %s", ci.name);
         return {};
     }
 
-    strncpy(tref.item->name, ci.name, SMALL_STR_LEN - 1);
-    tref.item->id = make_rid(tref.item->name);
-    tref.item->flags = ci.flags;
-
-    // If parameter not here its cause I want to leave at default on purpose
-    tref.item->cfg.format = get_vk_format(ci.format);
-    bool is_color = (ci.type == RTARGET_TEXTURE_TYPE_COLOR || ci.type == RTARGET_TEXTURE_TYPE_CUBE_COLOR);
-    tref.item->cfg.usage =
-        VK_IMAGE_USAGE_SAMPLED_BIT | (is_color ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-    tref.item->cfg.im_create_flags = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
-    tref.item->cfg.dims = {ci.dims == svec2{} ? get_window_pixel_size(rndr->vk.cfg.window) : ci.dims, 1u};
-    tref.item->cfg.mem_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    tref.item->cfg.alloc_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-    tref.item->cfg.array_layers = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? 6u : 1u;
-    tref.item->cfg.priority = 1.0f;
-    tref.item->cfg.user_data = tref.item->name;
-    tref.item->cfg.vma_alloc = &rndr->vk.inst.device.vma_alloc;
-
-    tref.item->iv_cfg.view_type = ci.type > RTARGET_TEXTURE_TYPE_DEPTH ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
-    tref.item->iv_cfg.srange.baseArrayLayer = 0;
-    tref.item->iv_cfg.srange.layerCount = 1;
-    tref.item->iv_cfg.srange.baseMipLevel = 0;
-    tref.item->iv_cfg.srange.levelCount = 1;
-    tref.item->iv_cfg.srange.aspectMask = is_color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
-
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        auto cur_i = &tref.item->frames[i];
-
-        // Set config pointers
-        cur_i->cfg = &tref.item->cfg;
-        cur_i->iv_cfg = &tref.item->iv_cfg;
-
-        int result = vkr_init_image(&cur_i->image, *cur_i->cfg);
-        asrt(result == err_code::VKR_NO_ERROR);
-
-        // Update image pointer, set config
-        tref.item->iv_cfg.image = &cur_i->image;
-        result = vkr_init_image_view(&cur_i->view, *cur_i->iv_cfg, &rndr->vk);
-        asrt(result == err_code::VKR_NO_ERROR);
+    rproxy_create_rtexture_target_event ev{};
+    ev.hndl = hndl;
+    strncpy(ev.name, ci.name, SMALL_STR_LEN - 1);
+    ev.desc = ci;
+    ev.desc.name = nullptr;
+    // Window queries belong to the platform thread, so resolve the default dims here rather than on the render thread
+    if (ev.desc.dims == svec2{}) {
+        ev.desc.dims = get_window_pixel_size(rndr->vk.cfg.window);
     }
-
-    // So we don't forget to update this to each per fif image on doing any resizes
-    tref.item->iv_cfg.image = nullptr;
-
-    hmap_insert(&rndr->rtargets.texture_id_map, tref.item->id, tref.hndl);
-    return tref.hndl;
+    asrt(spsc_push(&rndr->proxy_events.rtexture_target, ev));
+    return hndl;
 }
 
 rtexture_target_handle find_rtexture_target(renderer *rndr, rid id)
@@ -1773,25 +1819,19 @@ rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl
 
 rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci)
 {
-    rbuffer_target_ref btref = acquire_slot(&rndr->rtargets.buffers);
-    if (!is_valid(btref)) {
+    auto hndl = reserve_slot(&rndr->rtargets.buffers);
+    if (!is_valid(hndl)) {
+        wlog("No more slots left for %s", ci.name);
         return {};
     }
-    strncpy(btref.item->name, ci.name, SMALL_STR_LEN - 1);
-    btref.item->id = make_rid(btref.item->name);
-    // TODO: Don't actually just have cfg in the ci - edit this to only include actual needed things - for now we just
-    // use it
-    btref.item->cfg = ci.cfg;
-    btref.item->cfg.user_data = btref.item->name;
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        auto cur_b = &btref.item->frames[i];
-        // Update config pointer
-        cur_b->cfg = &btref.item->cfg;
-        int result = vkr_init_buffer(&cur_b->buffer, *cur_b->cfg);
-        asrt(result == err_code::VKR_NO_ERROR);
-    }
-    hmap_insert(&rndr->rtargets.buffer_id_map, btref.item->id, btref.hndl);
-    return btref.hndl;
+
+    rproxy_create_rbuffer_target_event ev{};
+    ev.hndl = hndl;
+    strncpy(ev.name, ci.name, SMALL_STR_LEN - 1);
+    ev.desc = ci;
+    ev.desc.name = nullptr;
+    asrt(spsc_push(&rndr->proxy_events.rbuffer_target, ev));
+    return hndl;
 }
 
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl)

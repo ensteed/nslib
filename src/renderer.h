@@ -526,6 +526,22 @@ using rtechnique_pool = slot_pool<rtechnique_info>;
 using rmaterial_pool = slot_pool<rmaterial_info>;
 using rgeometry_pool = slot_pool<rgeom_info>;
 
+struct rproxy_create_rtexture_target_event
+{
+    rtexture_target_handle hndl;
+    small_str name;
+    // desc.name is nulled - the name lives in the small_str above so it survives the queue hop
+    rtexture_target_desc desc;
+};
+
+struct rproxy_create_rbuffer_target_event
+{
+    rbuffer_target_handle hndl;
+    small_str name;
+    // desc.name is nulled - the name lives in the small_str above so it survives the queue hop
+    rbuffer_target_desc desc;
+};
+
 struct rproxy_create_rshader_event
 {
     rshader_handle hndl;
@@ -574,6 +590,8 @@ struct rproxy_create_rgeom_event
 // the order the types get processed in each frame
 struct rproxy_event_queues
 {
+    spsc_queue<rproxy_create_rtexture_target_event, MAX_UPLOADS_PER_FRAME> rtexture_target;
+    spsc_queue<rproxy_create_rbuffer_target_event, MAX_UPLOADS_PER_FRAME> rbuffer_target;
     spsc_queue<rproxy_create_rshader_event, MAX_UPLOADS_PER_FRAME> rshader;
     spsc_queue<rproxy_create_rtechnique_event, MAX_UPLOADS_PER_FRAME> rtechnique;
     spsc_queue<rproxy_create_rmaterial_event, MAX_UPLOADS_PER_FRAME> rmaterial;
@@ -781,7 +799,6 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
-
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
