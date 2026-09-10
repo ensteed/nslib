@@ -586,6 +586,25 @@ struct rproxy_create_rgeom_event
     static_array<VkBufferCopy, MAX_VERT_BINDINGS+1> regions;
 };
 
+enum rproxy_destroy_event_type {
+    RPROXY_DESTROY_EVENT_TEXTURE_TARGET,
+    RPROXY_DESTROY_EVENT_BUFFER_TARGET,
+    RPROXY_DESTROY_EVENT_SHADER,
+    RPROXY_DESTROY_EVENT_TECHNIQUE,
+    RPROXY_DESTROY_EVENT_MATERIAL,
+    RPROXY_DESTROY_EVENT_TEXTURE,
+    RPROXY_DESTROY_EVENT_GEOM,
+};
+
+struct rproxy_destroy_event {
+    rproxy_destroy_event_type type;
+    union {
+        rtexture_target_handle ttar;
+        rbuffer_target_handle btar;
+        rshader_handle sh;
+    };
+};
+
 // One queue per event type - process_frame_proxy_events drains them in a fixed order, and that drain order is
 // the order the types get processed in each frame
 struct rproxy_event_queues
@@ -597,6 +616,8 @@ struct rproxy_event_queues
     spsc_queue<rproxy_create_rmaterial_event, MAX_UPLOADS_PER_FRAME> rmaterial;
     spsc_queue<rproxy_create_rtexture_event, MAX_UPLOADS_PER_FRAME> rtexture;
     spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom;
+    spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom;
+    
 };
 
 // There is one pending upload list per type and they are recorded in this order, so the order here is the order the
