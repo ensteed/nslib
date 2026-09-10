@@ -935,18 +935,11 @@ intern void process_rgeom_create_event(renderer *rndr, const rproxy_create_rgeom
     alloc_ci.alignment = layout->vert_layout.bindings[0].stride;
     alloc_ci.size = ev.vert_count * alloc_ci.alignment;
 
+    // A failed virtual allocation means the stream group is full - that is a sizing problem, not something the sim can
+    // recover from, so it asserts like every other render side create failure
     VkDeviceSize vert_stream_byte_offset{};
     s32 result = vmaVirtualAllocate(geom_item->vert_block, &alloc_ci, &geom_item->vert_mem, &vert_stream_byte_offset);
-    if (result != err_code::VKR_NO_ERROR) {
-        wlog("Vma virtual allocate for vert stream failed with code %d", result);
-        for (u32 i = 0; i < ev.staging_bufs.size; ++i) {
-            auto buf = ev.staging_bufs[i];
-            vkr_terminate_buffer(&buf, &rndr->vk);
-        }
-        terminate_geometry(rndr, geom_item);
-        asrt(clear_slot(&rndr->geometry, ev.hndl));
-        return;
-    }
+    asrt(result == err_code::VKR_NO_ERROR && "Vma virtual allocate for vert stream failed");
     asrt(vert_stream_byte_offset % alloc_ci.alignment == 0);
     geom_item->vert_offset = vert_stream_byte_offset / alloc_ci.alignment;
 
@@ -955,16 +948,7 @@ intern void process_rgeom_create_event(renderer *rndr, const rproxy_create_rgeom
     alloc_ci.size = ev.ind_count * alloc_ci.alignment;
     VkDeviceSize ind_stream_byte_offset{};
     result = vmaVirtualAllocate(geom_item->ind_block, &alloc_ci, &geom_item->ind_mem, &ind_stream_byte_offset);
-    if (result != err_code::VKR_NO_ERROR) {
-        wlog("Vma virtual allocate indices stream failed with code %d", result);
-        for (u32 i = 0; i < ev.staging_bufs.size; ++i) {
-            auto buf = ev.staging_bufs[i];
-            vkr_terminate_buffer(&buf, &rndr->vk);
-        }
-        terminate_geometry(rndr, geom_item);
-        asrt(clear_slot(&rndr->geometry, ev.hndl));
-        return;
-    }
+    asrt(result == err_code::VKR_NO_ERROR && "Vma virtual allocate for indices stream failed");
     asrt(ind_stream_byte_offset % alloc_ci.alignment == 0);
     geom_item->ind_offset = ind_stream_byte_offset / alloc_ci.alignment;
 

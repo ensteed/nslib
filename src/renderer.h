@@ -770,8 +770,6 @@ constexpr sizet calculate_manifest_approximate_needed_capacity(const manifest_ma
     return sizeof(rmanifest) + pass_sz + view_sz + job_sz + buffer_targets + texture_targets;
 }
 
-void init_imgui(renderer *rndr, const rbp_pass &pass);
-void terminate_imgui(renderer *rndr);
 
 rformat get_swapchain_format(renderer *rnd);
 idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
@@ -800,25 +798,26 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
 rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
-
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
+rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci);
+
+// These should be called from the render thread only
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);
 rtexture_target_handle find_rtexture_target(renderer *rndr, rid id);
-
-rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci);
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
 rbuffer_target_handle find_rbuffer_target(renderer *rndr, rid id);
-
 // Records any textures staged since the last frame in to cmd_buf, and queues their staging buffers for a deferred
 // free on fif. cmd_buf must already be open, and this must be recorded before any pass that samples those textures.
 void record_pending_uploads(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif);
-
 // Waits on the FIF fence, acquires the swapchain image and preps the frame's pools/arenas. Returns the frame in
 // flight index to build the manifest with, or INVALID_U8_IDX when the swapchain went out of date (skip the frame).
 u8 begin_render_frame(renderer *rndr);
 // Records the manifest, then submits and presents the frame.
 bool end_render_frame(rmanifest *m);
 
+// These are called before thread creation
+void init_imgui(renderer *rndr, const rbp_pass &pass);
+void terminate_imgui(renderer *rndr);
 bool init_renderer(renderer *rndr, const renderer_cfg &p);
 void terminate_renderer(renderer *rndr);
 
