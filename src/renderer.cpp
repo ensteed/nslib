@@ -1259,37 +1259,37 @@ intern void process_frame_proxy_events(renderer *rndr)
 {
     // Drained in this order - the queue a create pushed to is what decides when it gets processed
     rproxy_create_rtexture_target_event ttarg{};
-    while (spsc_pop(&rndr->proxy_events.rtexture_target, &ttarg)) {
+    while (spsc_pop(&rndr->proxy_events.rtex_target_create_q, &ttarg)) {
         process_rtexture_target_create_event(rndr, ttarg);
     }
 
     rproxy_create_rbuffer_target_event btarg{};
-    while (spsc_pop(&rndr->proxy_events.rbuffer_target, &btarg)) {
+    while (spsc_pop(&rndr->proxy_events.rbuf_target_create_q, &btarg)) {
         process_rbuffer_target_create_event(rndr, btarg);
     }
 
     rproxy_create_rshader_event shdr{};
-    while (spsc_pop(&rndr->proxy_events.rshader, &shdr)) {
+    while (spsc_pop(&rndr->proxy_events.rshdr_create_q, &shdr)) {
         process_rshader_create_event(rndr, shdr);
     }
 
     rproxy_create_rtechnique_event tech{};
-    while (spsc_pop(&rndr->proxy_events.rtechnique, &tech)) {
+    while (spsc_pop(&rndr->proxy_events.rtech_create_q, &tech)) {
         process_rtechnique_create_event(rndr, tech);
     }
 
     rproxy_create_rmaterial_event mat{};
-    while (spsc_pop(&rndr->proxy_events.rmaterial, &mat)) {
+    while (spsc_pop(&rndr->proxy_events.rmat_create_q, &mat)) {
         process_rmaterial_create_event(rndr, mat);
     }
 
     rproxy_create_rtexture_event tex{};
-    while (spsc_pop(&rndr->proxy_events.rtexture, &tex)) {
+    while (spsc_pop(&rndr->proxy_events.rtex_create_q, &tex)) {
         process_rtexture_create_event(rndr, tex);
     }
 
     rproxy_create_rgeom_event geom{};
-    while (spsc_pop(&rndr->proxy_events.rgeom, &geom)) {
+    while (spsc_pop(&rndr->proxy_events.rgeom_create_q, &geom)) {
         process_rgeom_create_event(rndr, geom);
     }
 }
@@ -1593,7 +1593,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
     for (sizet i = 0; i < tdesc.pass_count; ++i) {
         ev.passes[i] = tdesc.passes[i];
     }
-    asrt(spsc_push(&rndr->proxy_events.rtechnique, ev));
+    asrt(spsc_push(&rndr->proxy_events.rtech_create_q, ev));
     return hndl;
 }
 
@@ -1627,7 +1627,7 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
         asrt(free_slot(&pool->tpool, ev.hndl.hndl));
         return {};
     }
-    asrt(spsc_push(&rndr->proxy_events.rtexture, ev));
+    asrt(spsc_push(&rndr->proxy_events.rtex_create_q, ev));
     return ev.hndl;
 }
 
@@ -1701,7 +1701,7 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
         return {};
     }
 
-    asrt(spsc_push(&rndr->proxy_events.rgeom, ev));
+    asrt(spsc_push(&rndr->proxy_events.rgeom_create_q, ev));
     return ev.hndl;
 }
 
@@ -1743,7 +1743,7 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
         cur_st->specialized_info = nullptr;
     }
 
-    asrt(spsc_push(&rndr->proxy_events.rshader, ev));
+    asrt(spsc_push(&rndr->proxy_events.rshdr_create_q, ev));
     return hndl;
 }
 
@@ -1760,7 +1760,7 @@ rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo)
     ev.hndl = hndl;
     ev.dstate = ctinfo.dstate;
     ev.override_mask = ctinfo.dstate_override_mask;
-    asrt(spsc_push(&rndr->proxy_events.rmaterial, ev));
+    asrt(spsc_push(&rndr->proxy_events.rmat_create_q, ev));
     return hndl;
 }
 
@@ -1786,7 +1786,7 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
     if (ev.desc.dims == svec2{}) {
         ev.desc.dims = get_window_pixel_size(rndr->vk.cfg.window);
     }
-    asrt(spsc_push(&rndr->proxy_events.rtexture_target, ev));
+    asrt(spsc_push(&rndr->proxy_events.rtex_target_create_q, ev));
     return hndl;
 }
 
@@ -1814,7 +1814,7 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
     strncpy(ev.name, ci.name, SMALL_STR_LEN - 1);
     ev.desc = ci;
     ev.desc.name = nullptr;
-    asrt(spsc_push(&rndr->proxy_events.rbuffer_target, ev));
+    asrt(spsc_push(&rndr->proxy_events.rbuf_target_create_q, ev));
     return hndl;
 }
 

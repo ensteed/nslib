@@ -574,19 +574,20 @@ struct rproxy_create_rtexture_event
 struct rproxy_create_rgeom_event
 {
     rgeom_handle hndl;
-    small_str name;    
+    small_str name;
     u32 group;
     u32 layout;
     u32 vert_count;
     u32 ind_count;
-    
+
     static_array<rsubgeom_range, MAX_SUBGEOM_COUNT> subgeom_vert_ind_counts;
     // Enough staging buffers for each vert stream plus index buffer
-    static_array<vkr_buffer, MAX_VERT_BINDINGS+1> staging_bufs;
-    static_array<VkBufferCopy, MAX_VERT_BINDINGS+1> regions;
+    static_array<vkr_buffer, MAX_VERT_BINDINGS + 1> staging_bufs;
+    static_array<VkBufferCopy, MAX_VERT_BINDINGS + 1> regions;
 };
 
-enum rproxy_destroy_event_type {
+enum rproxy_destroy_event_type
+{
     RPROXY_DESTROY_EVENT_TEXTURE_TARGET,
     RPROXY_DESTROY_EVENT_BUFFER_TARGET,
     RPROXY_DESTROY_EVENT_SHADER,
@@ -596,33 +597,52 @@ enum rproxy_destroy_event_type {
     RPROXY_DESTROY_EVENT_GEOM,
 };
 
-struct rproxy_destroy_event {
+struct rproxy_destroy_event
+{
     rproxy_destroy_event_type type;
-    union {
+    union
+    {
         rtexture_target_handle ttar;
         rbuffer_target_handle btar;
-        rshader_handle sh;
+        rshader_handle shdr;
+        rtechnique_handle tech;
+        rmaterial_handle mat;
+        rtexture_handle tex;
+        rgeom_handle geom;
     };
+};
+
+enum rproxy_eventq_type {
+    RPROXY_EVENTQ_FRAME_OPS,
+    RPROXY_EVENTQ_CREATE_RTEX_TARGET,
+    RPROXY_EVENTQ_CREATE_RBUF_TARGET,
+    RPROXY_EVENTQ_CREATE_RSHDR,
+    RPROXY_EVENTQ_CREATE_RTECH,
+    RPROXY_EVENTQ_CREATE_RMAT,
+    RPROXY_EVENTQ_CREATE_RTEX,
+    RPROXY_EVENTQ_CREATE_RGEOM,
+    RPROXY_EVENTQ_DESTROY,
 };
 
 // One queue per event type - process_frame_proxy_events drains them in a fixed order, and that drain order is
 // the order the types get processed in each frame
 struct rproxy_event_queues
 {
-    spsc_queue<rproxy_create_rtexture_target_event, MAX_UPLOADS_PER_FRAME> rtexture_target;
-    spsc_queue<rproxy_create_rbuffer_target_event, MAX_UPLOADS_PER_FRAME> rbuffer_target;
-    spsc_queue<rproxy_create_rshader_event, MAX_UPLOADS_PER_FRAME> rshader;
-    spsc_queue<rproxy_create_rtechnique_event, MAX_UPLOADS_PER_FRAME> rtechnique;
-    spsc_queue<rproxy_create_rmaterial_event, MAX_UPLOADS_PER_FRAME> rmaterial;
-    spsc_queue<rproxy_create_rtexture_event, MAX_UPLOADS_PER_FRAME> rtexture;
-    spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom;
-    spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom;
-    
+    spsc_queue<u8, MAX_UPLOADS_PER_FRAME> frame_ops;
+    spsc_queue<rproxy_create_rtexture_target_event, MAX_UPLOADS_PER_FRAME> rtex_target_create_q;
+    spsc_queue<rproxy_create_rbuffer_target_event, MAX_UPLOADS_PER_FRAME> rbuf_target_create_q;
+    spsc_queue<rproxy_create_rshader_event, MAX_UPLOADS_PER_FRAME> rshdr_create_q;
+    spsc_queue<rproxy_create_rtechnique_event, MAX_UPLOADS_PER_FRAME> rtech_create_q;
+    spsc_queue<rproxy_create_rmaterial_event, MAX_UPLOADS_PER_FRAME> rmat_create_q;
+    spsc_queue<rproxy_create_rtexture_event, MAX_UPLOADS_PER_FRAME> rtex_create_q;
+    spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom_create_q;
+    spsc_queue<rproxy_destroy_event, MAX_UPLOADS_PER_FRAME> rdestroy_q;
 };
 
 // There is one pending upload list per type and they are recorded in this order, so the order here is the order the
 // upload types get recorded in to the frame's command buffer
-enum rupload_op_type {
+enum rupload_op_type
+{
     RUPLOAD_OP_INVALID = -1,
     RUPLOAD_OP_TEXTURE,
     RUPLOAD_OP_GEOMETRY,
@@ -641,13 +661,14 @@ struct rupload_geometry_op
     u32 group;
     u32 layout;
     static_array<vkr_buffer, MAX_VERT_BINDINGS + 1> staging_bufs;
-    static_array<VkBufferCopy, MAX_VERT_BINDINGS+1> regions;
+    static_array<VkBufferCopy, MAX_VERT_BINDINGS + 1> regions;
 };
 
 struct rupload_op
 {
     rupload_op_type type{RUPLOAD_OP_INVALID};
-    union {
+    union
+    {
         rupload_texture_op texture;
         rupload_geometry_op geom;
     };
@@ -730,9 +751,10 @@ struct renderer
 
     rresource_target_registry rtargets{};
     profile_timepoints pt{};
-    
+
     // Sim thread pushes, render thread pops (see process_frame_proxy_events)
     rproxy_event_queues proxy_events{};
+
     static_array<rupload_op, MAX_UPLOADS_PER_FRAME> pending_uploads[RUPLOAD_OP_TYPE_COUNT];
     static_array<deferred_free, MAX_DEFERRED_FREES_PER_FRAME> deferred_frees[MAX_FRAMES_IN_FLIGHT];
 };
@@ -790,7 +812,6 @@ constexpr sizet calculate_manifest_approximate_needed_capacity(const manifest_ma
     sizet texture_targets = max_counts.texture_targets * sizeof(rtexture_target);
     return sizeof(rmanifest) + pass_sz + view_sz + job_sz + buffer_targets + texture_targets;
 }
-
 
 rformat get_swapchain_format(renderer *rnd);
 idx_t push_geometry_stream_group(renderer *rndr, const geometry_stream_group_desc &desc);
