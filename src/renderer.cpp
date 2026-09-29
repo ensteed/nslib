@@ -1255,42 +1255,44 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
     }
 }
 
+template<class T, class Func>
+intern void pop_create_event(renderer *rndr, spsc_queue<T, MAX_UPLOADS_PER_FRAME> *q, Func f)
+{
+    T ev{};
+    spsc_pop(q, &ev);
+    f(rndr, ev);
+}
+
 intern void process_frame_proxy_events(renderer *rndr)
 {
     // Drained in this order - the queue a create pushed to is what decides when it gets processed
-    rproxy_create_rtexture_target_event ttarg{};
-    while (spsc_pop(&rndr->proxy_events.rtex_target_create_q, &ttarg)) {
-        process_rtexture_target_create_event(rndr, ttarg);
-    }
-
-    rproxy_create_rbuffer_target_event btarg{};
-    while (spsc_pop(&rndr->proxy_events.rbuf_target_create_q, &btarg)) {
-        process_rbuffer_target_create_event(rndr, btarg);
-    }
-
-    rproxy_create_rshader_event shdr{};
-    while (spsc_pop(&rndr->proxy_events.rshdr_create_q, &shdr)) {
-        process_rshader_create_event(rndr, shdr);
-    }
-
-    rproxy_create_rtechnique_event tech{};
-    while (spsc_pop(&rndr->proxy_events.rtech_create_q, &tech)) {
-        process_rtechnique_create_event(rndr, tech);
-    }
-
-    rproxy_create_rmaterial_event mat{};
-    while (spsc_pop(&rndr->proxy_events.rmat_create_q, &mat)) {
-        process_rmaterial_create_event(rndr, mat);
-    }
-
-    rproxy_create_rtexture_event tex{};
-    while (spsc_pop(&rndr->proxy_events.rtex_create_q, &tex)) {
-        process_rtexture_create_event(rndr, tex);
-    }
-
-    rproxy_create_rgeom_event geom{};
-    while (spsc_pop(&rndr->proxy_events.rgeom_create_q, &geom)) {
-        process_rgeom_create_event(rndr, geom);
+    u8 ev_type{};
+    while (spsc_pop(&rndr->proxy_events.frame_ops, &ev_type)) {
+        switch (ev_type) {
+        case RPROXY_EVENTQ_CREATE_RTEX_TARGET:
+            pop_create_event(rndr, &rndr->proxy_events.rtex_target_create_q, process_rtexture_target_create_event);
+            break;
+        case RPROXY_EVENTQ_CREATE_RBUF_TARGET:
+            pop_create_event(rndr, &rndr->proxy_events.rbuf_target_create_q, process_rbuffer_target_create_event);
+            break;
+        case RPROXY_EVENTQ_CREATE_RSHDR:
+            pop_create_event(rndr, &rndr->proxy_events.rshdr_create_q, process_rshader_create_event);
+            break;
+        case RPROXY_EVENTQ_CREATE_RTECH:
+            pop_create_event(rndr, &rndr->proxy_events.rtech_create_q, process_rtechnique_create_event);
+            break;
+        case RPROXY_EVENTQ_CREATE_RMAT:
+            pop_create_event(rndr, &rndr->proxy_events.rmat_create_q, process_rmaterial_create_event);
+            break;
+        case RPROXY_EVENTQ_CREATE_RTEX:
+            pop_create_event(rndr, &rndr->proxy_events.rtex_create_q, process_rtexture_create_event);
+            break;
+        case RPROXY_EVENTQ_CREATE_RGEOM:
+            pop_create_event(rndr, &rndr->proxy_events.rgeom_create_q, process_rgeom_create_event);
+            break;
+        default:
+            elog("Invalid event type %d", ev_type);
+        }
     }
 }
 
