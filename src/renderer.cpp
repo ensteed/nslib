@@ -1596,6 +1596,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
         ev.passes[i] = tdesc.passes[i];
     }
     asrt(spsc_push(&rndr->proxy_events.rtech_create_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RTECH));
     return hndl;
 }
 
@@ -1630,6 +1631,7 @@ rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &tdesc)
         return {};
     }
     asrt(spsc_push(&rndr->proxy_events.rtex_create_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RTEX));
     return ev.hndl;
 }
 
@@ -1704,6 +1706,7 @@ rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci)
     }
 
     asrt(spsc_push(&rndr->proxy_events.rgeom_create_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RGEOM));
     return ev.hndl;
 }
 
@@ -1746,6 +1749,7 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
     }
 
     asrt(spsc_push(&rndr->proxy_events.rshdr_create_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RSHDR));
     return hndl;
 }
 
@@ -1763,6 +1767,7 @@ rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo)
     ev.dstate = ctinfo.dstate;
     ev.override_mask = ctinfo.dstate_override_mask;
     asrt(spsc_push(&rndr->proxy_events.rmat_create_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RMAT));
     return hndl;
 }
 
@@ -1789,6 +1794,8 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
         ev.desc.dims = get_window_pixel_size(rndr->vk.cfg.window);
     }
     asrt(spsc_push(&rndr->proxy_events.rtex_target_create_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RTEX_TARGET));
+
     return hndl;
 }
 
@@ -1817,7 +1824,85 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
     ev.desc = ci;
     ev.desc.name = nullptr;
     asrt(spsc_push(&rndr->proxy_events.rbuf_target_create_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RBUF_TARGET));
     return hndl;
+}
+
+template<typename T>
+bool destroy_rtype(renderer*rndr, slot_pool<T> *pool, const slot_handle<T> &hndl, const rproxy_destroy_event &de) {
+    auto result = free_slot(pool, hndl);
+    if (!result) return result;
+    asrt(spsc_push(&rndr->proxy_events.rdestroy_q, de));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_DESTROY));
+    return true;
+}
+
+bool destroy_rtechnique(renderer *rndr, const rtechnique_handle &hndl)
+{
+    rproxy_destroy_event de{};
+    de.type = RPROXY_DESTROY_EVENT_TECHNIQUE;
+    de.tech = hndl;
+    return destroy_rtype(rndr, &rndr->techniques, hndl, de);
+}
+
+// For textures don't call the helper because we have a different pool/handle we are freeing from than the handle we
+// pass with the event. Textures are special - they have different pools depending on the properties of textures.
+bool destroy_rtexture(renderer *rndr, const rtexture_handle &hndl)
+{
+    // Get which pool this texture is for and free the slot using the hndl.hndl (not just hndl)
+    auto pool = &rndr->textures.pools[hndl.pool_idx];
+    auto result = free_slot(&pool->tpool, hndl.hndl);
+    if (!result) return result;
+
+    // Now create the destroy event giving the hndl which includes info about which pool the texture is from
+    rproxy_destroy_event de{};
+    de.type = RPROXY_DESTROY_EVENT_TEXTURE;
+    de.tex = hndl;
+
+    // Push the destroy event and the frame event
+    asrt(spsc_push(&rndr->proxy_events.rdestroy_q, de));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_DESTROY));
+    return true;
+}
+
+bool destroy_rgeom(renderer *rndr, const rgeom_handle &hndl)
+{
+    rproxy_destroy_event de{};
+    de.type = RPROXY_DESTROY_EVENT_GEOM;
+    de.geom = hndl;
+    return destroy_rtype(rndr, &rndr->geometry, hndl, de);
+}
+
+bool destroy_rshader(renderer *rndr, const rshader_handle &hndl)
+{
+    rproxy_destroy_event de{};
+    de.type = RPROXY_DESTROY_EVENT_SHADER;
+    de.shdr = hndl;
+    return destroy_rtype(rndr, &rndr->shaders, hndl, de);
+}
+
+bool destroy_rmaterial(renderer *rndr, const rmaterial_handle &hndl)
+{
+    rproxy_destroy_event de{};
+    de.type = RPROXY_DESTROY_EVENT_MATERIAL;
+    de.mat = hndl;
+    return destroy_rtype(rndr, &rndr->materials, hndl, de);
+}
+
+bool destroy_rtexture_target(renderer *rndr, const rtexture_target_handle &hndl)
+{
+    rproxy_destroy_event de{};
+    de.type = RPROXY_DESTROY_EVENT_TEXTURE_TARGET;
+    de.ttar = hndl;
+    return destroy_rtype(rndr, &rndr->rtargets.textures, hndl, de);
+}
+
+bool destroy_rbuffer_target(renderer *rndr, const rbuffer_target_handle &hndl)
+{
+    rproxy_destroy_event de{};
+    de.type = RPROXY_DESTROY_EVENT_BUFFER_TARGET;
+    de.btar = hndl;
+    return destroy_rtype(rndr, &rndr->rtargets.buffers, hndl, de);
 }
 
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl)

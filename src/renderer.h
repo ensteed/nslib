@@ -843,6 +843,15 @@ rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
 rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci);
 
+bool destroy_rtechnique(renderer *rndr, const rtechnique_handle &hndl);
+bool destroy_rtexture(renderer *rndr, const rtexture_handle &hndl);
+bool destroy_rgeom(renderer *rndr, const rgeom_handle &hndl);
+bool destroy_rshader(renderer *rndr, const rshader_handle &hndl);
+bool destroy_rmaterial(renderer *rndr, const rmaterial_handle &hndl);
+bool destroy_rtexture_target(renderer *rndr, const rtexture_target_handle &hndl);
+bool destroy_rbuffer_target(renderer *rndr, const rbuffer_target_handle &hndl);
+
+
 // These should be called from the render thread only
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);
 rtexture_target_handle find_rtexture_target(renderer *rndr, rid id);
