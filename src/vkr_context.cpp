@@ -1793,12 +1793,7 @@ int vkr_init(const vkr_cfg *cfg, vkr_context *vk)
                                     cfg->device_extension_count,
                                     &vk->arenas,
                                     test_flags(cfg->li_flags, VKR_LOG_INFO_AVAILABLE_DEVICE_EXT_BIT));
-    code = vkr_init_device(&vk->inst.device,
-                           vk,
-                           cfg->validation_layer_names,
-                           cfg->validation_layer_count,
-                           cfg->device_extension_names,
-                           cfg->device_extension_count);
+    code = vkr_init_device(&vk->inst.device, vk, nullptr, 0, cfg->device_extension_names, cfg->device_extension_count);
     if (code != err_code::VKR_NO_ERROR) {
 
         vkr_terminate(vk);
