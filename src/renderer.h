@@ -612,7 +612,8 @@ struct rproxy_destroy_event
     };
 };
 
-enum rproxy_eventq_type {
+enum rproxy_eventq_type
+{
     RPROXY_EVENTQ_FRAME_OPS,
     RPROXY_EVENTQ_CREATE_RTEX_TARGET,
     RPROXY_EVENTQ_CREATE_RBUF_TARGET,
@@ -628,15 +629,15 @@ enum rproxy_eventq_type {
 // the order the types get processed in each frame
 struct rproxy_event_queues
 {
-    spsc_queue<u8, MAX_UPLOADS_PER_FRAME> frame_ops;
-    spsc_queue<rproxy_create_rtexture_target_event, MAX_UPLOADS_PER_FRAME> rtex_target_create_q;
-    spsc_queue<rproxy_create_rbuffer_target_event, MAX_UPLOADS_PER_FRAME> rbuf_target_create_q;
-    spsc_queue<rproxy_create_rshader_event, MAX_UPLOADS_PER_FRAME> rshdr_create_q;
-    spsc_queue<rproxy_create_rtechnique_event, MAX_UPLOADS_PER_FRAME> rtech_create_q;
-    spsc_queue<rproxy_create_rmaterial_event, MAX_UPLOADS_PER_FRAME> rmat_create_q;
-    spsc_queue<rproxy_create_rtexture_event, MAX_UPLOADS_PER_FRAME> rtex_create_q;
-    spsc_queue<rproxy_create_rgeom_event, MAX_UPLOADS_PER_FRAME> rgeom_create_q;
-    spsc_queue<rproxy_destroy_event, MAX_UPLOADS_PER_FRAME> rdestroy_q;
+    spsc_queue<u8, MAX_CREATE_EVENTS_PER_FRAME> frame_ops;
+    spsc_queue<rproxy_create_rtexture_target_event, MAX_TEX_TARGET_CREATE_EVENTS_PER_FRAME> rtex_target_create_q;
+    spsc_queue<rproxy_create_rbuffer_target_event, MAX_BUF_TARGET_CREATE_EVENTS_PER_FRAME> rbuf_target_create_q;
+    spsc_queue<rproxy_create_rshader_event, MAX_SHDR_CREATE_EVENTS_PER_FRAME> rshdr_create_q;
+    spsc_queue<rproxy_create_rtechnique_event, MAX_TECH_CREATE_EVENTS_PER_FRAME> rtech_create_q;
+    spsc_queue<rproxy_create_rmaterial_event, MAX_MAT_CREATE_EVENTS_PER_FRAME> rmat_create_q;
+    spsc_queue<rproxy_create_rtexture_event, MAX_TEX_CREATE_EVENTS_PER_FRAME> rtex_create_q;
+    spsc_queue<rproxy_create_rgeom_event, MAX_GEOM_CREATE_EVENTS_PER_FRAME> rgeom_create_q;
+    spsc_queue<rproxy_destroy_event, MAX_DESTROY_EVENTS_PER_FRAME> rdestroy_q;
 };
 
 // There is one pending upload list per type and they are recorded in this order, so the order here is the order the
@@ -679,13 +680,16 @@ enum deferred_free_type
     DEFERRED_FREE_TYPE_INVALID,
     DEFERRED_FREE_TYPE_BUFFER,
     DEFERRED_FREE_TYPE_IMAGE,
-    DEFERRED_FREE_TYPE_IMAGE_VIEW
+    DEFERRED_FREE_TYPE_IMAGE_VIEW,
+    DEFERRED_FREE_TYPE_PIPELINE,
+    DEFERRED_FREE_TYPE_VIRTUAL_ALLOC,
 };
 
 // A geometry upload queues one free per staging buffer (one per vert stream plus the index buffer) and a texture
 // upload queues one, so a frame's frees are a multiple of that frame's uploads rather than 1:1 with them. Lives
 // here rather than render_defs.h because it needs MAX_VERT_BINDINGS out of the vk context.
-inline constexpr u32 MAX_DEFERRED_FREES_PER_FRAME = MAX_UPLOADS_PER_FRAME * (MAX_VERT_BINDINGS + 1) + MAX_UPLOADS_PER_FRAME;
+inline constexpr u32 MAX_DEFERRED_FREES_PER_FRAME = MAX_UPLOADS_PER_FRAME * (MAX_VERT_BINDINGS + 1) + MAX_UPLOADS_PER_FRAME +
+                                                    MAX_FRAMES_IN_FLIGHT * MAX_DESTROY_EVENTS_PER_FRAME * MAX_BP_PASS_COUNT;
 
 // A GPU resource that can't be destroyed the moment we are done with it CPU side - the frame that last used it may
 // still be executing. Push one of these on to the fif it was recorded in to, and it gets freed in begin_render_frame
@@ -698,6 +702,12 @@ struct deferred_free
         vkr_buffer buf{};
         vkr_image img;
         VkImageView iv;
+        VkPipeline pl;
+        struct
+        {
+            VmaVirtualBlock block;
+            VmaVirtualAllocation alloc;
+        } valloc;
     };
 };
 
@@ -850,7 +860,6 @@ bool destroy_rshader(renderer *rndr, const rshader_handle &hndl);
 bool destroy_rmaterial(renderer *rndr, const rmaterial_handle &hndl);
 bool destroy_rtexture_target(renderer *rndr, const rtexture_target_handle &hndl);
 bool destroy_rbuffer_target(renderer *rndr, const rbuffer_target_handle &hndl);
-
 
 // These should be called from the render thread only
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);

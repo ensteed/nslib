@@ -886,9 +886,8 @@ intern u8 get_fif_ind(renderer *rndr)
     return rndr->finished_frames % MAX_FRAMES_IN_FLIGHT;
 }
 
-// Everything on a fif's list was recorded in to that fif's command buffer, so that fif's fence being signaled is the
-// all clear that the GPU is done with all of it. Must be called after waiting on the fence and before anything gets
-// pushed on to the list again this frame
+// Everything on a fif's list is safe to free once that fif's fence has signaled - either it was recorded in to that
+// fif's command buffer, or it was pushed here because that fif held the most recent submission that could have used it
 intern void process_deferred_frees(renderer *rndr, idx_t fif)
 {
     auto frees = &rndr->deferred_frees[fif];
@@ -903,6 +902,12 @@ intern void process_deferred_frees(renderer *rndr, idx_t fif)
             break;
         case (DEFERRED_FREE_TYPE_IMAGE_VIEW):
             vkr_terminate_image_view(cur->iv, &rndr->vk);
+            break;
+        case (DEFERRED_FREE_TYPE_PIPELINE):
+            vkr_terminate_pipeline(cur->pl, &rndr->vk);
+            break;
+        case (DEFERRED_FREE_TYPE_VIRTUAL_ALLOC):
+            vmaVirtualFree(cur->valloc.block, cur->valloc.alloc);
             break;
         default:
             elog("Invalid deferred free type recognized for %d", (u32)cur->type);
@@ -1240,6 +1245,7 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
         ilog("Creating new pipeline for key %lu", key);
         auto new_slot = acquire_slot(&rndr->pline_cache.items);
         asrt(is_valid(new_slot) && "Out of pipeline slots");
+        new_slot.item->key = key;
         int result = vkr_init_pipeline((VkPipeline *)&new_slot.item->gpu_d, cfg, &rndr->vk);
         asrt(result == err_code::VKR_NO_ERROR);
         asrt(hmap_insert(&rndr->pline_cache.key_lut, key, new_slot.hndl));
@@ -1255,40 +1261,159 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
     }
 }
 
-template<class T, class Func>
-intern void pop_create_event(renderer *rndr, spsc_queue<T, MAX_UPLOADS_PER_FRAME> *q, Func f)
+template<class T, sizet N, class Func>
+intern void process_create_event(renderer *rndr, spsc_queue<T, N> *q, Func f)
 {
     T ev{};
     spsc_pop(q, &ev);
     f(rndr, ev);
 }
 
-intern void process_frame_proxy_events(renderer *rndr)
+intern void process_destroy_tex_target_event(renderer *rndr, const rtexture_target_handle &hndl)
+{
+    auto item = get_slot_item(&rndr->rtargets.textures, hndl);
+    asrt(item);
+    clear_slot(&rndr->rtargets.textures, hndl);
+
+    // Add in our deferred frees
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        deferred_free df{};
+        df.type = DEFERRED_FREE_TYPE_IMAGE;
+        df.img = item->frames[i].image;
+        arr_push_back(&rndr->deferred_frees[i], df);
+
+        df.type = DEFERRED_FREE_TYPE_IMAGE_VIEW;
+        df.iv = item->frames[i].view;
+        arr_push_back(&rndr->deferred_frees[i], df);
+    }
+    hmap_remove(&rndr->rtargets.texture_id_map, item->id);
+}
+
+intern void process_destroy_buf_target_event(renderer *rndr, const rbuffer_target_handle &hndl)
+{
+    auto item = get_slot_item(&rndr->rtargets.buffers, hndl);
+    asrt(item);
+    clear_slot(&rndr->rtargets.buffers, hndl);
+
+    // Add in our deferred frees
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        deferred_free df{};
+        df.type = DEFERRED_FREE_TYPE_BUFFER;
+        df.buf = item->frames[i].buffer;
+        arr_push_back(&rndr->deferred_frees[i], df);
+    }
+    hmap_remove(&rndr->rtargets.buffer_id_map, item->id);
+}
+
+intern void process_destroy_shdr_event(renderer *rndr, const rshader_handle &hndl)
+{
+    auto item = get_slot_item(&rndr->shaders, hndl);
+    asrt(item);
+    clear_slot(&rndr->shaders, hndl);
+    for (u32 j = 0; j < RSHADER_STAGE_TYPE_COUNT; ++j) {
+        auto stage = &item->stages[j];
+        vkr_terminate_shader_module(stage->sm, &rndr->vk);
+    }
+}
+
+intern void process_destroy_tech_event(renderer *rndr, const rtechnique_handle &hndl, idx_t prev_fif)
+{
+    auto item = get_slot_item(&rndr->techniques, hndl);
+    asrt(item);
+    clear_slot(&rndr->techniques, hndl);
+
+    for (u32 j = 0; j < item->rpass_plines.size; ++j) {
+        auto pass = &item->rpass_plines[j];
+        auto pl_item = get_slot_item(&rndr->pline_cache.items, pass->pline);
+        asrt(release_slot(&rndr->pline_cache.items, pass->pline));
+        asrt(hmap_remove(&rndr->pline_cache.key_lut, pl_item->key));
+
+        deferred_free df{};
+        df.type = DEFERRED_FREE_TYPE_PIPELINE;
+        df.pl = (VkPipeline)pl_item->gpu_d;
+        arr_push_back(&rndr->deferred_frees[prev_fif], df);
+    }
+}
+
+intern void process_destroy_mat_event(renderer *rndr, const rmaterial_handle &hndl, idx_t prev_fif)
+{}
+
+intern void process_destroy_tex_event(renderer *rndr, const rtexture_handle &hndl, idx_t prev_fif)
+{}
+
+intern void process_destroy_geom_event(renderer *rndr, const rgeom_handle &hndl, idx_t prev_fif)
+{
+    auto item = get_slot_item(&rndr->geometry, hndl);
+    asrt(item);
+    clear_slot(&rndr->geometry, hndl);
+
+    deferred_free df{.type = DEFERRED_FREE_TYPE_VIRTUAL_ALLOC};
+    df.valloc = {item->vert_block, item->vert_mem};
+    arr_push_back(&rndr->deferred_frees[prev_fif], df);
+
+    df.valloc = {item->ind_block, item->ind_mem};
+    arr_push_back(&rndr->deferred_frees[prev_fif], df);
+}
+
+intern void process_destroy_event(renderer *rndr, idx_t fif)
+{
+    rproxy_destroy_event ev{};
+    spsc_pop(&rndr->proxy_events.rdestroy_q, &ev);
+    idx_t prev_fif = (fif + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
+    switch (ev.type) {
+    case (RPROXY_DESTROY_EVENT_TEXTURE_TARGET):
+        process_destroy_tex_target_event(rndr, ev.ttar);
+        break;
+    case (RPROXY_DESTROY_EVENT_BUFFER_TARGET):
+        process_destroy_buf_target_event(rndr, ev.btar);
+        break;
+    case (RPROXY_DESTROY_EVENT_SHADER):
+        process_destroy_shdr_event(rndr, ev.shdr);
+        break;
+    case (RPROXY_DESTROY_EVENT_TECHNIQUE):
+        process_destroy_tech_event(rndr, ev.tech, prev_fif);
+        break;
+    case (RPROXY_DESTROY_EVENT_MATERIAL):
+        process_destroy_mat_event(rndr, ev.mat, prev_fif);
+        break;
+    case (RPROXY_DESTROY_EVENT_TEXTURE):
+        process_destroy_tex_event(rndr, ev.tex, prev_fif);
+        break;
+    case (RPROXY_DESTROY_EVENT_GEOM):
+        process_destroy_geom_event(rndr, ev.geom, prev_fif);
+        break;
+    }
+}
+
+intern void process_frame_proxy_events(renderer *rndr, idx_t fif)
 {
     // Drained in this order - the queue a create pushed to is what decides when it gets processed
     u8 ev_type{};
     while (spsc_pop(&rndr->proxy_events.frame_ops, &ev_type)) {
         switch (ev_type) {
         case RPROXY_EVENTQ_CREATE_RTEX_TARGET:
-            pop_create_event(rndr, &rndr->proxy_events.rtex_target_create_q, process_rtexture_target_create_event);
+            process_create_event(rndr, &rndr->proxy_events.rtex_target_create_q, process_rtexture_target_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RBUF_TARGET:
-            pop_create_event(rndr, &rndr->proxy_events.rbuf_target_create_q, process_rbuffer_target_create_event);
+            process_create_event(rndr, &rndr->proxy_events.rbuf_target_create_q, process_rbuffer_target_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RSHDR:
-            pop_create_event(rndr, &rndr->proxy_events.rshdr_create_q, process_rshader_create_event);
+            process_create_event(rndr, &rndr->proxy_events.rshdr_create_q, process_rshader_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RTECH:
-            pop_create_event(rndr, &rndr->proxy_events.rtech_create_q, process_rtechnique_create_event);
+            process_create_event(rndr, &rndr->proxy_events.rtech_create_q, process_rtechnique_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RMAT:
-            pop_create_event(rndr, &rndr->proxy_events.rmat_create_q, process_rmaterial_create_event);
+            process_create_event(rndr, &rndr->proxy_events.rmat_create_q, process_rmaterial_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RTEX:
-            pop_create_event(rndr, &rndr->proxy_events.rtex_create_q, process_rtexture_create_event);
+            process_create_event(rndr, &rndr->proxy_events.rtex_create_q, process_rtexture_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RGEOM:
-            pop_create_event(rndr, &rndr->proxy_events.rgeom_create_q, process_rgeom_create_event);
+            process_create_event(rndr, &rndr->proxy_events.rgeom_create_q, process_rgeom_create_event);
+            break;
+        case RPROXY_EVENTQ_DESTROY:
+            process_destroy_event(rndr, fif);
             break;
         default:
             elog("Invalid event type %d", ev_type);
@@ -1334,12 +1459,12 @@ u8 begin_render_frame(renderer *rndr)
     ptimer_split(&rndr->pt);
     auto dev = &rndr->vk.inst.device;
 
-    // Add all new proxy objects
-    process_frame_proxy_events(rndr);
-
     // Update finished frames which is used to get the current frame
     idx_t fif = get_fif_ind(rndr);
     auto *cur_fif = &rndr->fifs[fif];
+
+    // Add all new proxy objects
+    process_frame_proxy_events(rndr, fif);
 
     // Window resize
     if (!window_resize_continue_check(rndr, cur_fif)) {
@@ -1829,7 +1954,8 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
 }
 
 template<typename T>
-bool destroy_rtype(renderer*rndr, slot_pool<T> *pool, const slot_handle<T> &hndl, const rproxy_destroy_event &de) {
+bool destroy_rtype(renderer *rndr, slot_pool<T> *pool, const slot_handle<T> &hndl, const rproxy_destroy_event &de)
+{
     auto result = free_slot(pool, hndl);
     if (!result) return result;
     asrt(spsc_push(&rndr->proxy_events.rdestroy_q, de));
@@ -2082,6 +2208,12 @@ void terminate_renderer(renderer *rndr)
 
     // Device needs to be idle before finishing with everything
     vkr_device_wait_idle(&rndr->vk.inst.device);
+
+    // Anything still waiting on a fence is safe to free now that the device is idle - must come before the geometry
+    // stream groups are terminated as virtual allocs have to be freed before their blocks are destroyed
+    for (idx_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        process_deferred_frees(rndr, i);
+    }
 
 // IMGUI
 #ifdef USE_IMGUI

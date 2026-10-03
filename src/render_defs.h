@@ -46,7 +46,20 @@ inline constexpr u8 MAX_BP_COUNT = 8;
 inline constexpr u8 MAX_BP_RESOURCE_REQUIREMENT_COUNT = 8;
 // Max number of blueprint pass attachments supported
 inline constexpr u8 MAX_BP_PASS_SLOT_COUNT = 16;
-inline constexpr u8 MAX_UPLOADS_PER_FRAME = 64;
+
+inline constexpr u32 MAX_TEX_TARGET_CREATE_EVENTS_PER_FRAME = 8;
+inline constexpr u32 MAX_BUF_TARGET_CREATE_EVENTS_PER_FRAME = 8;
+inline constexpr u32 MAX_SHDR_CREATE_EVENTS_PER_FRAME = 16;
+inline constexpr u32 MAX_TECH_CREATE_EVENTS_PER_FRAME = 16;
+inline constexpr u32 MAX_MAT_CREATE_EVENTS_PER_FRAME = 64;
+inline constexpr u32 MAX_TEX_CREATE_EVENTS_PER_FRAME = 128;
+inline constexpr u32 MAX_GEOM_CREATE_EVENTS_PER_FRAME = 128;
+inline constexpr u32 MAX_DESTROY_EVENTS_PER_FRAME = 256;
+inline constexpr u32 MAX_CREATE_EVENTS_PER_FRAME = MAX_TEX_TARGET_CREATE_EVENTS_PER_FRAME + MAX_BUF_TARGET_CREATE_EVENTS_PER_FRAME +
+                                                   MAX_SHDR_CREATE_EVENTS_PER_FRAME + MAX_TECH_CREATE_EVENTS_PER_FRAME +
+                                                   MAX_MAT_CREATE_EVENTS_PER_FRAME + MAX_TEX_CREATE_EVENTS_PER_FRAME +
+                                                   MAX_GEOM_CREATE_EVENTS_PER_FRAME + MAX_DESTROY_EVENTS_PER_FRAME;
+inline constexpr u32 MAX_UPLOADS_PER_FRAME = MAX_TEX_CREATE_EVENTS_PER_FRAME + MAX_GEOM_CREATE_EVENTS_PER_FRAME;
 
 inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
 // Cannot be constexpr since make_rid is not
@@ -63,7 +76,7 @@ enum rdset_layout_type
     RDSET_LAYOUT_COUNT,
 };
 
-enum rdset_main_data_binding:u32
+enum rdset_main_data_binding : u32
 {
     RDSET_MAIN_DATA_BINDING_DRAW_SSBO,
     RDSET_MAIN_DATA_BINDING_VIEW_SSBO,
@@ -75,12 +88,11 @@ enum rdset_main_data_binding:u32
     RDSET_MAIN_DATA_BINDING_COUNT,
 };
 
-enum rdset_image_binding:u32
+enum rdset_image_binding : u32
 {
     RDSET_IMAGE_BINDING_IMAGE_ARRAYS,
     RDSET_IMAGE_BINDING_COUNT,
 };
-
 
 // Indice type
 using ind_t = u16;
