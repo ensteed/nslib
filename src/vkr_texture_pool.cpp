@@ -72,7 +72,8 @@ intern b8 get_layout_transition_masks(VkImageLayout old_layout,
     else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
         *src_access = VK_ACCESS_NONE;
         *dst_access = VK_ACCESS_TRANSFER_WRITE_BIT;
-        *src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        // A reused slot may still be sampled by earlier in-flight frames
+        *src_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         *dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
     else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {

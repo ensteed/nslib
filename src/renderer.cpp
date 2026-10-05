@@ -985,6 +985,9 @@ intern void process_rmaterial_create_event(renderer *rndr, const rproxy_create_r
     mat->dstate = ev.dstate;
     mat->override_mask = ev.override_mask;
     mat->mat_ssbo = vkr_acquire_chunk(&rndr->desc_info.material_ssbo);
+    // Material ssbo contains a section for each frame in flight like
+    // |          fif0         |          fif1         | ... |          fifN         |
+    // | mat0, mat1, ..., matN | mat0, mat1, ..., matN | ... | mat0, mat1, ..., matN |
 }
 
 intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev)
@@ -1336,10 +1339,24 @@ intern void process_destroy_tech_event(renderer *rndr, const rtechnique_handle &
 }
 
 intern void process_destroy_mat_event(renderer *rndr, const rmaterial_handle &hndl, idx_t prev_fif)
-{}
+{
+    auto item = get_slot_item(rndr->materials, hndl);
+    asrt(item);
+    clear_slot(&rndr->materials, hndl);
+    // We can release this now because the mat ssbo isn't shared across thread boundaries or anything like that, and
+    // releasing a chunk from it doesn't actually write any of the underlying data - it just basically says this chunk
+    // is available for use again. Then, at some future time if the chunk is reserved again, each frame only writes to
+    // it's section within the ssbo leaving other sections for the chunk untouched. 
+    vkr_release_chunk(&rndr->desc_info.material_ssbo, item->mat_ssbo);
+}
 
 intern void process_destroy_tex_event(renderer *rndr, const rtexture_handle &hndl, idx_t prev_fif)
-{}
+{
+    auto pool = &rndr->textures.pools[hndl.pool_idx];
+    auto item = get_slot_item(&pool->tpool, hndl.hndl);
+    asrt(item);
+    clear_slot(&pool->tpool, hndl.hndl);
+}
 
 intern void process_destroy_geom_event(renderer *rndr, const rgeom_handle &hndl, idx_t prev_fif)
 {
@@ -1426,8 +1443,11 @@ intern void record_pending_texture_upload(renderer *rndr, VkCommandBuffer cmd_bu
     rtexture_pool_item_ref rt{.hndl = top.tslot.hndl};
     auto pool = &rndr->textures.pools[top.tslot.pool_idx];
     rt.item = get_slot_item(&pool->tpool, rt.hndl);
-    asrt(rt.item);
-    vkr_upload_to_texture_slots(pool, cmd_buf, &rt, 1, &top.staging_buf);
+    
+    // If !rt.item, destroyed before its upload got recorded - nothing to upload, but the staging buffer still needs to go
+    if (rt.item) {
+        vkr_upload_to_texture_slots(pool, cmd_buf, &rt, 1, &top.staging_buf);
+    }
 
     // The copy above only just got recorded - the staging buffer has to stay alive until this fif's submit has
     // actually completed on the GPU

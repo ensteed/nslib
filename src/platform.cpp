@@ -1,6 +1,5 @@
 #include "basic_types.h"
 #include "profiling.h"
-#include "imgui/imgui_impl_vulkan.h"
 #include "osdef.h"
 #include "threads.h"
 #ifdef PLATFORM_UNIX
