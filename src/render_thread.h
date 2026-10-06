@@ -2,10 +2,16 @@
 #include "atomic_types.h"
 #include "renderer.h"
 #include "engine_rendering.h"
+#include "sim_region.h"
 #include "threads.h"
 
 namespace nslib
 {
+
+struct sim_snapshot_drawable {
+    transform_trs trs;
+    
+};
 
 struct sim_snapshot
 {

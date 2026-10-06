@@ -40,7 +40,7 @@ enum rvert_layout : u32
     RVERT_LAYOUT_COUNT
 };
 
-struct instance_ssbo_data {
+struct transform_ssbo_data {
     mat4 model;
     mat4 prev_model;
 };

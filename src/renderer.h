@@ -515,8 +515,8 @@ struct global_descriptor_info
     desc_block_buffer pass_ssbo;
     // Per frame data
     desc_block_buffer frame_ubo;
-    // All instance data
-    desc_block_buffer instance_ssbo;
+    // All transform data
+    desc_block_buffer transform_ssbo;
     // All material data
     vkr_chunked_buffer material_ssbo;
 };
@@ -787,7 +787,7 @@ struct rpipeline_layout_cfg
     sizet view_ssbo_block_sz;
     sizet pass_ssbo_block_sz;
     sizet frame_ubo_block_sz;
-    sbuffer_cfg instance_ssbo;
+    sbuffer_cfg transform_ssbo;
     sbuffer_cfg material_ssbo;
     u32 push_const_range_count;
     const push_constant_range *push_const_ranges;

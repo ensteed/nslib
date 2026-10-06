@@ -173,13 +173,13 @@ void prepare_transforms(rmanifest *m, sim_region *sr)
     for (u32 i = 0; i < tf_tbl->entries.size; ++i) {
         transform *tf = &tf_tbl->entries[i];
         if (is_valid(tf->active_idx)) {
-            instance_ssbo_data update_d{.model = interpolate_tranform(*tf, 1.0)};
-            update_instance_data(m, i, &update_d);
+            transform_ssbo_data update_d{.model = interpolate_tranform(*tf, 1.0)};
+            update_transform_data(m, i, &update_d);
         }
         else if (tf->rfif_dirty > 0) {
-            instance_ssbo_data update_d{.model = tf->cached};
+            transform_ssbo_data update_d{.model = tf->cached};
             --tf->rfif_dirty;
-            update_instance_data(m, i, &update_d);
+            update_transform_data(m, i, &update_d);
         }
     }
 }
@@ -254,7 +254,7 @@ void enqueue_draws(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_
                     dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
                     dp.mat = mat->rhndl;
                     dp.tech = tref.item->rhndl;
-                    dp.inst = tfind;
+                    dp.transform_idx = tfind;
                     asrt(tref.item->passes.size > 0);
                     push_draw(m, dp);
                 }

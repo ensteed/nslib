@@ -63,7 +63,7 @@ const rpipeline_layout_cfg PL_LAYOUT_CFG{
     .view_ssbo_block_sz = sizeof(view_ssbo_data),
     .pass_ssbo_block_sz = sizeof(pass_ssbo_data),
     .frame_ubo_block_sz = sizeof(frame_ubo_data),
-    .instance_ssbo{MAX_INSTANCES, sizeof(instance_ssbo_data)},
+    .transform_ssbo{MAX_INSTANCES, sizeof(transform_ssbo_data)},
     .material_ssbo{256, sizeof(material_ssbo_data)},
     .push_const_range_count = 0,
     .push_const_ranges = nullptr,

@@ -45,7 +45,6 @@ struct transform
     transform_trs prev;
     transform_trs current;
     mat4 cached;
-    u32 rfif_dirty;
     // If in the active set, this will be the index in to the array
     idx_t active_idx{INVALID_IDX};
 };

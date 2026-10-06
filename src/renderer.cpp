@@ -298,7 +298,7 @@ intern void terminate_global_descriptor_info(renderer *rndr)
     ilog("Terminating global desc info");
     vkr_terminate_desc_pool(rndr->desc_info.pool, &rndr->vk);
     vkr_terminate_chunked_buffer(&rndr->desc_info.material_ssbo, &rndr->vk);
-    vkr_terminate_buffer(&rndr->desc_info.instance_ssbo.buffer, &rndr->vk);
+    vkr_terminate_buffer(&rndr->desc_info.transform_ssbo.buffer, &rndr->vk);
     vkr_terminate_buffer(&rndr->desc_info.frame_ubo.buffer, &rndr->vk);
     vkr_terminate_buffer(&rndr->desc_info.pass_ssbo.buffer, &rndr->vk);
     vkr_terminate_buffer(&rndr->desc_info.view_ssbo.buffer, &rndr->vk);
@@ -349,7 +349,7 @@ intern b8 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
     ++bi;
 
     // Instance ssbo
-    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
+    g_set_main_data_bindings[bi].binding = RDSET_MAIN_DATA_BINDING_TRANSFORM_SSBO;
     g_set_main_data_bindings[bi].descriptorCount = 1;
     g_set_main_data_bindings[bi].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     g_set_main_data_bindings[bi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -406,7 +406,7 @@ intern b8 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg
     asrt(draw_ssbo_block_sz % 16 == 0);
     asrt(dip.view_ssbo_block_sz % 16 == 0);
     asrt(dip.pass_ssbo_block_sz % 16 == 0);
-    asrt(dip.instance_ssbo.block_size % 16 == 0);
+    asrt(dip.transform_ssbo.block_size % 16 == 0);
     asrt(dip.material_ssbo.block_size % 16 == 0);
     // Absolute requirement for uniform buffers
     asrt(dip.frame_ubo_block_sz % 16 == 0);
@@ -493,12 +493,12 @@ intern b8 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg
     //////////////////////////
     // We allocate a buffer big enough to have a slot for each frame in flight so we can avoid needing to sync stuff..
     // or create a slot in the buffer for every update and retire the old
-    sizet instance_buf_fif_sz = dip.instance_ssbo.block_size * dip.instance_ssbo.block_count;
-    rndr->desc_info.instance_ssbo.block_size = dip.instance_ssbo.block_size;
-    rndr->desc_info.instance_ssbo.fif_block_count = dip.instance_ssbo.block_count;
-    b_cfg.buffer_size = instance_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
-    b_cfg.vma_alloc_name = "instance_ssbo";
-    result = vkr_init_buffer(&rndr->desc_info.instance_ssbo.buffer, b_cfg);
+    sizet transform_buf_fif_sz = dip.transform_ssbo.block_size * dip.transform_ssbo.block_count;
+    rndr->desc_info.transform_ssbo.block_size = dip.transform_ssbo.block_size;
+    rndr->desc_info.transform_ssbo.fif_block_count = dip.transform_ssbo.block_count;
+    b_cfg.buffer_size = transform_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
+    b_cfg.vma_alloc_name = "transform_ssbo";
+    result = vkr_init_buffer(&rndr->desc_info.transform_ssbo.buffer, b_cfg);
     if (result != err_code::VKR_NO_ERROR) {
         terminate_global_descriptor_info(rndr);
         return false;
@@ -620,10 +620,10 @@ intern b8 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg
         buffer_infos[bi].range = frame_buf_fif_sz;
 
         // Instance SSBO
-        bi = bi_offset + RDSET_MAIN_DATA_BINDING_INSTANCE_SSBO;
-        buffer_infos[bi].buffer = rndr->desc_info.instance_ssbo.buffer.hndl;
-        buffer_infos[bi].offset = fif_i * instance_buf_fif_sz;
-        buffer_infos[bi].range = instance_buf_fif_sz;
+        bi = bi_offset + RDSET_MAIN_DATA_BINDING_TRANSFORM_SSBO;
+        buffer_infos[bi].buffer = rndr->desc_info.transform_ssbo.buffer.hndl;
+        buffer_infos[bi].offset = fif_i * transform_buf_fif_sz;
+        buffer_infos[bi].range = transform_buf_fif_sz;
 
         // Material SSBO
         bi = bi_offset + RDSET_MAIN_DATA_BINDING_MATERIAL_SSBO;

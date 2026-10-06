@@ -132,7 +132,7 @@ struct rdraw_dyn_state
 
 struct mdraw_ssbo_data
 {
-    idx_t inst;
+    idx_t transform_idx;
     idx_t material;
     idx_t view;
     idx_t pass;
@@ -140,7 +140,7 @@ struct mdraw_ssbo_data
 
 struct mdraw_params
 {
-    idx_t inst;
+    idx_t transform_idx;
     rgeom_handle geom;
     idx_t subgeom;
     rmaterial_handle mat;
@@ -149,7 +149,7 @@ struct mdraw_params
 
 struct mdraw_call
 {
-    idx_t inst;
+    idx_t transform_idx;
     idx_t geom;
     idx_t subgeom;
     idx_t mat;
@@ -359,7 +359,7 @@ rmanifest *create_manifest(const create_rmanifest_params &p);
 bool execute_manifest(rmanifest *m);
 
 void update_view_data(rmanifest *m, idx_t view, const void *data);
-void update_instance_data(rmanifest *m, idx_t inst, const void *data);
+void update_transform_data(rmanifest *m, idx_t transform, const void *data);
 void update_material_data(rmanifest *m, rmaterial_handle mh, const void *data);
 
 idx_t push_pass(rmanifest *m, const mpass_params &p);

@@ -44,6 +44,8 @@ struct render_job_cb_params
     // Job draw calls
     const array<mdraw_call> *dcs;
     const array<idx_t> *instanced_dcs;
+    // This job's offset 
+    u32 job_instance_offset;
     u64 cmd_buf;
 };
 
@@ -286,7 +288,7 @@ void draw_geometry(const render_job_cb_params &p, void *)
     desc_sets[RDSET_LAYOUT_IMAGES] = p.desc_info->images;
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p.desc_info->pline_layout, 0, RDSET_LAYOUT_COUNT, desc_sets, 0, nullptr);
 
-    u32 inst_draw_id = 0;
+    u32 inst_draw_id = p.job_instance_offset;
     for (u32 dci = 0; dci < p.instanced_dcs->size; ++dci) {
         const mdraw_call *dc = &(*p.dcs)[(*p.instanced_dcs)[dci]];
         const rgeom_info *geom = &p.geometry->slots[dc->geom].item;
@@ -698,15 +700,15 @@ intern void sort_and_collapse_draw_list(mrender_job *rjob)
     }
 }
 
-intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, sizet job_ssbo_base)
+intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, u32 job_instance_offset)
 {
     sizet blocksz = m->rndr->desc_info.draw_ssbo.block_size;
     for (u32 i = 0; i < cur_rj->sorted_dcs.size; ++i) {
         const mdraw_call &dc = cur_rj->dcs[cur_rj->sorted_dcs[i]];
-        sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.draw_ssbo.fif_block_count + job_ssbo_base + i);
+        sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.draw_ssbo.fif_block_count + job_instance_offset + i);
         void *dst = (void *)((sizet)m->rndr->desc_info.draw_ssbo.buffer.mem_info.pMappedData + buf_offset);
         mdraw_ssbo_data dd{
-            .inst = dc.inst,
+            .transform_idx = dc.transform_idx,
             .material = dc.mat,
             .view = cur_rj->mv,
             .pass = cur_rj->mp,
@@ -743,7 +745,7 @@ bool execute_manifest(rmanifest *m)
     track_rdraw_dyn_state dyn_state{};
 
     // We place all draw call data for all jobs in a single SSBO, so this is the base offset for the current job's draw call data
-    sizet job_ssbo_base = 0;
+    u32 job_instance_offset = 0;
     for (u32 rji = 0; rji < m->jobs.size; ++rji) {
         auto cur_rj = &m->jobs[rji];
         auto mp = &m->passes[cur_rj->mp];
@@ -757,8 +759,7 @@ bool execute_manifest(rmanifest *m)
         // Sort it baby boo
         sort_and_collapse_draw_list(cur_rj);
 
-        update_draw_ssbo(m, cur_rj, job_ssbo_base);
-        job_ssbo_base += cur_rj->dcs.size;
+        update_draw_ssbo(m, cur_rj, job_instance_offset);
 
         // Create all needed barriers for the current pass resources (according to what we have for the current state)
         emit_manifest_pass_barriers(m, *rbp_pass, cur_rj->mp, buf, fif);
@@ -790,6 +791,7 @@ bool execute_manifest(rmanifest *m)
             p.dcs = &cur_rj->dcs;
             p.instanced_dcs = &cur_rj->instanced_dcs;
             p.fns = &m->rndr->vk.inst.device.eds1_fns;
+            p.job_instance_offset = job_instance_offset;
             cur_rj->cb(p, cur_rj->cb_user);
         }
         else {
@@ -806,6 +808,9 @@ bool execute_manifest(rmanifest *m)
         // Update our working copy manifest states - we will copy these over to our renderer states once done executing
         // the manifest
         update_manifest_pass_states(m, *rbp_pass, *mp, fif);
+
+        // Need to do this at the end so we pass the correct offset to the callback
+        job_instance_offset += cur_rj->dcs.size;        
     }
     vkr_end_cmd_buf(buf);
 
@@ -842,12 +847,12 @@ void update_view_data(rmanifest *m, idx_t view, const void *view_data)
     memcpy(dst, view_data, blocksz);
 }
 
-void update_instance_data(rmanifest *m, idx_t inst, const void *instance_data)
+void update_transform_data(rmanifest *m, idx_t transform, const void *transform_data)
 {
-    sizet blocksz = m->rndr->desc_info.instance_ssbo.block_size;
-    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.instance_ssbo.fif_block_count + inst);
-    void *dst = (u8 *)m->rndr->desc_info.instance_ssbo.buffer.mem_info.pMappedData + buf_offset;
-    memcpy(dst, instance_data, blocksz);
+    sizet blocksz = m->rndr->desc_info.transform_ssbo.block_size;
+    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.transform_ssbo.fif_block_count + transform);
+    void *dst = (u8 *)m->rndr->desc_info.transform_ssbo.buffer.mem_info.pMappedData + buf_offset;
+    memcpy(dst, transform_data, blocksz);
 }
 
 void update_material_data(rmanifest *m, rmaterial_handle mh, const void *data)
@@ -962,7 +967,7 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
                 mdraw_call *cur_d = &cur_rj->dcs[dc_ind];
 
                 cur_d->subgeom = dp.subgeom;
-                cur_d->inst = dp.inst;
+                cur_d->transform_idx = dp.transform_idx;
                 cur_d->geom = dp.geom.si;
                 cur_d->mat = dp.mat.si;
                 cur_d->pl = cur_pl->pline.si;
