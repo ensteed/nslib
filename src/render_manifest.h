@@ -317,7 +317,7 @@ struct rmanifest
 {
     renderer *rndr;
     u8 fif;
-    render_blueprint_ref rbp;
+    rblueprint_ref rbp;
     const void *frame_sdata;
     array<rbuffer_target_fif> buffers;
     array<rtexture_target_fif> textures;
@@ -330,7 +330,7 @@ struct create_rmanifest_params
 {
     renderer *rndr;
     // Blueprint handle for this frame
-    render_blueprint_ref rbp;
+    rblueprint_ref rbp;
     // Frame in flight
     u8 fif;
     // Frame SSBO buffer data

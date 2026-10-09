@@ -268,9 +268,9 @@ asset_item_ref<T> find_asset(asset_pool<T> *pool, const char *name)
 }
 
 template<typename T>
-asset_item_ref<const T> find_asset(const asset_pool<T> &pool, rid id)
+asset_item_const_ref<T> find_asset(const asset_pool<T> &pool, rid id)
 {
-    asset_item_ref<const T> ret{};
+    asset_item_const_ref<T> ret{};
     auto item = hmap_find(&pool.amap, id);
     if (item) {
         ret.hndl = item->val;
@@ -280,7 +280,7 @@ asset_item_ref<const T> find_asset(const asset_pool<T> &pool, rid id)
 }
 
 template<typename T>
-asset_item_ref<const T> find_asset(const asset_pool<T> &pool, const char *name)
+asset_item_const_ref<T> find_asset(const asset_pool<T> &pool, const char *name)
 {
     for (auto iter = hmap_begin(&pool->amap); is_valid(iter); iter = hmap_next(&pool->amap, iter)) {
         auto item = get_asset(pool, iter->val);

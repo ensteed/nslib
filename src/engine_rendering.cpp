@@ -112,7 +112,7 @@ intern rformat get_rformat_for_usage(texture_usage usage)
 }
 
 template<typename T>
-intern bool get_and_log_upload_result(T *asset)
+intern bool get_and_log_upload_asset_result(T *asset)
 {
     bool result = is_valid(asset->rhndl);
     if (result) {
@@ -124,6 +124,19 @@ intern bool get_and_log_upload_result(T *asset)
     return result;
 }
 
+template<typename T>
+intern bool get_and_log_upload_comp_result(T *comp)
+{
+    bool result = is_valid(comp->rhndl);
+    if (result) {
+        ilog("Uploaded %s for ent %d to renderer", comp->type_str, comp->ent_id);
+    }
+    else {
+        wlog("Failed to upload %s for ent %d to renderer", comp->type_str, comp->ent_id);
+    }
+    return result;
+}
+
 // All we need to do currently is cast it!
 intern rshader_stage_type get_renderer_shader_stage_type(shader_stage_type st)
 {
@@ -131,11 +144,21 @@ intern rshader_stage_type get_renderer_shader_stage_type(shader_stage_type st)
 }
 
 template<typename PoolT, typename UploadFunc>
-intern u32 upload_assets_helper(PoolT *pool, UploadFunc func)
+intern u32 run_func_on_each_asset(PoolT *pool, UploadFunc func)
 {
     u32 success_count{0};
     for (auto aiter = asset_pool_begin(pool); is_valid(aiter); aiter = asset_pool_next(pool, aiter)) {
         success_count += (u32)func(aiter.item);
+    }
+    return success_count;
+}
+
+template<typename CompTbl, typename UploadFunc>
+intern u32 run_func_on_each_comp(CompTbl *pool, UploadFunc func)
+{
+    u32 success_count{0};
+    for (sizet i = 0; i < pool->entries.size; ++i) {
+        success_count += (u32)func(&pool->entries[i]);
     }
     return success_count;
 }
@@ -161,7 +184,7 @@ void prepare_materials(rmanifest *m, asset_cache *cg)
             md.sampler_idx = get_rsampler(mat_iter.item->textures[MAT_SAMPLER_SLOT_ALBEDO].sampler);
             auto diffuse = find_asset(tex_pool, mat_iter.item->textures[MAT_SAMPLER_SLOT_ALBEDO].id);
             md.tex_pool_idx = is_valid(diffuse) ? diffuse.item->rhndl.pool_idx : INVALID_IDX;
-            md.tex_layer = is_valid(diffuse) ? diffuse.item->rhndl.hndl.si : 0;
+            md.tex_layer = is_valid(diffuse) ? diffuse.item->rhndl.hndl.sid.si : 0;
             update_material_data(m, mat_iter.item->rhndl, &md);
         }
     }
@@ -176,11 +199,11 @@ void prepare_transforms(rmanifest *m, sim_region *sr)
             transform_ssbo_data update_d{.model = interpolate_tranform(*tf, 1.0)};
             update_transform_data(m, i, &update_d);
         }
-        else if (tf->rfif_dirty > 0) {
-            transform_ssbo_data update_d{.model = tf->cached};
-            --tf->rfif_dirty;
-            update_transform_data(m, i, &update_d);
-        }
+        // else if (tf->rfif_dirty > 0) {
+        //     transform_ssbo_data update_d{.model = tf->cached};
+        //     --tf->rfif_dirty;
+        //     update_transform_data(m, i, &update_d);
+        // }
     }
 }
 
@@ -307,7 +330,7 @@ u32 setup_geometry_stream_group(renderer *rndr)
     return push_geometry_stream_group(rndr, desc);
 }
 
-bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *scratch)
+bool register_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *scratch)
 {
     ilog("Registering geom id: %s  name: %s", ls(geom->name), str_cstr(geom->name));
     asrt(geom->verts.size > 0);
@@ -364,7 +387,7 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *s
     cinf.topology = (rgeom_topology)geom->topology;
 
     geom->rhndl = create_rgeometry(rndr, cinf);
-    bool result = get_and_log_upload_result(geom);
+    bool result = get_and_log_upload_asset_result(geom);
 
     mem_free(tmp_inds, scratch);
     mem_free(tmp_bone_weight_ids, scratch);
@@ -375,10 +398,41 @@ bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *s
 }
 
 // Great use for a stack arena - will work
-u32 upload_geometries(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geom_pool, mem_arena *scratch)
+u32 register_geometries(renderer *rndr, u32 stream_gp, geometry_pool *geom_pool, mem_arena *scratch)
 {
-    auto upload_func = [rndr, stream_gp, scratch](geometry *geom) -> bool { return upload_geometry(rndr, stream_gp, geom, scratch); };
-    return upload_assets_helper(geom_pool, upload_func);
+    auto upload_func = [rndr, stream_gp, scratch](geometry *geom) -> bool { return register_geometry(rndr, stream_gp, geom, scratch); };
+    return run_func_on_each_asset(geom_pool, upload_func);
+}
+
+u32 register_geometries(renderer *rndr, u32 stream_gp, geometry *const geoms[], u32 count, mem_arena *scratch)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (register_geometry(rndr, stream_gp, geoms[i], scratch)) ++cnt;
+    }
+    return cnt;
+}
+
+bool deregister_geometry(renderer *rndr, geometry *geom)
+{
+    auto success = destroy_rgeom(rndr, geom->rhndl);
+    if (success) geom->rhndl = {};
+    return success;
+}
+
+u32 deregister_geometries(renderer *rndr, asset_pool<geometry> *geom_pool)
+{
+    auto destroy_func = [rndr](geometry *geom) -> bool { return deregister_geometry(rndr, geom); };
+    return run_func_on_each_asset(geom_pool, destroy_func);
+}
+
+u32 deregister_geometries(renderer *rndr, geometry *const geoms[], u32 count)
+{
+    u32 cnt{};
+    for (u32 i = 0; i < count; ++i) {
+        if (deregister_geometry(rndr, geoms[i])) ++cnt;
+    }
+    return cnt;
 }
 
 intern rtexture_flags get_rtexture_flags(asset_flags flags)
@@ -386,7 +440,7 @@ intern rtexture_flags get_rtexture_flags(asset_flags flags)
     return test_flags(flags, make_flag(TEXTURE_CUBEMAP_BIT)) ? RTEXTURE_FLAG_CUBEMAP : RTEXTURE_FLAG_NONE;
 }
 
-intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp, render_blueprint_ref bp)
+intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp, rblueprint_ref bp)
 {
     idx_t pass_idx = find_rbp_pass(bp.item, src.bp_pass);
     asrt(is_valid(pass_idx));
@@ -466,7 +520,7 @@ intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_p
     }
 }
 
-bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch)
+bool register_texture(renderer *rndr, texture *tex, mem_arena *scratch)
 {
     rtexture_desc ctinfo{};
     ctinfo.name = ls(tex->name);
@@ -477,16 +531,47 @@ bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch)
     ctinfo.data = tex->pixels;
     ctinfo.data_size = get_texture_memsize(tex);
     tex->rhndl = create_rtexture(rndr, ctinfo);
-    return get_and_log_upload_result(tex);
+    return get_and_log_upload_asset_result(tex);
 }
 
-u32 upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch)
+u32 register_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch)
 {
-    auto upload_func = [rndr, scratch](texture *tex) -> bool { return upload_texture(rndr, tex, scratch); };
-    return upload_assets_helper(tex_pool, upload_func);
+    auto upload_func = [rndr, scratch](texture *tex) -> bool { return register_texture(rndr, tex, scratch); };
+    return run_func_on_each_asset(tex_pool, upload_func);
 }
 
-bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_arena *scratch)
+u32 register_textures(renderer *rndr, texture *const textures[], u32 count, mem_arena *scratch)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (register_texture(rndr, textures[i], scratch)) ++cnt;
+    }
+    return cnt;
+}
+
+bool deregister_texture(renderer *rndr, texture *tex)
+{
+    auto success = destroy_rtexture(rndr, tex->rhndl);
+    if (success) tex->rhndl = {};
+    return success;
+}
+
+u32 deregister_textures(renderer *rndr, texture_pool *tex_pool)
+{
+    auto destroy_func = [rndr](texture *tex) -> bool { return deregister_texture(rndr, tex); };
+    return run_func_on_each_asset(tex_pool, destroy_func);
+}
+
+u32 deregister_textures(renderer *rndr, texture *const textures[], u32 count)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (deregister_texture(rndr, textures[i])) ++cnt;
+    }
+    return cnt;
+}
+
+bool register_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_arena *scratch)
 {
     rtechnique_desc tdesc{};
     tdesc.name = ls(tech->name);
@@ -500,16 +585,47 @@ bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_aren
     tdesc.passes = tmp_passes;
     tech->rhndl = create_rtechnique(rndr, tdesc);
     mem_free(tmp_passes, scratch);
-    return get_and_log_upload_result(tech);
+    return get_and_log_upload_asset_result(tech);
 }
 
-u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp, mem_arena *scratch)
+u32 register_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp, mem_arena *scratch)
 {
-    auto upload_func = [rndr, sp, scratch](technique *tech) -> bool { return upload_technique(rndr, tech, sp, scratch); };
-    return upload_assets_helper(tech_pool, upload_func);
+    auto upload_func = [rndr, sp, scratch](technique *tech) -> bool { return register_technique(rndr, tech, sp, scratch); };
+    return run_func_on_each_asset(tech_pool, upload_func);
 }
 
-bool upload_material(renderer *rndr, material *mat, texture_pool *tex_pool, mem_arena *scratch)
+u32 register_techniques(renderer *rndr, technique *const techs[], u32 count, shader_pool *sp, mem_arena *scratch)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (register_technique(rndr, techs[i], sp, scratch)) ++cnt;
+    }
+    return cnt;
+}
+
+bool deregister_technique(renderer *rndr, technique *tech)
+{
+    auto success = destroy_rtechnique(rndr, tech->rhndl);
+    if (success) tech->rhndl = {};
+    return success;
+}
+
+u32 deregister_techniques(renderer *rndr, technique_pool *tech_pool)
+{
+    auto destroy_func = [rndr](technique *tech) -> bool { return deregister_technique(rndr, tech); };
+    return run_func_on_each_asset(tech_pool, destroy_func);
+}
+
+u32 deregister_techniques(renderer *rndr, technique *const techs[], u32 count)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (deregister_technique(rndr, techs[i])) ++cnt;
+    }
+    return cnt;
+}
+
+bool register_material(renderer *rndr, material *mat, texture_pool *tex_pool, const technique_pool &tech_pool, mem_arena *scratch)
 {
     rmaterial_desc md{};
     md.name = ls(mat->name);
@@ -523,17 +639,64 @@ bool upload_material(renderer *rndr, material *mat, texture_pool *tex_pool, mem_
             wlog("Failed to load texture id %lu from texture pool", mat->textures[i].id);
         }
     }
-    mat->rhndl = create_rmaterial(rndr, md);
-    return get_and_log_upload_result(mat);
+    md.bp_tech_count = mat->bp_techniques.size;
+    auto mem = mem_alloc<rmaterial_bp_technique>(scratch, md.bp_tech_count);
+
+    for (u32 bpti = 0; bpti < md.bp_tech_count; ++bpti) {
+        auto bpref = find_render_blueprint(rndr, mat->bp_techniques[bpti].bpid);
+        auto techref = find_asset(tech_pool, mat->bp_techniques[bpti].tech_id);
+        if (!is_valid(bpref)) wlog("Could not find blueprint %s in material %s", ls(mat->bp_techniques[bpti].bpid), ls(mat->name));
+        if (!is_valid(bpref)) wlog("Could not find technique %s in material %s", ls(mat->bp_techniques[bpti].tech_id), ls(mat->name));
+        mem[bpti].tech = techref.item ? techref.item->rhndl : rtechnique_handle{};
+        mem[bpti].bp = bpref.hndl;
+    }
+
+    md.bp_techs = mem;
+    mat->rhndl = upsert_rmaterial(rndr, {}, md);
+    mem_free(mem, scratch);
+    return get_and_log_upload_asset_result(mat);
 }
 
-u32 upload_materials(renderer *rndr, material_pool *mat_pool, texture_pool *tex_pool, mem_arena *scratch)
+u32 register_materials(renderer *rndr, material_pool *mat_pool, texture_pool *tex_pool, const technique_pool &tech_pool, mem_arena *scratch)
 {
-    auto upload_func = [rndr, tex_pool, scratch](material *mat) -> bool { return upload_material(rndr, mat, tex_pool, scratch); };
-    return upload_assets_helper(mat_pool, upload_func);
+    auto upload_func = [rndr, tex_pool, scratch, tech_pool](material *mat) -> bool {
+        return register_material(rndr, mat, tex_pool, tech_pool, scratch);
+    };
+    return run_func_on_each_asset(mat_pool, upload_func);
 }
 
-bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch)
+u32 register_materials(renderer *rndr, material *const mats[], u32 count, texture_pool *tex_pool, const technique_pool &tech_pool, mem_arena *scratch)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (register_material(rndr, mats[i], tex_pool, tech_pool, scratch)) ++cnt;
+    }
+    return cnt;
+}
+
+bool deregister_material(renderer *rndr, material *mat)
+{
+    auto success = destroy_rmaterial(rndr, mat->rhndl);
+    if (success) mat->rhndl = {};
+    return success;
+}
+
+u32 deregister_materials(renderer *rndr, material_pool *mat_pool)
+{
+    auto destroy_func = [rndr](material *mat) -> bool { return deregister_material(rndr, mat); };
+    return run_func_on_each_asset(mat_pool, destroy_func);
+}
+
+u32 deregister_materials(renderer *rndr, material *const mats[], u32 count)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (deregister_material(rndr, mats[i])) ++cnt;
+    }
+    return cnt;
+}
+
+bool register_shader(renderer *rndr, shader *shdr, mem_arena *scratch)
 {
     rshader_desc rd{};
     rd.name = ls(shdr->name);
@@ -552,13 +715,151 @@ bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch)
     rd.stages = stages.data;
 
     shdr->rhndl = create_rshader(rndr, rd);
-    return get_and_log_upload_result(shdr);
+    arr_terminate(&stages);
+    return get_and_log_upload_asset_result(shdr);
 }
 
-u32 upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch)
+u32 register_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch)
 {
-    auto upload_func = [rndr, scratch](shader *shdr) -> bool { return upload_shader(rndr, shdr, scratch); };
-    return upload_assets_helper(shdr_pool, upload_func);
+    auto upload_func = [rndr, scratch](shader *shdr) -> bool { return register_shader(rndr, shdr, scratch); };
+    return run_func_on_each_asset(shdr_pool, upload_func);
+}
+
+u32 register_shaders(renderer *rndr, shader *const shdrs[], u32 count, mem_arena *scratch)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (register_shader(rndr, shdrs[i], scratch)) ++cnt;
+    }
+    return cnt;
+}
+
+bool deregister_shader(renderer *rndr, shader *shdr)
+{
+    auto success = destroy_rshader(rndr, shdr->rhndl);
+    if (success) shdr->rhndl = {};
+    return success;
+}
+
+u32 deregister_shaders(renderer *rndr, shader_pool *shdr_pool)
+{
+    auto destroy_func = [rndr](shader *shdr) -> bool { return deregister_shader(rndr, shdr); };
+    return run_func_on_each_asset(shdr_pool, destroy_func);
+}
+
+u32 deregister_shaders(renderer *rndr, shader *const shdrs[], u32 count)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (deregister_shader(rndr, shdrs[i])) ++cnt;
+    }
+    return cnt;
+}
+
+bool register_drawable(renderer *rndr, static_mesh *sm, const geometry_pool &gpool, const material_pool &mat_pool, mem_arena *scratch)
+{
+    rdrawable_desc desc{};
+    auto gm = find_asset(gpool, sm->geom_id);
+    if (!is_valid(gm)) return false;
+
+    desc.item_count = sm->mat_mapping.size;
+    auto mem = mem_alloc<rdraw_item>(scratch, desc.item_count);
+
+    for (u32 mati = 0; mati < sm->mat_mapping.size; ++mati) {
+        auto mat_ref = find_asset(mat_pool, sm->mat_mapping[mati].mat_id);
+        mem[mati].geom = gm.item->rhndl;
+        mem[mati].subgeom = find_subgeom_by_mat_slot(gm.item, sm->mat_mapping[mati].sm_mat_slot);
+        mem[mati].mat = mat_ref.item ? mat_ref.item->rhndl : rmaterial_handle{};
+    }
+    desc.items = mem;
+    sm->rhndl = upsert_rdrawable(rndr, {}, desc);
+    mem_free(mem, scratch);
+    return get_and_log_upload_comp_result(sm);
+}
+
+u32 register_drawables(renderer *rndr, static_mesh_tbl *sm_tbl, const geometry_pool &gpool, const material_pool &mat_pool, mem_arena *scratch)
+{
+    auto upload_func = [rndr, scratch, gpool, mat_pool](static_mesh *sm) -> bool {
+        return register_drawable(rndr, sm, gpool, mat_pool, scratch);
+    };
+    return run_func_on_each_comp(sm_tbl, upload_func);
+}
+
+u32 register_drawables(renderer *rndr,
+                       static_mesh *const sms[],
+                       u32 count,
+                       const geometry_pool &gpool,
+                       const material_pool &mat_pool,
+                       mem_arena *scratch)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (register_drawable(rndr, sms[i], gpool, mat_pool, scratch)) ++cnt;
+    }
+    return cnt;
+}
+
+bool deregister_drawable(renderer *rndr, static_mesh *sm)
+{
+    auto success = destroy_rdrawable(rndr, sm->rhndl);
+    if (success) sm->rhndl = {};
+    return success;
+}
+
+u32 deregister_drawables(renderer *rndr, static_mesh_tbl *sm_tbl)
+{
+    auto destroy_func = [rndr](static_mesh *sm) -> bool { return deregister_drawable(rndr, sm); };
+    return run_func_on_each_comp(sm_tbl, destroy_func);
+}
+
+u32 deregister_drawables(renderer *rndr, static_mesh *const sms[], u32 count)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (deregister_drawable(rndr, sms[i])) ++cnt;
+    }
+    return cnt;
+}
+
+bool register_transform(renderer *rndr, transform *tf)
+{
+    tf->rhndl = reserve_slot(&rndr->transforms);
+    return get_and_log_upload_comp_result(tf);
+}
+
+u32 register_transforms(renderer *rndr, transform_tbl *tf_tbl)
+{
+    auto upload_func = [rndr](transform *tf) -> bool { return register_transform(rndr, tf); };
+    return run_func_on_each_comp(tf_tbl, upload_func);
+}
+
+u32 register_transforms(renderer *rndr, transform *const tfs[], u32 count)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (register_transform(rndr, tfs[i])) ++cnt;
+    }
+    return cnt;
+}
+
+bool deregister_transform(renderer *rndr, transform *tf)
+{
+    return free_slot(&rndr->transforms, tf->rhndl);
+}
+
+u32 deregister_transforms(renderer *rndr, transform_tbl *tf_tbl)
+{
+    auto destroy_func = [rndr](transform *tf) -> bool { return deregister_transform(rndr, tf); };
+    return run_func_on_each_comp(tf_tbl, destroy_func);
+}
+
+u32 deregister_transforms(renderer *rndr, transform *const tfs[], u32 count)
+{
+    u32 cnt{0};
+    for (u32 i = 0; i < count; ++i) {
+        if (deregister_transform(rndr, tfs[i])) ++cnt;
+    }
+    return cnt;
 }
 
 } // namespace nslib

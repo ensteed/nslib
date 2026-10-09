@@ -152,7 +152,7 @@ u32 get_rbp_slot_count(const rbp_pass &rbp, rbp_resource_usage_flags flags)
     return cnt;
 }
 
-idx_t add_rbp_resource_slot(render_blueprint *rbp, idx_t pid, const rbp_resource_slot_desc &desc)
+idx_t add_rbp_resource_slot(rblueprint *rbp, idx_t pid, const rbp_resource_slot_desc &desc)
 {
     auto pass = &rbp->passes[pid];
     auto ind = pass->slots.size++;
@@ -166,7 +166,7 @@ idx_t add_rbp_resource_slot(render_blueprint *rbp, idx_t pid, const rbp_resource
     return ind;
 }
 
-idx_t add_rbp_resource_requirement(render_blueprint *rbp,
+idx_t add_rbp_resource_requirement(rblueprint *rbp,
                                                   idx_t pid,
                                                   const rbp_resource_requirement &req,
                                                   idx_t spid)
@@ -178,7 +178,7 @@ idx_t add_rbp_resource_requirement(render_blueprint *rbp,
     return ind;
 }
 
-idx_t add_rbp_subpass(render_blueprint *rbp, idx_t pid)
+idx_t add_rbp_subpass(rblueprint *rbp, idx_t pid)
 {
     auto pass = &rbp->passes[pid];
     auto ret = pass->subpasses.size++;
@@ -186,7 +186,7 @@ idx_t add_rbp_subpass(render_blueprint *rbp, idx_t pid)
     return ret;
 }
 
-idx_t add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
+idx_t add_rbp_pass(rblueprint *rbp, const rbp_pass_desc &pdesc)
 {
     idx_t ind = (u32)rbp->passes.size++;
     asrt(ind < rbp->passes.capacity);
@@ -205,15 +205,15 @@ idx_t add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc)
     return ind;
 }
 
-idx_t find_rbp_pass(render_blueprint *rbp, rid id)
+idx_t find_rbp_pass(rblueprint *rbp, rid id)
 {
     auto fiter = hmap_find(&rbp->pass_idmap, id);
     return fiter ? fiter->val : INVALID_IDX;
 }
 
-render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name)
+rblueprint_ref create_render_blueprint(renderer *rndr, const char *name)
 {
-    render_blueprint_ref ref = acquire_slot(&rndr->blueprints);
+    rblueprint_ref ref = acquire_slot(&rndr->blueprints);
     if (!is_valid(ref)) {
         return ref;
     }
@@ -225,7 +225,7 @@ render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name)
     return ref;
 }
 
-bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
+bool destroy_render_blueprint(renderer *rndr, rblueprint_handle hndl)
 {
     auto item = get_slot_item(&rndr->blueprints, hndl);
     ilog("Destroying render blueprint %s with %lu passes", item->name, item->passes.size);
@@ -234,14 +234,14 @@ bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
     return hmap_remove(&rndr->blueprint_id_map, item->id) && release_slot(&rndr->blueprints, hndl);
 }
 
-render_blueprint *get_render_blueprint(renderer *rndr, render_blueprint_handle hndl)
+rblueprint *get_render_blueprint(renderer *rndr, rblueprint_handle hndl)
 {
     return get_slot_item(&rndr->blueprints, hndl);
 }
 
-render_blueprint_ref find_render_blueprint(renderer *rndr, rid bpid)
+rblueprint_ref find_render_blueprint(renderer *rndr, rid bpid)
 {
-    render_blueprint_ref ret{};
+    rblueprint_ref ret{};
     auto fiter = hmap_find(&rndr->blueprint_id_map, bpid);
     if (fiter) {
         ret.hndl = fiter->val;
@@ -250,7 +250,7 @@ render_blueprint_ref find_render_blueprint(renderer *rndr, rid bpid)
     return ret;
 }
 
-void clean_render_blueprint(renderer *rndr, render_blueprint *rbp)
+void clean_render_blueprint(renderer *rndr, rblueprint *rbp)
 {
     asrt(rbp);
     auto vk = &rndr->vk;
@@ -266,7 +266,7 @@ void clean_render_blueprint(renderer *rndr, render_blueprint *rbp)
     }
 }
 
-bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp)
+bool compile_render_blueprint(renderer *rndr, rblueprint *rbp)
 {
     asrt(rndr);
     asrt(rbp);

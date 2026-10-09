@@ -385,7 +385,7 @@ intern const vkr_framebuffer *get_or_create_framebuffer(renderer *rndr,
         u32 att_ind = rbp_pass.slots[si].att_ind;
         if (is_valid(att_ind)) {
             asrt(att_ind < MAX_FRAMEBUFFER_ATTACHMENT_COUNT);
-            const rtexture_target_fif *cur_t = &m.textures[cur_sl->t.hndl.si];
+            const rtexture_target_fif *cur_t = &m.textures[cur_sl->t.hndl.sid.si];
 
             // Can't use the value from cfg - swapchain images don't have correct data in the cfg field as they were
             // never actually created..
@@ -507,8 +507,8 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, idx_
         const mpass_slot_assignment &assignment = mp.slot_assignments[slot_ind];
         if (assignment.type == mslot_target_type::TEXTURE) {
             asrt(is_valid(assignment.t.hndl));
-            asrt(assignment.t.hndl.si < m->textures.size);
-            auto cur_t = &m->textures[assignment.t.hndl.si];
+            asrt(assignment.t.hndl.sid.si < m->textures.size);
+            auto cur_t = &m->textures[assignment.t.hndl.sid.si];
             rtexture_state *cur_st = &cur_t->state;
             rtexture_state req_st = get_required_texture_state(rbpp, *first, *cur_st);
 
@@ -550,8 +550,8 @@ intern void emit_manifest_pass_barriers(rmanifest *m, const rbp_pass &rbpp, idx_
         }
         else if (assignment.type == mslot_target_type::BUFFER) {
             asrt(is_valid(assignment.b));
-            asrt(assignment.b.si < m->buffers.size);
-            auto cur_b = &m->buffers[assignment.b.si];
+            asrt(assignment.b.sid.si < m->buffers.size);
+            auto cur_b = &m->buffers[assignment.b.sid.si];
             rbuffer_state *cur_st = &cur_b->state;
             rbuffer_state req_st = get_updated_buffer_state(rbpp, *first);
 
@@ -622,14 +622,14 @@ intern void update_manifest_pass_states(rmanifest *m, const rbp_pass &rbp_pass, 
         if (assignment.type == mslot_target_type::TEXTURE) {
             // Final state after the pass completes (attachments use final layout).
             asrt(is_valid(assignment.t.hndl));
-            asrt(assignment.t.hndl.si < m->textures.size);
-            m->textures[assignment.t.hndl.si].state = get_updated_texture_state(rbp_pass, *last);
+            asrt(assignment.t.hndl.sid.si < m->textures.size);
+            m->textures[assignment.t.hndl.sid.si].state = get_updated_texture_state(rbp_pass, *last);
         }
         else if (assignment.type == mslot_target_type::BUFFER) {
             // Final buffer access/stage after the pass completes.
             asrt(is_valid(assignment.b));
-            asrt(assignment.b.si < m->buffers.size);
-            m->buffers[assignment.b.si].state = get_updated_buffer_state(rbp_pass, *last);
+            asrt(assignment.b.sid.si < m->buffers.size);
+            m->buffers[assignment.b.sid.si].state = get_updated_buffer_state(rbp_pass, *last);
         }
     }
 }
@@ -946,12 +946,12 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
              !tptr ? "technique " : "",
              !mptr ? "material " : "",
              !gptr ? "geometry " : "",
-             dp.tech.si,
-             dp.tech.gen_id,
-             dp.mat.si,
-             dp.mat.gen_id,
-             dp.geom.si,
-             dp.geom.gen_id);
+             dp.tech.sid.si,
+             dp.tech.sid.gen_id,
+             dp.mat.sid.si,
+             dp.mat.sid.gen_id,
+             dp.geom.sid.si,
+             dp.geom.sid.gen_id);
         return push_cnt;
     }
 
@@ -968,9 +968,9 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
 
                 cur_d->subgeom = dp.subgeom;
                 cur_d->transform_idx = dp.transform_idx;
-                cur_d->geom = dp.geom.si;
-                cur_d->mat = dp.mat.si;
-                cur_d->pl = cur_pl->pline.si;
+                cur_d->geom = dp.geom.sid.si;
+                cur_d->mat = dp.mat.sid.si;
+                cur_d->pl = cur_pl->pline.sid.si;
                 cur_d->sort_key = pack_mdraw_sort_key(*cur_d);
                 cur_d->dstate = dstate;
                 cur_d->inst_count = 1;

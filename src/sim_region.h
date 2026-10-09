@@ -1,9 +1,12 @@
 #pragma once
 
 #include "math/matrix4.h"
+#include "containers/slot_allocator.h"
 #include "rid.h"
+#include "render_defs.h"
 #include "containers/array.h"
 #include "containers/hmap.h"
+#include "containers/slot_pool.h" // IWYU pragma: export
 
 namespace nslib
 {
@@ -47,6 +50,7 @@ struct transform
     mat4 cached;
     // If in the active set, this will be the index in to the array
     idx_t active_idx{INVALID_IDX};
+    slot_id rhndl;
 };
 
 struct transform_system
@@ -68,6 +72,7 @@ struct static_mesh
     COMP(STATIC_MESH)
     rid geom_id;
     array<material_subgeom_mapping> mat_mapping{};
+    rdrawable_handle rhndl;
 };
 
 enum camera_proj_type : u8

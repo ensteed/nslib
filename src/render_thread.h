@@ -8,9 +8,9 @@
 namespace nslib
 {
 
-struct sim_snapshot_drawable {
-    transform_trs trs;
-    
+struct snapshot_draw {
+    u32 transform_idx;
+    rdraw_item item;
 };
 
 struct sim_snapshot
@@ -21,7 +21,7 @@ struct sim_snapshot
     f32 dt;
     f64 elapsed;
     void *imgui_data;
-    render_blueprint_ref rbp; // becomes a handle after step 4
+    rblueprint_ref rbp; // becomes a handle after step 4
 };
 
 // When the render thread first starts, each frame needs to have an initial owner

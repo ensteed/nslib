@@ -187,7 +187,7 @@ struct rbp_resource_slot_desc
     rbp_resource_usage usage;
 };
 
-struct render_blueprint
+struct rblueprint
 {
     small_str name{};
     rid id;
@@ -195,7 +195,7 @@ struct render_blueprint
     hmap<rid, idx_t> pass_idmap{};
 };
 
-pup_func(render_blueprint)
+pup_func(rblueprint)
 {
     pup_member(name);
     pup_member(id);
@@ -211,23 +211,23 @@ inline bool is_valid(const rbp_resource_slot_info &si)
 u32 get_rbp_slot_count(const rbp_pass &rbp, rbp_resource_usage_flags flags = RBP_RES_USAGE_FLAGS_ANY_ATTACHMENT);
 bool is_usage_attachment(rbp_resource_usage usage);
 
-idx_t add_rbp_resource_slot(render_blueprint *rbp, idx_t pid, const rbp_resource_slot_desc &desc);
-idx_t add_rbp_resource_requirement(render_blueprint *rbp,
+idx_t add_rbp_resource_slot(rblueprint *rbp, idx_t pid, const rbp_resource_slot_desc &desc);
+idx_t add_rbp_resource_requirement(rblueprint *rbp,
                                                   idx_t pid,
                                                   const rbp_resource_requirement &req,
                                                   idx_t spid = 0);
-idx_t add_rbp_subpass(render_blueprint *rbp, idx_t pid);
+idx_t add_rbp_subpass(rblueprint *rbp, idx_t pid);
 
-idx_t add_rbp_pass(render_blueprint *rbp, const rbp_pass_desc &pdesc);
-idx_t find_rbp_pass(render_blueprint *rbp, rid id);
+idx_t add_rbp_pass(rblueprint *rbp, const rbp_pass_desc &pdesc);
+idx_t find_rbp_pass(rblueprint *rbp, rid id);
 
 // Renderer takes ownership of blueprint
-render_blueprint_ref create_render_blueprint(renderer *rndr, const char *name);
-bool destroy_render_blueprint(renderer *rndr, render_blueprint_handle hndl);
-render_blueprint *get_render_blueprint(renderer *rndr, render_blueprint_handle hndl);
-render_blueprint_ref find_render_blueprint(renderer *rndr, rid bpid);
+rblueprint_ref create_render_blueprint(renderer *rndr, const char *name);
+bool destroy_render_blueprint(renderer *rndr, rblueprint_handle hndl);
+rblueprint *get_render_blueprint(renderer *rndr, rblueprint_handle hndl);
+rblueprint_ref find_render_blueprint(renderer *rndr, rid bpid);
 
-void clean_render_blueprint(renderer *rndr, render_blueprint *rbp);
-bool compile_render_blueprint(renderer *rndr, render_blueprint *rbp);
+void clean_render_blueprint(renderer *rndr, rblueprint *rbp);
+bool compile_render_blueprint(renderer *rndr, rblueprint *rbp);
 
 } // namespace nslib

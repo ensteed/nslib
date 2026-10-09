@@ -10,6 +10,9 @@ struct slot_handle;
 template<typename T>
 struct slot_item_ref;
 
+template<typename T>
+struct slot_item_const_ref;
+
 enum asset_type : u32
 {
     ASSET_TYPE_GEOMETRY,
@@ -63,6 +66,9 @@ using asset_handle = slot_handle<T>;
 
 template<typename T>
 using asset_item_ref = slot_item_ref<T>;
+
+template<typename T>
+using asset_item_const_ref = slot_item_const_ref<T>;
 
 template<typename T>
 struct asset_ref

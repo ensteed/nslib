@@ -227,7 +227,7 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
     }
 }
 
-intern render_blueprint_ref build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
+intern rblueprint_ref build_and_compile_render_blueprint(renderer *rndr, rdev_app_ctxt *app)
 {
     // First, create the needed target resources
     auto rbp = create_render_blueprint(rndr, FWD_PBR_RBP);
@@ -396,11 +396,11 @@ intern b8 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     init_imgui(&app->rndr, rbp.item->passes[pass_id]);
 #endif
 
-    upload_geometries(&app->rndr, geom_stream_gp, geom_pool, &ctxt->arenas.stack);
-    upload_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
-    upload_shaders(&app->rndr, shdr_pool, &ctxt->arenas.stack);
-    upload_techniques(&app->rndr, tech_pool, shdr_pool, &ctxt->arenas.stack);
-    upload_materials(&app->rndr, mat_pool, tex_pool, &ctxt->arenas.stack);
+    register_geometries(&app->rndr, geom_stream_gp, geom_pool, &ctxt->arenas.stack);
+    register_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
+    register_shaders(&app->rndr, shdr_pool, &ctxt->arenas.stack);
+    register_techniques(&app->rndr, tech_pool, shdr_pool, &ctxt->arenas.stack);
+    register_materials(&app->rndr, mat_pool, tex_pool, *tech_pool, &ctxt->arenas.stack);
 
     // Create render targets
     // create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));
@@ -443,7 +443,7 @@ void update_transforms(sim_region *sr)
 
         // Set this no matter what - even if not dirty we are in the active set which means last frame was dirty which
         // means on this frame, we remove from active set and let settle to all frames
-        tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
+        //tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
 
         // If the tform is dirty, mark it as processed and update cached, otherwise remove if from the active set
         if (is_comp_dirty(*tf)) {

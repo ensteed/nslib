@@ -1,6 +1,5 @@
 #pragma once
 #include "basic_types.h"
-#include "hashfuncs.h"
 #include "rid.h"
 
 namespace nslib
@@ -46,19 +45,19 @@ inline constexpr u8 MAX_BP_COUNT = 8;
 inline constexpr u8 MAX_BP_RESOURCE_REQUIREMENT_COUNT = 8;
 // Max number of blueprint pass attachments supported
 inline constexpr u8 MAX_BP_PASS_SLOT_COUNT = 16;
-
 inline constexpr u32 MAX_TEX_TARGET_CREATE_EVENTS_PER_FRAME = 8;
 inline constexpr u32 MAX_BUF_TARGET_CREATE_EVENTS_PER_FRAME = 8;
 inline constexpr u32 MAX_SHDR_CREATE_EVENTS_PER_FRAME = 16;
 inline constexpr u32 MAX_TECH_CREATE_EVENTS_PER_FRAME = 16;
-inline constexpr u32 MAX_MAT_CREATE_EVENTS_PER_FRAME = 64;
+inline constexpr u32 MAX_MAT_UPSERT_EVENTS_PER_FRAME = 64;
 inline constexpr u32 MAX_TEX_CREATE_EVENTS_PER_FRAME = 128;
 inline constexpr u32 MAX_GEOM_CREATE_EVENTS_PER_FRAME = 128;
+inline constexpr u32 MAX_RDRAWABLE_UPSERT_EVENTS_PER_FRAME = 128;
 inline constexpr u32 MAX_DESTROY_EVENTS_PER_FRAME = 256;
-inline constexpr u32 MAX_CREATE_EVENTS_PER_FRAME = MAX_TEX_TARGET_CREATE_EVENTS_PER_FRAME + MAX_BUF_TARGET_CREATE_EVENTS_PER_FRAME +
-                                                   MAX_SHDR_CREATE_EVENTS_PER_FRAME + MAX_TECH_CREATE_EVENTS_PER_FRAME +
-                                                   MAX_MAT_CREATE_EVENTS_PER_FRAME + MAX_TEX_CREATE_EVENTS_PER_FRAME +
-                                                   MAX_GEOM_CREATE_EVENTS_PER_FRAME + MAX_DESTROY_EVENTS_PER_FRAME;
+inline constexpr u32 MAX_CREATE_EVENTS_PER_FRAME =
+    MAX_TEX_TARGET_CREATE_EVENTS_PER_FRAME + MAX_BUF_TARGET_CREATE_EVENTS_PER_FRAME + MAX_SHDR_CREATE_EVENTS_PER_FRAME +
+    MAX_TECH_CREATE_EVENTS_PER_FRAME + MAX_MAT_UPSERT_EVENTS_PER_FRAME + MAX_TEX_CREATE_EVENTS_PER_FRAME +
+    MAX_GEOM_CREATE_EVENTS_PER_FRAME + MAX_RDRAWABLE_UPSERT_EVENTS_PER_FRAME + MAX_DESTROY_EVENTS_PER_FRAME;
 inline constexpr u32 MAX_UPLOADS_PER_FRAME = MAX_TEX_CREATE_EVENTS_PER_FRAME + MAX_GEOM_CREATE_EVENTS_PER_FRAME;
 
 inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
@@ -102,9 +101,6 @@ struct slot_handle;
 
 template<typename T>
 struct slot_item_ref;
-
-template<typename T>
-struct slot_handle;
 
 using rtexture_pool_idx = u32;
 
@@ -150,9 +146,13 @@ struct rbuffer_target;
 using rbuffer_target_handle = slot_handle<rbuffer_target>;
 using rbuffer_target_ref = slot_item_ref<rbuffer_target>;
 
-struct render_blueprint;
-using render_blueprint_handle = slot_handle<render_blueprint>;
-using render_blueprint_ref = slot_item_ref<render_blueprint>;
+struct rdrawable;
+using rdrawable_handle = slot_handle<rdrawable>;
+using rdrawable_ref = slot_item_ref<rdrawable>;
+
+struct rblueprint;
+using rblueprint_handle = slot_handle<rblueprint>;
+using rblueprint_ref = slot_item_ref<rblueprint>;
 
 using gpu_handle = u64;
 

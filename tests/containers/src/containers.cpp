@@ -1056,6 +1056,74 @@ void test_hmap_stress()
     ilog("Hashmap stress test succeeded");
 }
 
+void test_slot_allocator()
+{
+    ilog("Starting slot allocator test");
+    slot_allocator sa{};
+    init_slot_allocator(&sa, 3, current_thread_free_list());
+    asrt(get_slot_capacity(sa) == 3);
+    asrt(get_slot_used_count(sa) == 0);
+    asrt(get_slots_available_count(sa) == 3);
+    asrt(slot_allocator_empty(sa));
+    ilog("Slot allocator init ok");
+
+    // Fresh slots are handed out in index order at generation 1
+    auto h0 = reserve_slot(&sa);
+    auto h1 = reserve_slot(&sa);
+    asrt(is_valid(h0) && h0.si == 0 && h0.gen_id == 1);
+    asrt(is_valid(h1) && h1.si == 1 && h1.gen_id == 1);
+    asrt(h0 != h1);
+    asrt(get_slot_used_count(sa) == 2);
+    asrt(get_slots_available_count(sa) == 1);
+    asrt(!slot_allocator_empty(sa));
+    ilog("Slot allocator reserve ok");
+
+    // Invalid and out of range handles are rejected without touching the free list
+    asrt(!free_slot(&sa, slot_id{}));
+    asrt(!free_slot(&sa, slot_id{.si = 3, .gen_id = 1}));
+    asrt(sa.free_list.size == 0);
+    ilog("Slot allocator reject invalid free ok");
+
+    // Freed slots are reused before never used ones, with the generation bumped
+    asrt(free_slot(&sa, h0));
+    asrt(get_slot_used_count(sa) == 1);
+    asrt(sa.free_list.size == 1);
+    auto h0b = reserve_slot(&sa);
+    asrt(h0b.si == 0 && h0b.gen_id == 2);
+    asrt(h0b != h0);
+    asrt(sa.free_list.size == 0);
+    ilog("Slot allocator reuse ok");
+
+    // Free list is LIFO - the most recently freed slot comes back first
+    asrt(free_slot(&sa, h1));
+    asrt(free_slot(&sa, h0b));
+    auto r0 = reserve_slot(&sa);
+    auto r1 = reserve_slot(&sa);
+    asrt(r0.si == 0 && r0.gen_id == 3);
+    asrt(r1.si == 1 && r1.gen_id == 2);
+    ilog("Slot allocator lifo ok");
+
+    // Fill up
+    auto h2 = reserve_slot(&sa);
+    asrt(is_valid(h2) && h2.si == 2 && h2.gen_id == 1);
+    asrt(!is_slot_available(sa));
+    asrt(!is_valid(reserve_slot(&sa)));
+    asrt(get_slot_used_count(sa) == 3);
+    ilog("Slot allocator full ok");
+
+    // Clear resets everything back to never used, including generations
+    clear_slot_allocator(&sa);
+    asrt(slot_allocator_empty(sa));
+    asrt(get_slot_capacity(sa) == 3);
+    auto c0 = reserve_slot(&sa);
+    asrt(c0.si == 0 && c0.gen_id == 1);
+    ilog("Slot allocator clear ok");
+
+    terminate_slot_allocator(&sa);
+    asrt(get_slot_capacity(sa) == 0);
+    ilog("Slot allocator test succeeded");
+}
+
 struct sp_test_item
 {
     int a;
@@ -1078,8 +1146,8 @@ void test_slot_pool()
     auto r0 = acquire_slot(&pool, {1, 1.0f});
     auto r1 = acquire_slot(&pool, {2, 2.0f});
     asrt(is_valid(r0) && is_valid(r1));
-    asrt(r0.hndl.si == 0 && r0.hndl.gen_id == 1);
-    asrt(r1.hndl.si == 1 && r1.hndl.gen_id == 1);
+    asrt(r0.hndl.sid.si == 0 && r0.hndl.sid.gen_id == 1);
+    asrt(r1.hndl.sid.si == 1 && r1.hndl.sid.gen_id == 1);
     asrt(r0.item->a == 1 && r1.item->a == 2);
     asrt(get_slot_used_count(pool) == 2);
     asrt(get_slots_available_count(pool) == 2);
@@ -1091,19 +1159,19 @@ void test_slot_pool()
     asrt(!release_slot(&pool, r0.hndl));
     asrt(get_slot_item(&pool, r0.hndl) == nullptr);
     asrt(get_slot_used_count(pool) == 1);
-    asrt(pool.free_list.size == 1);
+    asrt(pool.alloc.free_list.size == 1);
     ilog("Slot pool release ok");
 
     // Reuse bumps the generation and invalidates the old handle
     auto r2 = acquire_slot(&pool, {3, 3.0f});
-    asrt(r2.hndl.si == 0 && r2.hndl.gen_id == 2);
+    asrt(r2.hndl.sid.si == 0 && r2.hndl.sid.gen_id == 2);
     asrt(get_slot_item(&pool, r0.hndl) == nullptr);
     asrt(get_slot_item(&pool, r2.hndl)->a == 3);
     ilog("Slot pool reuse ok");
 
     // Split path: reserve mints a handle without touching storage
     auto h = reserve_slot(&pool);
-    asrt(is_valid(h) && h.si == 2 && h.gen_id == 1);
+    asrt(is_valid(h) && h.sid.si == 2 && h.sid.gen_id == 1);
     asrt(pool.slots[2].gen_id == 0);
     asrt(get_slot_item(&pool, h) == nullptr);
     asrt(get_slot_used_count(pool) == 3);
@@ -1121,7 +1189,7 @@ void test_slot_pool()
     asrt(get_slot_item(&pool, h) == item);
     asrt(get_slot_used_count(pool) == 2);
     auto h2 = reserve_slot(&pool);
-    asrt(h2.si == 2 && h2.gen_id == 2);
+    asrt(h2.sid.si == 2 && h2.sid.gen_id == 2);
     asrt(get_slot_item(&pool, h) == item);
     asrt(get_slot_item(&pool, h2) == nullptr);
     asrt(clear_slot(&pool, h));
@@ -1133,7 +1201,7 @@ void test_slot_pool()
 
     // Fill up - size never grows past capacity
     auto r3 = acquire_slot(&pool);
-    asrt(is_valid(r3) && r3.hndl.si == 3);
+    asrt(is_valid(r3) && r3.hndl.sid.si == 3);
     asrt(!is_slot_available(pool));
     asrt(!is_valid(reserve_slot(&pool)));
     asrt(!is_valid(acquire_slot(&pool)));
@@ -1165,7 +1233,7 @@ void test_slot_pool()
     asrt(pool.slots.size == 4);
     asrt(!is_valid(slot_pool_begin(&pool)));
     auto r4 = acquire_slot(&pool);
-    asrt(r4.hndl.si == 0 && r4.hndl.gen_id == 1);
+    asrt(r4.hndl.sid.si == 0 && r4.hndl.sid.gen_id == 1);
     ilog("Slot pool clear ok");
 
     terminate_slot_pool(&pool);
@@ -1174,6 +1242,7 @@ void test_slot_pool()
 
 void run_container_tests()
 {
+    test_slot_allocator();
     test_slot_pool();
     test_strings();
     test_arrays();

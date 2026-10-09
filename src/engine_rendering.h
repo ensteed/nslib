@@ -1,6 +1,7 @@
 #pragma once
 #include "math/matrix4.h"
 #include "model.h"
+#include "sim_region.h"
 
 namespace nslib
 {
@@ -14,7 +15,6 @@ const u32 MAX_TOTAL_GEOM_IND_COUNT = (MAX_STATIC_TRIANGLE_COUNT + MAX_SKINNED_TR
 const u32 MAX_STATIC_GEOM_VERT_COUNT = MAX_STATIC_TRIANGLE_COUNT / 2;
 const u32 MAX_SKINNED_GEOM_VERT_COUNT = MAX_SKINNED_TRIANGLE_COUNT / 2;
 
-
 intern constexpr const char *MAIN_GEOM_STREAM_GP = "main";
 intern const rid MAIN_GEOM_STREAM_GP_ID = make_rid(MAIN_GEOM_STREAM_GP);
 
@@ -22,6 +22,7 @@ struct mem_arena;
 struct renderer;
 struct sim_region;
 struct rmanifest;
+struct static_mesh;
 
 enum rvert_stream
 {
@@ -40,12 +41,14 @@ enum rvert_layout : u32
     RVERT_LAYOUT_COUNT
 };
 
-struct transform_ssbo_data {
+struct transform_ssbo_data
+{
     mat4 model;
     mat4 prev_model;
 };
 
-struct material_ssbo_data {
+struct material_ssbo_data
+{
     idx_t tex_pool_idx;
     idx_t sampler_idx;
     idx_t tex_layer;
@@ -53,20 +56,23 @@ struct material_ssbo_data {
     vec4 col;
 };
 
-struct view_ssbo_data {
+struct view_ssbo_data
+{
     mat4 view;
     mat4 proj;
     mat4 view_proj;
     mat4 inv_view_proj;
 };
 
-struct pass_ssbo_data {
+struct pass_ssbo_data
+{
     vec2 resolution;
     vec2 inv_resolution;
 };
 
 // This data is used in uniform buffer - needs to be aligned to 16 bytes
-struct frame_ubo_data {
+struct frame_ubo_data
+{
     f64 sim_elapsed;
     f32 sim_dt;
     u32 sim_frame_count;
@@ -105,19 +111,63 @@ void prepare_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, mate
 // Setup vert/index buffers (stream group) for this geometry type and get the runtime id for it
 u32 setup_geometry_stream_group(renderer *rndr);
 
-bool upload_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *arena);
-u32 upload_geometries(renderer *rndr, u32 stream_gp, asset_pool<geometry> *geoms, mem_arena *scratch);
+bool register_geometry(renderer *rndr, u32 stream_gp, geometry *geom, mem_arena *arena);
+u32 register_geometries(renderer *rndr, u32 stream_gp, geometry_pool *geoms, mem_arena *scratch);
+u32 register_geometries(renderer *rndr, u32 stream_gp, geometry *const geoms[], u32 count, mem_arena *scratch);
+bool deregister_geometry(renderer *rndr, geometry *geom);
+u32 deregister_geometries(renderer *rndr, asset_pool<geometry> *geom_pool);
+u32 deregister_geometries(renderer *rndr, geometry *const geoms[], u32 count);
 
-bool upload_texture(renderer *rndr, texture *tex, mem_arena *scratch);
-u32 upload_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch);
+bool register_texture(renderer *rndr, texture *tex, mem_arena *scratch);
+u32 register_textures(renderer *rndr, texture_pool *tex_pool, mem_arena *scratch);
+u32 register_textures(renderer *rndr, texture *const textures[], u32 count, mem_arena *scratch);
+bool deregister_texture(renderer *rndr, texture *tex);
+u32 deregister_textures(renderer *rndr, texture_pool *tex_pool);
+u32 deregister_textures(renderer *rndr, texture *const textures[], u32 count);
 
-bool upload_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_arena *scratch);
-u32 upload_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp, mem_arena *scratch);
+bool register_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_arena *scratch);
+u32 register_techniques(renderer *rndr, technique_pool *tech_pool, shader_pool *sp, mem_arena *scratch);
+u32 register_techniques(renderer *rndr, technique *const techs[], u32 count, shader_pool *sp, mem_arena *scratch);
+bool deregister_technique(renderer *rndr, technique *tech);
+u32 deregister_techniques(renderer *rndr, technique_pool *tech_pool);
+u32 deregister_techniques(renderer *rndr, technique *const techs[], u32 count);
 
-bool upload_material(renderer *rndr, material *mat, texture_pool *tex_pool, mem_arena *scratch);
-u32 upload_materials(renderer *rndr, material_pool *mat_pool, texture_pool *tex_pool, mem_arena *scratch);
+bool register_material(renderer *rndr, material *mat, texture_pool *tex_pool, const technique_pool &tech_pool, mem_arena *scratch);
+u32 register_materials(renderer *rndr, material_pool *mat_pool, texture_pool *tex_pool, const technique_pool &tech_pool, mem_arena *scratch);
+u32 register_materials(renderer *rndr,
+                       material *const mats[],
+                       u32 count,
+                       texture_pool *tex_pool,
+                       const technique_pool &tech_pool,
+                       mem_arena *scratch);
+bool deregister_material(renderer *rndr, material *mat);
+u32 deregister_materials(renderer *rndr, material_pool *mat_pool);
+u32 deregister_materials(renderer *rndr, material *const mats[], u32 count);
 
-bool upload_shader(renderer *rndr, shader *shdr, mem_arena *scratch);
-u32 upload_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch);
+bool register_shader(renderer *rndr, shader *shdr, mem_arena *scratch);
+u32 register_shaders(renderer *rndr, shader_pool *shdr_pool, mem_arena *scratch);
+u32 register_shaders(renderer *rndr, shader *const shdrs[], u32 count, mem_arena *scratch);
+bool deregister_shader(renderer *rndr, shader *shdr);
+u32 deregister_shaders(renderer *rndr, shader_pool *shdr_pool);
+u32 deregister_shaders(renderer *rndr, shader *const shdrs[], u32 count);
+
+bool register_drawable(renderer *rndr, static_mesh *sm, const geometry_pool &gpool, const material_pool &mat_pool, mem_arena *scratch);
+u32 register_drawables(renderer *rndr, static_mesh_tbl *sm_tbl, const geometry_pool &gpool, const material_pool &mat_pool, mem_arena *scratch);
+u32 register_drawables(renderer *rndr,
+                       static_mesh *const sms[],
+                       u32 count,
+                       const geometry_pool &gpool,
+                       const material_pool &mat_pool,
+                       mem_arena *scratch);
+bool deregister_drawable(renderer *rndr, static_mesh *sm);
+u32 deregister_drawables(renderer *rndr, static_mesh_tbl *sm_tbl);
+u32 deregister_drawables(renderer *rndr, static_mesh *const sms[], u32 count);
+
+bool register_transform(renderer *rndr, transform *tf);
+u32 register_transforms(renderer *rndr, transform_tbl *tf_tbl);
+u32 register_transforms(renderer *rndr, transform *const tfs[], u32 count);
+bool deregister_transform(renderer *rndr, transform *tf);
+u32 deregister_transforms(renderer *rndr, transform_tbl *tf_tbl);
+u32 deregister_transforms(renderer *rndr, transform *const tfs[], u32 count);
 
 } // namespace nslib

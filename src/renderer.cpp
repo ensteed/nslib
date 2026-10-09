@@ -735,7 +735,7 @@ intern void terminate_gpu_resource_cache(renderer *rndr, gpu_resource_cache<T> *
          get_slot_used_count(cache->items),
          lname,
          cache->items.slots.size,
-         cache->items.free_list.size);
+         cache->items.alloc.free_list.size);
     for (auto sliter = slot_pool_begin(&cache->items); is_valid(sliter); sliter = slot_pool_next(&cache->items, sliter)) {
         term_func(&sliter.item->gpu_d);
     }
@@ -979,15 +979,28 @@ intern void process_rgeom_create_event(renderer *rndr, const rproxy_create_rgeom
     arr_push_back(&rndr->pending_uploads[uop.type], uop);
 }
 
-intern void process_rmaterial_create_event(renderer *rndr, const rproxy_create_rmaterial_event &ev)
+intern void process_rmaterial_upsert_event(renderer *rndr, const rproxy_upsert_rmaterial_event &ev)
 {
-    rmaterial_info *mat = place_slot(&rndr->materials, ev.hndl);
+    auto mat = get_slot_item(&rndr->materials, ev.hndl);
+    if (!mat) {
+        mat = place_slot(&rndr->materials, ev.hndl);
+        mat->mat_ssbo = vkr_acquire_chunk(&rndr->desc_info.material_ssbo);
+        // Material ssbo contains a section for each frame in flight like
+        // |          fif0         |          fif1         | ... |          fifN         |
+        // | mat0, mat1, ..., matN | mat0, mat1, ..., matN | ... | mat0, mat1, ..., matN |
+    }
     mat->dstate = ev.dstate;
     mat->override_mask = ev.override_mask;
-    mat->mat_ssbo = vkr_acquire_chunk(&rndr->desc_info.material_ssbo);
-    // Material ssbo contains a section for each frame in flight like
-    // |          fif0         |          fif1         | ... |          fifN         |
-    // | mat0, mat1, ..., matN | mat0, mat1, ..., matN | ... | mat0, mat1, ..., matN |
+    mat->bp_techs = ev.bp_techs;
+}
+
+intern void process_rdrawable_upsert_event(renderer *rndr, const rproxy_upsert_rdrawable_event &ev)
+{
+    auto d = get_slot_item(&rndr->drawables, ev.hndl);
+    if (!d) {
+        d = place_slot(&rndr->drawables, ev.hndl);
+    }
+    *d = ev.d;
 }
 
 intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev)
@@ -1244,7 +1257,7 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
         /////////////////////
         // Create pipeline //
         /////////////////////
-        key_t key = ((u64)ev.hndl.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;
+        key_t key = ((u64)ev.hndl.sid.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;
         ilog("Creating new pipeline for key %lu", key);
         auto new_slot = acquire_slot(&rndr->pline_cache.items);
         asrt(is_valid(new_slot) && "Out of pipeline slots");
@@ -1265,7 +1278,7 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
 }
 
 template<class T, sizet N, class Func>
-intern void process_create_event(renderer *rndr, spsc_queue<T, N> *q, Func f)
+intern void process_rproxy_event(renderer *rndr, spsc_queue<T, N> *q, Func f)
 {
     T ev{};
     spsc_pop(q, &ev);
@@ -1338,7 +1351,7 @@ intern void process_destroy_tech_event(renderer *rndr, const rtechnique_handle &
     }
 }
 
-intern void process_destroy_mat_event(renderer *rndr, const rmaterial_handle &hndl, idx_t prev_fif)
+intern void process_destroy_mat_event(renderer *rndr, const rmaterial_handle &hndl)
 {
     auto item = get_slot_item(rndr->materials, hndl);
     asrt(item);
@@ -1346,11 +1359,18 @@ intern void process_destroy_mat_event(renderer *rndr, const rmaterial_handle &hn
     // We can release this now because the mat ssbo isn't shared across thread boundaries or anything like that, and
     // releasing a chunk from it doesn't actually write any of the underlying data - it just basically says this chunk
     // is available for use again. Then, at some future time if the chunk is reserved again, each frame only writes to
-    // it's section within the ssbo leaving other sections for the chunk untouched. 
+    // it's section within the ssbo leaving other sections for the chunk untouched.
     vkr_release_chunk(&rndr->desc_info.material_ssbo, item->mat_ssbo);
 }
 
-intern void process_destroy_tex_event(renderer *rndr, const rtexture_handle &hndl, idx_t prev_fif)
+intern void process_destroy_drawable_event(renderer *rndr, const rdrawable_handle &hndl)
+{
+    auto item = get_slot_item(rndr->drawables, hndl);
+    asrt(item);
+    clear_slot(&rndr->drawables, hndl);
+}
+
+intern void process_destroy_tex_event(renderer *rndr, const rtexture_handle &hndl)
 {
     auto pool = &rndr->textures.pools[hndl.pool_idx];
     auto item = get_slot_item(&pool->tpool, hndl.hndl);
@@ -1372,7 +1392,7 @@ intern void process_destroy_geom_event(renderer *rndr, const rgeom_handle &hndl,
     arr_push_back(&rndr->deferred_frees[prev_fif], df);
 }
 
-intern void process_destroy_event(renderer *rndr, idx_t fif)
+intern void process_rproxy_destroy_event(renderer *rndr, idx_t fif)
 {
     rproxy_destroy_event ev{};
     spsc_pop(&rndr->proxy_events.rdestroy_q, &ev);
@@ -1391,13 +1411,16 @@ intern void process_destroy_event(renderer *rndr, idx_t fif)
         process_destroy_tech_event(rndr, ev.tech, prev_fif);
         break;
     case (RPROXY_DESTROY_EVENT_MATERIAL):
-        process_destroy_mat_event(rndr, ev.mat, prev_fif);
+        process_destroy_mat_event(rndr, ev.mat);
         break;
     case (RPROXY_DESTROY_EVENT_TEXTURE):
-        process_destroy_tex_event(rndr, ev.tex, prev_fif);
+        process_destroy_tex_event(rndr, ev.tex);
         break;
     case (RPROXY_DESTROY_EVENT_GEOM):
         process_destroy_geom_event(rndr, ev.geom, prev_fif);
+        break;
+    case (RPROXY_DESTROY_EVENT_RDRAWABLE):
+        process_destroy_drawable_event(rndr, ev.dhndl);
         break;
     }
 }
@@ -1409,28 +1432,31 @@ intern void process_frame_proxy_events(renderer *rndr, idx_t fif)
     while (spsc_pop(&rndr->proxy_events.frame_ops, &ev_type)) {
         switch (ev_type) {
         case RPROXY_EVENTQ_CREATE_RTEX_TARGET:
-            process_create_event(rndr, &rndr->proxy_events.rtex_target_create_q, process_rtexture_target_create_event);
+            process_rproxy_event(rndr, &rndr->proxy_events.rtex_target_create_q, process_rtexture_target_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RBUF_TARGET:
-            process_create_event(rndr, &rndr->proxy_events.rbuf_target_create_q, process_rbuffer_target_create_event);
+            process_rproxy_event(rndr, &rndr->proxy_events.rbuf_target_create_q, process_rbuffer_target_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RSHDR:
-            process_create_event(rndr, &rndr->proxy_events.rshdr_create_q, process_rshader_create_event);
+            process_rproxy_event(rndr, &rndr->proxy_events.rshdr_create_q, process_rshader_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RTECH:
-            process_create_event(rndr, &rndr->proxy_events.rtech_create_q, process_rtechnique_create_event);
+            process_rproxy_event(rndr, &rndr->proxy_events.rtech_create_q, process_rtechnique_create_event);
             break;
-        case RPROXY_EVENTQ_CREATE_RMAT:
-            process_create_event(rndr, &rndr->proxy_events.rmat_create_q, process_rmaterial_create_event);
+        case RPROXY_EVENTQ_UPSERT_RMAT:
+            process_rproxy_event(rndr, &rndr->proxy_events.rmat_upsert_q, process_rmaterial_upsert_event);
             break;
         case RPROXY_EVENTQ_CREATE_RTEX:
-            process_create_event(rndr, &rndr->proxy_events.rtex_create_q, process_rtexture_create_event);
+            process_rproxy_event(rndr, &rndr->proxy_events.rtex_create_q, process_rtexture_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RGEOM:
-            process_create_event(rndr, &rndr->proxy_events.rgeom_create_q, process_rgeom_create_event);
+            process_rproxy_event(rndr, &rndr->proxy_events.rgeom_create_q, process_rgeom_create_event);
+            break;
+        case RPROXY_EVENTQ_UPSERT_RDRAWABLE:
+            process_rproxy_event(rndr, &rndr->proxy_events.rdrawable_upsert_q, process_rdrawable_upsert_event);
             break;
         case RPROXY_EVENTQ_DESTROY:
-            process_destroy_event(rndr, fif);
+            process_rproxy_destroy_event(rndr, fif);
             break;
         default:
             elog("Invalid event type %d", ev_type);
@@ -1443,7 +1469,7 @@ intern void record_pending_texture_upload(renderer *rndr, VkCommandBuffer cmd_bu
     rtexture_pool_item_ref rt{.hndl = top.tslot.hndl};
     auto pool = &rndr->textures.pools[top.tslot.pool_idx];
     rt.item = get_slot_item(&pool->tpool, rt.hndl);
-    
+
     // If !rt.item, destroyed before its upload got recorded - nothing to upload, but the staging buffer still needs to go
     if (rt.item) {
         vkr_upload_to_texture_slots(pool, cmd_buf, &rt, 1, &top.staging_buf);
@@ -1898,21 +1924,40 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
     return hndl;
 }
 
-rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo)
+rmaterial_handle upsert_rmaterial(renderer *rndr, const rmaterial_handle &rhndl, const rmaterial_desc &ctinfo)
 {
-    auto hndl = reserve_slot(&rndr->materials);
+    auto hndl = is_valid(rhndl) ? rhndl : reserve_slot(&rndr->materials);
     if (!is_valid(hndl)) {
         wlog("No more slots left for %s", ctinfo.name);
         return {};
     }
 
-    // The SSBO chunk is acquired on the render thread when the item is placed - the chunk free list is render owned
-    rproxy_create_rmaterial_event ev{};
+    // The SSBO chunk is acquired on the render thread when the item is first placed - the chunk free list is render owned
+    rproxy_upsert_rmaterial_event ev{};
     ev.hndl = hndl;
     ev.dstate = ctinfo.dstate;
     ev.override_mask = ctinfo.dstate_override_mask;
-    asrt(spsc_push(&rndr->proxy_events.rmat_create_q, ev));
-    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RMAT));
+    ev.bp_techs.size = ctinfo.bp_tech_count;
+    for (u32 i = 0; i < ctinfo.bp_tech_count; ++i) {
+        ev.bp_techs[i] = ctinfo.bp_techs[i];
+    }
+    asrt(spsc_push(&rndr->proxy_events.rmat_upsert_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_UPSERT_RMAT));
+    return hndl;
+}
+
+rdrawable_handle upsert_rdrawable(renderer *rndr, const rdrawable_handle &cur, const rdrawable_desc &d)
+{
+    auto hndl = is_valid(cur) ? cur : reserve_slot(&rndr->drawables);
+    if (!is_valid(hndl)) {
+        wlog("No more slots left for retained drawables");
+        return {};
+    }
+    rproxy_upsert_rdrawable_event ev{};
+    arr_copy(&ev.d.items, d.items, d.item_count);
+    ev.hndl = hndl;
+    asrt(spsc_push(&rndr->proxy_events.rdrawable_upsert_q, ev));
+    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_UPSERT_RDRAWABLE));
     return hndl;
 }
 
@@ -2049,6 +2094,14 @@ bool destroy_rbuffer_target(renderer *rndr, const rbuffer_target_handle &hndl)
     de.type = RPROXY_DESTROY_EVENT_BUFFER_TARGET;
     de.btar = hndl;
     return destroy_rtype(rndr, &rndr->rtargets.buffers, hndl, de);
+}
+
+bool destroy_rdrawable(renderer *rndr, const rdrawable_handle &hndl)
+{
+    rproxy_destroy_event de{};
+    de.type = RPROXY_DESTROY_EVENT_RDRAWABLE;
+    de.dhndl = hndl;
+    return destroy_rtype(rndr, &rndr->drawables, hndl, de);
 }
 
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl)

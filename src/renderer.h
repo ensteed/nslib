@@ -81,7 +81,7 @@ struct rshader_desc
 
 struct rbp_info
 {
-    render_blueprint_handle bp;
+    rblueprint_handle bp;
     // Pass ind
     idx_t pid;
     // Subpass ind
@@ -101,6 +101,12 @@ struct rattachment_blend_info
     rblend_info color;
     rblend_info alpha;
     rcolor_component_flags write_mask;
+};
+
+struct rmaterial_bp_technique
+{
+    rblueprint_handle bp;
+    rtechnique_handle tech;
 };
 
 enum rtechnique_desc_flag
@@ -155,6 +161,8 @@ struct rmaterial_desc
     rtexture_handle slots[RMATERIAL_TEXTURE_COUNT];
     rdraw_dyn_state dstate;
     rdraw_state_override_flags dstate_override_mask;
+    const rmaterial_bp_technique *bp_techs;
+    u32 bp_tech_count{};
 };
 
 namespace err_code
@@ -237,6 +245,7 @@ struct rmaterial_info
     idx_t mat_ssbo;
     rdraw_dyn_state dstate;
     rdraw_state_override_flags override_mask;
+    static_array<rmaterial_bp_technique, MAX_BP_COUNT> bp_techs;
     // Used to track how many fifs are left to process after update
     u32 fif_dirty;
 };
@@ -356,6 +365,18 @@ struct rview
     mat4 proj_cam;
 };
 
+struct rdraw_item
+{
+    rgeom_handle geom;
+    idx_t subgeom;
+    rmaterial_handle mat;
+};
+
+struct rdrawable
+{
+    static_array<rdraw_item, MAX_SUBGEOM_COUNT> items;
+};
+
 // This will cause targets to resize dynamically with the swapchain as well
 const svec2 WINDOW_SIZE = {};
 const svec2 DEFAULT_SHADOW_MAP_SIZE = {2048, 2048};
@@ -447,6 +468,12 @@ struct rtexture_target_desc
     u32 flags;
 };
 
+struct rdrawable_desc
+{
+    const rdraw_item *items;
+    sizet item_count;
+};
+
 #define TEXTURE_TARGET_COLOR_HDR(pname)                                                                                                    \
     {                                                                                                                                      \
         .name = pname,                                                                                                                     \
@@ -525,6 +552,7 @@ using rshader_pool = slot_pool<rshader_info>;
 using rtechnique_pool = slot_pool<rtechnique_info>;
 using rmaterial_pool = slot_pool<rmaterial_info>;
 using rgeometry_pool = slot_pool<rgeom_info>;
+using rdrawable_pool = slot_pool<rdrawable>;
 
 struct rproxy_create_rtexture_target_event
 {
@@ -557,11 +585,18 @@ struct rproxy_create_rtechnique_event
     small_str name;
 };
 
-struct rproxy_create_rmaterial_event
+struct rproxy_upsert_rmaterial_event
 {
     rmaterial_handle hndl;
     rdraw_dyn_state dstate;
     rdraw_state_override_flags override_mask;
+    static_array<rmaterial_bp_technique, MAX_BP_COUNT> bp_techs;
+};
+
+struct rproxy_upsert_rdrawable_event
+{
+    rdrawable_handle hndl;
+    rdrawable d;
 };
 
 struct rproxy_create_rtexture_event
@@ -595,6 +630,7 @@ enum rproxy_destroy_event_type
     RPROXY_DESTROY_EVENT_MATERIAL,
     RPROXY_DESTROY_EVENT_TEXTURE,
     RPROXY_DESTROY_EVENT_GEOM,
+    RPROXY_DESTROY_EVENT_RDRAWABLE
 };
 
 struct rproxy_destroy_event
@@ -609,6 +645,7 @@ struct rproxy_destroy_event
         rmaterial_handle mat;
         rtexture_handle tex;
         rgeom_handle geom;
+        rdrawable_handle dhndl;
     };
 };
 
@@ -619,9 +656,10 @@ enum rproxy_eventq_type
     RPROXY_EVENTQ_CREATE_RBUF_TARGET,
     RPROXY_EVENTQ_CREATE_RSHDR,
     RPROXY_EVENTQ_CREATE_RTECH,
-    RPROXY_EVENTQ_CREATE_RMAT,
+    RPROXY_EVENTQ_UPSERT_RMAT,
     RPROXY_EVENTQ_CREATE_RTEX,
     RPROXY_EVENTQ_CREATE_RGEOM,
+    RPROXY_EVENTQ_UPSERT_RDRAWABLE,
     RPROXY_EVENTQ_DESTROY,
 };
 
@@ -634,9 +672,10 @@ struct rproxy_event_queues
     spsc_queue<rproxy_create_rbuffer_target_event, MAX_BUF_TARGET_CREATE_EVENTS_PER_FRAME> rbuf_target_create_q;
     spsc_queue<rproxy_create_rshader_event, MAX_SHDR_CREATE_EVENTS_PER_FRAME> rshdr_create_q;
     spsc_queue<rproxy_create_rtechnique_event, MAX_TECH_CREATE_EVENTS_PER_FRAME> rtech_create_q;
-    spsc_queue<rproxy_create_rmaterial_event, MAX_MAT_CREATE_EVENTS_PER_FRAME> rmat_create_q;
+    spsc_queue<rproxy_upsert_rmaterial_event, MAX_MAT_UPSERT_EVENTS_PER_FRAME> rmat_upsert_q;
     spsc_queue<rproxy_create_rtexture_event, MAX_TEX_CREATE_EVENTS_PER_FRAME> rtex_create_q;
     spsc_queue<rproxy_create_rgeom_event, MAX_GEOM_CREATE_EVENTS_PER_FRAME> rgeom_create_q;
+    spsc_queue<rproxy_upsert_rdrawable_event, MAX_RDRAWABLE_UPSERT_EVENTS_PER_FRAME> rdrawable_upsert_q;
     spsc_queue<rproxy_destroy_event, MAX_DESTROY_EVENTS_PER_FRAME> rdestroy_q;
 };
 
@@ -732,6 +771,12 @@ struct renderer
     // Specialized registry for textures
     rtexture_registry textures;
 
+    // Master list of all drawables associated with
+    rdrawable_pool drawables;
+
+    // Used to allocate slots for the transform SSBO
+    slot_allocator transforms;
+
     // Frames in flight
     static_array<frame_context, MAX_FRAMES_IN_FLIGHT> fifs{};
 
@@ -756,8 +801,8 @@ struct renderer
     u32 finished_frames{0};
 
     // Render blueprints
-    hmap<rid, render_blueprint_handle> blueprint_id_map{};
-    slot_pool<render_blueprint> blueprints{};
+    hmap<rid, rblueprint_handle> blueprint_id_map{};
+    slot_pool<rblueprint> blueprints{};
 
     rresource_target_registry rtargets{};
     profile_timepoints pt{};
@@ -849,9 +894,10 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
-rmaterial_handle create_rmaterial(renderer *rndr, const rmaterial_desc &ctinfo);
+rmaterial_handle upsert_rmaterial(renderer *rndr, const rmaterial_handle &cur, const rmaterial_desc &ctinfo);
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
 rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci);
+rdrawable_handle upsert_rdrawable(renderer *rndr, const rdrawable_handle &cur, const rdrawable_desc &d);
 
 bool destroy_rtechnique(renderer *rndr, const rtechnique_handle &hndl);
 bool destroy_rtexture(renderer *rndr, const rtexture_handle &hndl);
@@ -860,6 +906,7 @@ bool destroy_rshader(renderer *rndr, const rshader_handle &hndl);
 bool destroy_rmaterial(renderer *rndr, const rmaterial_handle &hndl);
 bool destroy_rtexture_target(renderer *rndr, const rtexture_target_handle &hndl);
 bool destroy_rbuffer_target(renderer *rndr, const rbuffer_target_handle &hndl);
+bool destroy_rdrawable(renderer *rndr, const rdrawable_handle &hndl);
 
 // These should be called from the render thread only
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);
