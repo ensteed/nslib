@@ -397,7 +397,10 @@ intern b8 create_descriptor_set_layouts(renderer *rndr, u32 tex_pool_count)
     return true;
 }
 
-intern b8 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg &dip, const manifest_max_counts &mc)
+intern b8 init_global_descriptor_info(renderer *rndr,
+                                      const rpipeline_layout_cfg &dip,
+                                      const manifest_max_counts &mc,
+                                      const rproxy_asset_max_counts &ac)
 {
     ilog("Initializing global descriptor info");
 
@@ -406,8 +409,8 @@ intern b8 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg
     asrt(draw_ssbo_block_sz % 16 == 0);
     asrt(dip.view_ssbo_block_sz % 16 == 0);
     asrt(dip.pass_ssbo_block_sz % 16 == 0);
-    asrt(dip.transform_ssbo.block_size % 16 == 0);
-    asrt(dip.material_ssbo.block_size % 16 == 0);
+    asrt(dip.transform_ssbo_block_sz % 16 == 0);
+    asrt(dip.material_ssbo_block_sz % 16 == 0);
     // Absolute requirement for uniform buffers
     asrt(dip.frame_ubo_block_sz % 16 == 0);
     // Limit our ranges - we can always increase this number if we needed but right now it's unnecessary
@@ -493,9 +496,9 @@ intern b8 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg
     //////////////////////////
     // We allocate a buffer big enough to have a slot for each frame in flight so we can avoid needing to sync stuff..
     // or create a slot in the buffer for every update and retire the old
-    sizet transform_buf_fif_sz = dip.transform_ssbo.block_size * dip.transform_ssbo.block_count;
-    rndr->desc_info.transform_ssbo.block_size = dip.transform_ssbo.block_size;
-    rndr->desc_info.transform_ssbo.fif_block_count = dip.transform_ssbo.block_count;
+    sizet transform_buf_fif_sz = dip.transform_ssbo_block_sz * ac.transforms;
+    rndr->desc_info.transform_ssbo.block_size = dip.transform_ssbo_block_sz;
+    rndr->desc_info.transform_ssbo.fif_block_count = ac.transforms;
     b_cfg.buffer_size = transform_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     b_cfg.vma_alloc_name = "transform_ssbo";
     result = vkr_init_buffer(&rndr->desc_info.transform_ssbo.buffer, b_cfg);
@@ -533,10 +536,10 @@ intern b8 init_global_descriptor_info(renderer *rndr, const rpipeline_layout_cfg
     //////////////////////////
     // Create material SSBO //
     //////////////////////////
-    sizet mat_buf_fif_sz = dip.material_ssbo.block_size * dip.material_ssbo.block_count;
+    sizet mat_buf_fif_sz = dip.material_ssbo_block_sz * ac.materials;
     cb_cfg.buffer_cfg.buffer_size = mat_buf_fif_sz * MAX_FRAMES_IN_FLIGHT;
     cb_cfg.section_count = MAX_FRAMES_IN_FLIGHT;
-    cb_cfg.chunk_size = dip.material_ssbo.block_size;
+    cb_cfg.chunk_size = dip.material_ssbo_block_sz;
     cb_cfg.buffer_cfg.vma_alloc_name = "material_ssbo";
     if (!vkr_init_chunked_buffer(&rndr->desc_info.material_ssbo, cb_cfg)) {
         terminate_global_descriptor_info(rndr);
@@ -767,10 +770,12 @@ intern void terminate_rtechnique(renderer *rndr, rtechnique_info *info)
 
 intern void init_render_resources(renderer *rndr, const renderer_cfg &rcfg)
 {
-    init_slot_pool(&rndr->shaders, MAX_SHADER_COUNT, &rndr->arenas.free_list);
-    init_slot_pool(&rndr->techniques, MAX_TECHNIQUE_COUNT, &rndr->arenas.free_list);
-    init_slot_pool(&rndr->materials, MAX_MATERIAL_COUNT, &rndr->arenas.free_list);
-    init_slot_pool(&rndr->geometry, MAX_GEOM_COUNT, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->shaders, rcfg.acounts.shaders, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->techniques, rcfg.acounts.techniques, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->materials, rcfg.acounts.materials, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->geometry, rcfg.acounts.geometries, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->drawables, rcfg.acounts.drawables, &rndr->arenas.free_list);
+    init_slot_allocator(&rndr->transforms, rcfg.acounts.transforms, &rndr->arenas.free_list);
     rtexture_regisitry_cfg cfg{
         .persist_fl = &rndr->arenas.free_list,
         .scratch_stack = &rndr->arenas.stack,
@@ -783,12 +788,15 @@ intern void init_render_resources(renderer *rndr, const renderer_cfg &rcfg)
 
 intern void terminate_render_resources(renderer *rndr)
 {
-    ilog("Terminating render resources (%lu geoms, %lu textures, %lu mats, %lu techniques, %lu shdrs)",
+    ilog("Terminating render resources...\n%lu geoms, %lu textures, %lu mats, %lu techniques, %lu shdrs, %lu drawables, %lu transforms",
          get_slot_used_count(rndr->geometry),
          get_slot_used_count(rndr->textures),
          get_slot_used_count(rndr->materials),
          get_slot_used_count(rndr->techniques),
-         get_slot_used_count(rndr->shaders));
+         get_slot_used_count(rndr->shaders),
+         get_slot_used_count(rndr->drawables),
+         get_slot_used_count(rndr->transforms));
+    
     // Geometries
     for (auto iter = slot_pool_begin(&rndr->geometry); is_valid(iter); iter = slot_pool_next(&rndr->geometry, iter)) {
         terminate_geometry(rndr, iter.item);
@@ -799,9 +807,6 @@ intern void terminate_render_resources(renderer *rndr)
     terminate_rtexture_registry(&rndr->textures);
 
     // Materials
-    for (auto iter = slot_pool_begin(&rndr->materials); is_valid(iter); iter = slot_pool_next(&rndr->materials, iter)) {
-        // Do something
-    }
     terminate_slot_pool(&rndr->materials);
 
     // Techniques
@@ -815,6 +820,12 @@ intern void terminate_render_resources(renderer *rndr)
         terminate_shader(rndr, iter.item);
     }
     terminate_slot_pool(&rndr->shaders);
+
+    // Drawables
+    terminate_slot_pool(&rndr->drawables);
+
+    // Transforms
+    terminate_slot_allocator(&rndr->transforms);
 }
 
 intern void handle_window_resize(renderer *rndr)
@@ -2262,7 +2273,7 @@ bool init_renderer(renderer *rndr, const renderer_cfg &p)
     if (!init_global_samplers(rndr)) return false;
 
     // Descriptor set layouts
-    if (!init_global_descriptor_info(rndr, p.desc, p.mcounts)) return false;
+    if (!init_global_descriptor_info(rndr, p.desc, p.mcounts, p.acounts)) return false;
 
     // Start timeer
     ptimer_restart(&rndr->pt);

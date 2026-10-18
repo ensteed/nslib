@@ -8,7 +8,7 @@
 #include "engine_rendering.h"
 #include "render_manifest.h"
 #include "render_thread.h"
-#include "vkr_texture_pool.h"
+#include "vkr_texture_pool.h" // IWYU pragma: export
 #include "profiling.h"
 using namespace nslib;
 
@@ -63,8 +63,8 @@ const rpipeline_layout_cfg PL_LAYOUT_CFG{
     .view_ssbo_block_sz = sizeof(view_ssbo_data),
     .pass_ssbo_block_sz = sizeof(pass_ssbo_data),
     .frame_ubo_block_sz = sizeof(frame_ubo_data),
-    .transform_ssbo{MAX_INSTANCES, sizeof(transform_ssbo_data)},
-    .material_ssbo{256, sizeof(material_ssbo_data)},
+    .transform_ssbo_block_sz = sizeof(transform_ssbo_data),
+    .material_ssbo_block_sz = sizeof(material_ssbo_data),
     .push_const_range_count = 0,
     .push_const_ranges = nullptr,
 };
@@ -78,9 +78,19 @@ const manifest_max_counts MANIFEST_MAX_COUNTS{
     .buffer_targets = 10,
 };
 
+const rproxy_asset_max_counts RASSET_MAX_COUNTS {
+    .shaders = 10,
+    .techniques = 10,
+    .materials = 10,
+    .geometries = 10,
+    .drawables = MAX_INSTANCES,
+    .transforms = MAX_INSTANCES + 10,
+};
+
 const renderer_cfg RNDR_CFG{
     .arena_sizes{.free_list = 400 * MB_SIZE, .stack = 10 * MB_SIZE, .scratch_flinear = 5 * MB_SIZE},
     .desc{PL_LAYOUT_CFG},
+    .acounts{RASSET_MAX_COUNTS},
     .mcounts{MANIFEST_MAX_COUNTS},
     .texture_pool_count = ARR_SIZE(TPOOL_CFGS),
     .texture_pool_cfgs = TPOOL_CFGS,

@@ -5,20 +5,6 @@
 namespace nslib
 {
 
-// Maximum number of techniques the renderer supports
-inline constexpr u32 MAX_SHADER_COUNT = 1024;
-// Maximum number of techniques the renderer supports
-inline constexpr u32 MAX_TECHNIQUE_COUNT = 1024;
-// Maximum number of materials the renderer supports
-inline constexpr u32 MAX_PIPELINE_COUNT = 2048;
-// Maximum number of materials the renderer supports
-inline constexpr u32 MAX_MATERIAL_COUNT = 4096;
-// Maximum number of materials the renderer supports
-inline constexpr u32 MAX_GEOM_COUNT = 4096;
-// Maximum number of textures the renderer supports
-inline constexpr u32 MAX_TEXTURE_COUNT = 4096;
-// Maximum number of objects
-inline constexpr u32 MAX_OBJECT_COUNT = 1000000;
 // Max subgeometry per rgeom_info - easy to change later
 inline constexpr u8 MAX_SUBGEOM_COUNT = 16;
 // Max number of vert groups

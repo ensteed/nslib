@@ -832,10 +832,21 @@ struct rpipeline_layout_cfg
     sizet view_ssbo_block_sz;
     sizet pass_ssbo_block_sz;
     sizet frame_ubo_block_sz;
-    sbuffer_cfg transform_ssbo;
-    sbuffer_cfg material_ssbo;
+    // We get the block count for mats/tforms from the max asset count
+    sizet transform_ssbo_block_sz;
+    sizet material_ssbo_block_sz;
     u32 push_const_range_count;
     const push_constant_range *push_const_ranges;
+};
+
+struct rproxy_asset_max_counts
+{
+    u32 shaders;
+    u32 techniques;
+    u32 materials;
+    u32 geometries;
+    u32 drawables;
+    u32 transforms;
 };
 
 struct renderer_cfg
@@ -845,6 +856,7 @@ struct renderer_cfg
     sizet thread_count{1};
     mem_arena_group_sizes arena_sizes;
     rpipeline_layout_cfg desc;
+    rproxy_asset_max_counts acounts;
     manifest_max_counts mcounts;
     u32 texture_pool_count;
     const rtexture_pool_cfg *texture_pool_cfgs;
