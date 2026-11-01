@@ -130,7 +130,7 @@ asset_pool<T>::const_iterator asset_pool_prev(const asset_pool<T> *pool, typenam
 }
 
 template<typename T>
-bool destroy_asset_pool(asset_pool<T> *pool, asset_cache *cache)
+bool destroy_asset_pool(asset_cache *cache, asset_pool<T> *pool)
 {
     asrt(pool);
     asrt(pool == cache->pools[T::type_id]);
@@ -145,7 +145,7 @@ bool destroy_asset_pool(asset_cache *cache)
 {
     asrt(cache);
     auto pool = get_asset_pool<T>(cache);
-    return destroy_asset_pool(pool, cache);
+    return destroy_asset_pool(cache, pool);
 }
 
 template<typename T>

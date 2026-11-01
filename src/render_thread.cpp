@@ -1,5 +1,6 @@
 #include "render_thread.h"
 #include "render_manifest.h"
+#include "engine_rendering.h"
 #include "logging.h"
 
 #if defined(USE_IMGUI)
@@ -163,8 +164,13 @@ bool submit_render_frame(render_thread *rt)
     ImGui::Render();
     rfp->imgui_data = clone_imgui_draw_data(ImGui::GetDrawData());
 #endif
-
-    rt->tb.write_idx = rt->tb.pub_idx.exchange(rt->tb.write_idx | FRESH_BIT, std::memory_order_release) & ~FRESH_BIT;
+    auto prev = rt->tb.pub_idx.exchange(rt->tb.write_idx | FRESH_BIT, std::memory_order_release);
+    // If fresh bit isn't set, we KNOW the published step was read by render thread
+    if (!test_flags(prev, FRESH_BIT)) {
+        rt->confirmed_step = rt->published_step;
+    }
+    rt->published_step = rfp->step_count;
+    rt->tb.write_idx = prev & ~FRESH_BIT;
     auto next_rfp = get_write_slot(rt);
     reset_arena(&next_rfp->arena);
 

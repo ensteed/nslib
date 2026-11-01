@@ -127,29 +127,30 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
     // Create camera
     auto sz = get_window_pixel_size(ctxt->win_hndl);
-    auto cam = add_entity("Editor_Cam", &app->rgn);
-    auto cam_comp = add_camera(cam);
-    auto cam_tcomp = add_transform(cam);
-    auto tf_sys = &get_transform_tbl(cam->cdb)->sys;
+    auto cam = add_entity(&app->rgn, "Editor_Cam");
+    auto cam_tbl = get_camera_tbl(cam->cdb);
+    auto tf_tbl = get_transform_tbl(cam->cdb);
+    idx_t cam_comp = add_camera(cam_tbl, cam->id);
+    idx_t cam_tcomp = add_transform(tf_tbl, cam->id);
 
-    set_camera_fov(cam_comp, 90.0f, nslib::CAMERA_FOV_TYPE_HORIZONTAL);
-    set_camera_near_far(cam_comp, {0.1f, 1000.0f});
-    set_camera_aspect(cam_comp, 1000.0f / 800.0f);
-    // set_camera_proj_type(cam_comp, CAMERA_PROJ_TYPE_ORTHO);
+    set_camera_fov(cam_tbl, cam_comp, 90.0f, nslib::CAMERA_FOV_TYPE_HORIZONTAL);
+    set_camera_near_far(cam_tbl, cam_comp, {0.1f, 1000.0f});
+    set_camera_aspect(cam_tbl, cam_comp, 1000.0f / 800.0f);
+    // set_camera_proj_type(cam_tbl, cam_comp, CAMERA_PROJ_TYPE_ORTHO);
 
     auto cam_view = math::inverse(math::look_at(vec3{0.0f, 10.0f, -5.0f}, vec3{0.0f}, vec3{0.0f, 1.0f, 0.0f}));
-    update_transform_orientation(cam_tcomp, tf_sys, math::orientation(cam_view));
-    update_transform_scale(cam_tcomp, tf_sys, math::scaling_vec(cam_view));
-    update_transform_pos(cam_tcomp, tf_sys, math::translation_vec(cam_view));
+    update_transform_orientation(tf_tbl, cam_tcomp, math::orientation(cam_view));
+    update_transform_scale(tf_tbl, cam_tcomp, math::scaling_vec(cam_view));
+    update_transform_pos(tf_tbl, cam_tcomp, math::translation_vec(cam_view));
     app->cam_id = cam->id;
 
     // Add our input trigger functions
     auto cam_turn_func = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        auto cam_ent = get_entity(app->cam_id, &app->rgn);
-        auto tf_sys = &get_transform_tbl(cam_ent->cdb)->sys;
-        auto camc = get_camera(cam_ent);
-        auto camt = get_transform(cam_ent);
+        auto cam_ent = get_entity(&app->rgn, app->cam_id);
+        auto tf_tbl = get_transform_tbl(cam_ent->cdb);
+        idx_t camt_idx = find_transform(cam_ent);
+        auto camt = get_transform(tf_tbl, camt_idx);
 
         auto delta = t.ev->mmotion.norm_delta;
 
@@ -157,18 +158,20 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         f32 factor = 4;
         vec4 horizontal = {right, -(f32)delta.y * factor};
         vec4 vertical = {{0, 0, 1}, (f32)delta.x * factor};
-        update_transform_orientation(camt, tf_sys, math::orientation(vertical) * math::orientation(horizontal) * camt->current.orientation);
+        update_transform_orientation(tf_tbl, camt_idx, math::orientation(vertical) * math::orientation(horizontal) * camt->current.orientation);
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        auto cam = get_camera(app->cam_id, &app->rgn.cdb);
+        auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
+        auto cam = get_camera(cam_tbl, find_camera(cam_tbl, app->cam_id));
         f32 amnt = (t.ev->key.action - 1) * -2 + 1;
         (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) ? app->movement.y += amnt : app->movement.y -= amnt;
     };
     auto move_back_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        auto cam = get_camera(app->cam_id, &app->rgn.cdb);
+        auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
+        auto cam = get_camera(cam_tbl, find_camera(cam_tbl, app->cam_id));
         f32 amnt = (t.ev->key.action - 1) * -2 + 1;
         (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) ? app->movement.y -= amnt : app->movement.y += amnt;
     };
@@ -183,9 +186,11 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
     auto ortho_zoom_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
-        auto cam = get_camera(app->cam_id, &app->rgn.cdb);
+        auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
+        idx_t cam_idx = find_camera(cam_tbl, app->cam_id);
+        auto cam = get_camera(cam_tbl, cam_idx);
         if (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) return;
-        set_camera_fov(cam, cam->fov * (1.0f - t.ev->mwheel.delta.y * 0.1f));
+        set_camera_fov(cam_tbl, cam_idx, cam->fov * (1.0f - t.ev->mwheel.delta.y * 0.1f));
     };
 
     set_input_trigger(&app->stack, "cam-turn", {cam_turn_func, app});
@@ -211,16 +216,17 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
 {
     // Create a grid of entities with odd ones being cubes and even being rectangles
     int len = 5, width = 5, height = 5;
-    auto ent_offset = add_entities(len * width * height, region);
+    auto ent_offset = add_entities(region, len * width * height);
 
     auto tf_tbl = get_transform_tbl(&region->cdb);
+    auto sm_tbl = get_static_mesh_tbl(&region->cdb);
     for (sizet zind = 0; zind < height; ++zind) {
         for (sizet yind = 0; yind < len; ++yind) {
             for (sizet xind = 0; xind < width; ++xind) {
                 sizet ent_ind = zind * (width * len) + yind * width + xind + ent_offset;
                 auto ent = &region->ents[ent_ind];
-                auto tfcomp = add_transform(ent->id, tf_tbl);
-                auto sc = add_static_mesh(ent);
+                idx_t tfcomp = add_transform(tf_tbl, ent->id);
+                auto sc = get_static_mesh(sm_tbl, add_static_mesh(sm_tbl, ent->id));
                 if (xind % 2) {
                     sc->geom_id = cube_geom.id;
                     arr_emplace_back(&sc->mat_mapping, app->daniel_mat, 0);
@@ -231,7 +237,7 @@ intern void create_entity_grid(sim_region *region, const geometry &cube_geom, co
                     arr_emplace_back(&sc->mat_mapping, app->maria_mat, 0);
                     ent->name = to_str("rect-%d", ent_ind);
                 }
-                update_transform_pos(tfcomp, &tf_tbl->sys, vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f});
+                update_transform_pos(tf_tbl, tfcomp, vec3{xind * 2.0f, yind * 2.0f, zind * 2.0f});
             }
         }
     }
@@ -410,7 +416,7 @@ intern b8 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     register_textures(&app->rndr, tex_pool, &ctxt->arenas.stack);
     register_shaders(&app->rndr, shdr_pool, &ctxt->arenas.stack);
     register_techniques(&app->rndr, tech_pool, shdr_pool, &ctxt->arenas.stack);
-    register_materials(&app->rndr, mat_pool, tex_pool, *tech_pool, &ctxt->arenas.stack);
+    register_materials(&app->rndr, mat_pool);
 
     // Create render targets
     // create_rtexture_target(&app->rndr, TEXTURE_TARGET_COLOR(MAIN_PASS_COLOR_NAME));
@@ -446,66 +452,66 @@ intern b8 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 // Loop through the scoobys
 void update_transforms(sim_region *sr)
 {
-    transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
-    auto sys = &tf_tbl->sys;
-    for (u32 i = 0; i < sys->active_set.size; ++i) {
-        auto tf = get_transform(sys->active_set[i], tf_tbl);
+    // transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
+    // auto sys = &tf_tbl->sys;
+    // for (u32 i = 0; i < sys->active_set.size; ++i) {
+    //     auto tf = get_transform(sys->active_set[i], tf_tbl);
 
-        // Set this no matter what - even if not dirty we are in the active set which means last frame was dirty which
-        // means on this frame, we remove from active set and let settle to all frames
-        //tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
+    //     // Set this no matter what - even if not dirty we are in the active set which means last frame was dirty which
+    //     // means on this frame, we remove from active set and let settle to all frames
+    //     //tf->rfif_dirty = MAX_FRAMES_IN_FLIGHT;
 
-        // If the tform is dirty, mark it as processed and update cached, otherwise remove if from the active set
-        if (is_comp_dirty(*tf)) {
-            unset_flags(tf->flags, make_flag(COMP_DIRTY_BIT));
-            tf->cached = build_mat4_from_trs(tf->current);
-        }
-        else {
-            arr_swap_remove(&sys->active_set, tf->active_idx);
-            if (tf->active_idx < sys->active_set.size) {
-                // Get the swapped entity tform and update its active idx to the new position
-                auto other_tf = get_transform(sys->active_set[tf->active_idx], tf_tbl);
-                other_tf->active_idx = tf->active_idx;
-            }
-            tf->active_idx = INVALID_IDX;
-        }
-    }
+    //     // If the tform is dirty, mark it as processed and update cached, otherwise remove if from the active set
+    //     if (is_comp_dirty(*tf)) {
+    //         unset_flags(tf->flags, make_flag(COMP_DIRTY_BIT));
+    //         tf->cached = build_mat4_from_trs(tf->current);
+    //     }
+    //     else {
+    //         arr_swap_remove(&sys->active_set, tf->active_idx);
+    //         if (tf->active_idx < sys->active_set.size) {
+    //             // Get the swapped entity tform and update its active idx to the new position
+    //             auto other_tf = get_transform(sys->active_set[tf->active_idx], tf_tbl);
+    //             other_tf->active_idx = tf->active_idx;
+    //         }
+    //         tf->active_idx = INVALID_IDX;
+    //     }
+    // }
 }
 
 intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
 {
     // Move the cam if needed
-    auto cam = get_camera(app->cam_id, &app->rgn.cdb);
-    auto tf_sys = &get_transform_tbl(&app->rgn.cdb)->sys;
+    auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
+    auto tf_tbl = get_transform_tbl(&app->rgn.cdb);
+    auto cam = get_camera(cam_tbl, find_camera(cam_tbl, app->cam_id));
     if (app->movement != svec2{}) {
-        auto cam_tform = get_transform(app->cam_id, &app->rgn.cdb);
+        idx_t cam_tform_idx = find_transform(tf_tbl, app->cam_id);
+        auto cam_tform = get_transform(tf_tbl, cam_tform_idx);
         auto right = math::right_vec(cam_tform->current.orientation);
         vec3 forward_or_up = cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->current.orientation)
                                                                   : math::target_vec(cam_tform->current.orientation);
         update_transform_pos(
-            cam_tform, tf_sys, cam_tform->current.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
+            tf_tbl, cam_tform_idx, cam_tform->current.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
 
-    auto tform_tbl = get_transform_tbl(&app->rgn.cdb);
     auto mat_cache = get_asset_pool<material>(&app->cg);
     auto geom_cache = get_asset_pool<geometry>(&app->cg);
-    for (sizet i = 0; i < tform_tbl->entries.size; ++i) {
-        auto curtf = &tform_tbl->entries[i];
-        if (curtf->ent_id != app->cam_id) {
+    for (sizet i = 0; i < tf_tbl->entries.size; ++i) {
+        auto curtf = &tf_tbl->entries[i];
+        if (curtf->entity != app->cam_id) {
             vec4 axis_angle{(i % 3 == 0) * 1.0f, (i % 3 == 2) * 1.0f, (i % 3 == 1) * 1.0f, (f32)dt};
-            update_transform_orientation(curtf, tf_sys, curtf->current.orientation * math::orientation(axis_angle));
+            update_transform_orientation(tf_tbl, (idx_t)i, curtf->current.orientation * math::orientation(axis_angle));
         }
     }
 
     update_transforms(&app->rgn);
 }
 
-intern void build_manifest(rmanifest *m, const sim_snapshot *rfp, rdev_app_ctxt *app)
+intern void build_manifest(rmanifest *m, const sim_snapshot *rfp)
 {
-    material_pool *mat_pool = get_asset_pool<material>(&app->cg);
-    auto default_mat = get_asset(mat_pool, app->default_mat);
+    #if 0
     auto bp_main_pass = find_rbp_pass(m->rbp.item, MAIN_PASS_ID);
     auto imgui_pass = find_rbp_pass(m->rbp.item, IMGUI_PASS_ID);
 
@@ -527,8 +533,8 @@ intern void build_manifest(rmanifest *m, const sim_snapshot *rfp, rdev_app_ctxt 
     idx_t imgui_id = push_pass(m, {.rbpp = imgui_pass});
     push_slot_assignment(m, imgui_id, MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0f, 1.0f, 1.0f, 1.0f)));
 
-    auto cam = get_camera(app->cam_id, &app->rgn.cdb);
-    auto cam_tform = get_transform(app->cam_id, &app->rgn.cdb);
+    auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
+    auto cam = get_camera(cam_tbl, find_camera(cam_tbl, app->cam_id));
 
     view_ssbo_data vdata{};
     vdata.view = cam->view;
@@ -549,6 +555,7 @@ intern void build_manifest(rmanifest *m, const sim_snapshot *rfp, rdev_app_ctxt 
 #endif
 
     prepare_and_draw_region(m, &app->rgn, &app->cg, default_mat);
+    #endif
 }
 
 // Runs on the render thread. Reads live sim state through app, which is only safe because
@@ -556,7 +563,7 @@ intern void build_manifest(rmanifest *m, const sim_snapshot *rfp, rdev_app_ctxt 
 intern void rdev_build_frame(rmanifest *m, const sim_snapshot *p, void *user)
 {
     auto app = (rdev_app_ctxt *)user;
-    build_manifest(m, p, app);
+    build_manifest(m, p);
 }
 
 constexpr f64 MAX_CATCHUP_FRAMES = 4;

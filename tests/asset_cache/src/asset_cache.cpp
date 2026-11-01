@@ -120,7 +120,7 @@ void test_cache_pool_api()
     asrt_log(destroy_asset(geom_pool, geom0.hndl));
     asrt_log(destroy_asset(&cache, geom1.hndl));
 
-    asrt_log(destroy_asset_pool(geom_pool, &cache));
+    asrt_log(destroy_asset_pool(&cache, geom_pool));
     asrt_log(create_asset_pool<geometry>(&cache, 64 * KB_SIZE, 4));
     asrt_log(destroy_asset_pool<geometry>(&cache));
     terminate_asset_cache(&cache);

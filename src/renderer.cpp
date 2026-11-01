@@ -259,8 +259,9 @@ intern void init_resource_target_registry(renderer *rndr)
     // reference the swapchain image at the start of every frame once we acquire it
     auto swapchain = acquire_slot(&rndr->rtargets.textures);
     strcpy(swapchain.item->name, "swapchain");
-    swapchain.item->id = make_rid("swapchain");
-    hmap_insert(&rndr->rtargets.texture_id_map, swapchain.item->id, swapchain.hndl);
+    auto swap_id = make_rid("swapchain");
+    rndr->rtargets.swapchain = swapchain.hndl;
+    hmap_insert(&rndr->rtargets.texture_id_map, swap_id, swapchain.hndl);
 }
 
 // We assume device has already been waited here
@@ -270,7 +271,7 @@ intern void terminate_resource_target_registry(renderer *rndr)
     auto vk = &rndr->vk;
     for (u32 fif = 0; fif < MAX_FRAMES_IN_FLIGHT; ++fif) {
         for (auto iter = slot_pool_begin(&rndr->rtargets.textures); is_valid(iter); iter = slot_pool_next(&rndr->rtargets.textures, iter)) {
-            if (iter.item->id != SWAPCHAIN_ID) {
+            if (iter.hndl != rndr->rtargets.swapchain) {
                 ilog("Terminating %s for FIF %d", iter.item->name, fif);
                 vkr_terminate_image_view(iter.item->frames[fif].view, vk);
                 vkr_terminate_image(&iter.item->frames[fif].image, vk);
@@ -775,7 +776,7 @@ intern void init_render_resources(renderer *rndr, const renderer_cfg &rcfg)
     init_slot_pool(&rndr->materials, rcfg.acounts.materials, &rndr->arenas.free_list);
     init_slot_pool(&rndr->geometry, rcfg.acounts.geometries, &rndr->arenas.free_list);
     init_slot_pool(&rndr->drawables, rcfg.acounts.drawables, &rndr->arenas.free_list);
-    init_slot_allocator(&rndr->transforms, rcfg.acounts.transforms, &rndr->arenas.free_list);
+    init_slot_pool(&rndr->transforms, rcfg.acounts.transforms, &rndr->arenas.free_list);
     rtexture_regisitry_cfg cfg{
         .persist_fl = &rndr->arenas.free_list,
         .scratch_stack = &rndr->arenas.stack,
@@ -796,7 +797,7 @@ intern void terminate_render_resources(renderer *rndr)
          get_slot_used_count(rndr->shaders),
          get_slot_used_count(rndr->drawables),
          get_slot_used_count(rndr->transforms));
-    
+
     // Geometries
     for (auto iter = slot_pool_begin(&rndr->geometry); is_valid(iter); iter = slot_pool_next(&rndr->geometry, iter)) {
         terminate_geometry(rndr, iter.item);
@@ -825,7 +826,7 @@ intern void terminate_render_resources(renderer *rndr)
     terminate_slot_pool(&rndr->drawables);
 
     // Transforms
-    terminate_slot_allocator(&rndr->transforms);
+    terminate_slot_pool(&rndr->transforms);
 }
 
 intern void handle_window_resize(renderer *rndr)
@@ -842,7 +843,7 @@ intern void handle_window_resize(renderer *rndr)
 
     for (auto rt_iter = slot_pool_begin(&rndr->rtargets.textures); is_valid(rt_iter);
          rt_iter = slot_pool_next(&rndr->rtargets.textures, rt_iter)) {
-        if (rt_iter.item->id != SWAPCHAIN_ID && test_flags(rt_iter.item->flags, RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW)) {
+        if (rt_iter.hndl != rndr->rtargets.swapchain && test_flags(rt_iter.item->flags, RTARGET_TEXTURE_FLAG_RESIZE_WITH_WINDOW)) {
             rt_iter.item->cfg.dims = {dev->swapchain.extent.width, dev->swapchain.extent.height, 1};
             ilog("Resizing %s to {%u %u}", rt_iter.item->name, rt_iter.item->cfg.dims.x, rt_iter.item->cfg.dims.y);
             asrt(!rt_iter.item->iv_cfg.image);
@@ -990,30 +991,6 @@ intern void process_rgeom_create_event(renderer *rndr, const rproxy_create_rgeom
     arr_push_back(&rndr->pending_uploads[uop.type], uop);
 }
 
-intern void process_rmaterial_upsert_event(renderer *rndr, const rproxy_upsert_rmaterial_event &ev)
-{
-    auto mat = get_slot_item(&rndr->materials, ev.hndl);
-    if (!mat) {
-        mat = place_slot(&rndr->materials, ev.hndl);
-        mat->mat_ssbo = vkr_acquire_chunk(&rndr->desc_info.material_ssbo);
-        // Material ssbo contains a section for each frame in flight like
-        // |          fif0         |          fif1         | ... |          fifN         |
-        // | mat0, mat1, ..., matN | mat0, mat1, ..., matN | ... | mat0, mat1, ..., matN |
-    }
-    mat->dstate = ev.dstate;
-    mat->override_mask = ev.override_mask;
-    mat->bp_techs = ev.bp_techs;
-}
-
-intern void process_rdrawable_upsert_event(renderer *rndr, const rproxy_upsert_rdrawable_event &ev)
-{
-    auto d = get_slot_item(&rndr->drawables, ev.hndl);
-    if (!d) {
-        d = place_slot(&rndr->drawables, ev.hndl);
-    }
-    *d = ev.d;
-}
-
 intern void process_rtexture_create_event(renderer *rndr, const rproxy_create_rtexture_event &ev)
 {
     auto pool = &rndr->textures.pools[ev.hndl.pool_idx];
@@ -1033,7 +1010,6 @@ intern void process_rtexture_target_create_event(renderer *rndr, const rproxy_cr
     rtexture_target *item = place_slot(&rndr->rtargets.textures, ev.hndl);
 
     strncpy(item->name, ev.name, SMALL_STR_LEN - 1);
-    item->id = make_rid(item->name);
     item->flags = ci->flags;
 
     // If parameter not here its cause I want to leave at default on purpose
@@ -1076,15 +1052,12 @@ intern void process_rtexture_target_create_event(renderer *rndr, const rproxy_cr
 
     // So we don't forget to update this to each per fif image on doing any resizes
     item->iv_cfg.image = nullptr;
-
-    hmap_insert(&rndr->rtargets.texture_id_map, item->id, ev.hndl);
 }
 
 intern void process_rbuffer_target_create_event(renderer *rndr, const rproxy_create_rbuffer_target_event &ev)
 {
     rbuffer_target *item = place_slot(&rndr->rtargets.buffers, ev.hndl);
     strncpy(item->name, ev.name, SMALL_STR_LEN - 1);
-    item->id = make_rid(item->name);
     // TODO: Don't actually just have cfg in the ci - edit this to only include actual needed things - for now we just
     // use it
     item->cfg = ev.desc.cfg;
@@ -1096,7 +1069,6 @@ intern void process_rbuffer_target_create_event(renderer *rndr, const rproxy_cre
         int result = vkr_init_buffer(&cur_b->buffer, *cur_b->cfg);
         asrt(result == err_code::VKR_NO_ERROR);
     }
-    hmap_insert(&rndr->rtargets.buffer_id_map, item->id, ev.hndl);
 }
 
 intern void process_rshader_create_event(renderer *rndr, const rproxy_create_rshader_event &ev)
@@ -1313,7 +1285,6 @@ intern void process_destroy_tex_target_event(renderer *rndr, const rtexture_targ
         df.iv = item->frames[i].view;
         arr_push_back(&rndr->deferred_frees[i], df);
     }
-    hmap_remove(&rndr->rtargets.texture_id_map, item->id);
 }
 
 intern void process_destroy_buf_target_event(renderer *rndr, const rbuffer_target_handle &hndl)
@@ -1329,7 +1300,6 @@ intern void process_destroy_buf_target_event(renderer *rndr, const rbuffer_targe
         df.buf = item->frames[i].buffer;
         arr_push_back(&rndr->deferred_frees[i], df);
     }
-    hmap_remove(&rndr->rtargets.buffer_id_map, item->id);
 }
 
 intern void process_destroy_shdr_event(renderer *rndr, const rshader_handle &hndl)
@@ -1360,25 +1330,6 @@ intern void process_destroy_tech_event(renderer *rndr, const rtechnique_handle &
         df.pl = (VkPipeline)pl_item->gpu_d;
         arr_push_back(&rndr->deferred_frees[prev_fif], df);
     }
-}
-
-intern void process_destroy_mat_event(renderer *rndr, const rmaterial_handle &hndl)
-{
-    auto item = get_slot_item(rndr->materials, hndl);
-    asrt(item);
-    clear_slot(&rndr->materials, hndl);
-    // We can release this now because the mat ssbo isn't shared across thread boundaries or anything like that, and
-    // releasing a chunk from it doesn't actually write any of the underlying data - it just basically says this chunk
-    // is available for use again. Then, at some future time if the chunk is reserved again, each frame only writes to
-    // it's section within the ssbo leaving other sections for the chunk untouched.
-    vkr_release_chunk(&rndr->desc_info.material_ssbo, item->mat_ssbo);
-}
-
-intern void process_destroy_drawable_event(renderer *rndr, const rdrawable_handle &hndl)
-{
-    auto item = get_slot_item(rndr->drawables, hndl);
-    asrt(item);
-    clear_slot(&rndr->drawables, hndl);
 }
 
 intern void process_destroy_tex_event(renderer *rndr, const rtexture_handle &hndl)
@@ -1421,17 +1372,11 @@ intern void process_rproxy_destroy_event(renderer *rndr, idx_t fif)
     case (RPROXY_DESTROY_EVENT_TECHNIQUE):
         process_destroy_tech_event(rndr, ev.tech, prev_fif);
         break;
-    case (RPROXY_DESTROY_EVENT_MATERIAL):
-        process_destroy_mat_event(rndr, ev.mat);
-        break;
     case (RPROXY_DESTROY_EVENT_TEXTURE):
         process_destroy_tex_event(rndr, ev.tex);
         break;
     case (RPROXY_DESTROY_EVENT_GEOM):
         process_destroy_geom_event(rndr, ev.geom, prev_fif);
-        break;
-    case (RPROXY_DESTROY_EVENT_RDRAWABLE):
-        process_destroy_drawable_event(rndr, ev.dhndl);
         break;
     }
 }
@@ -1454,17 +1399,11 @@ intern void process_frame_proxy_events(renderer *rndr, idx_t fif)
         case RPROXY_EVENTQ_CREATE_RTECH:
             process_rproxy_event(rndr, &rndr->proxy_events.rtech_create_q, process_rtechnique_create_event);
             break;
-        case RPROXY_EVENTQ_UPSERT_RMAT:
-            process_rproxy_event(rndr, &rndr->proxy_events.rmat_upsert_q, process_rmaterial_upsert_event);
-            break;
         case RPROXY_EVENTQ_CREATE_RTEX:
             process_rproxy_event(rndr, &rndr->proxy_events.rtex_create_q, process_rtexture_create_event);
             break;
         case RPROXY_EVENTQ_CREATE_RGEOM:
             process_rproxy_event(rndr, &rndr->proxy_events.rgeom_create_q, process_rgeom_create_event);
-            break;
-        case RPROXY_EVENTQ_UPSERT_RDRAWABLE:
-            process_rproxy_event(rndr, &rndr->proxy_events.rdrawable_upsert_q, process_rdrawable_upsert_event);
             break;
         case RPROXY_EVENTQ_DESTROY:
             process_rproxy_destroy_event(rndr, fif);
@@ -1578,8 +1517,7 @@ u8 begin_render_frame(renderer *rndr)
 
     // Update our special swapchain handle
     auto sw = &rndr->vk.inst.device.swapchain;
-    auto sw_hndl = find_rtexture_target(rndr, SWAPCHAIN_ID);
-    auto swapchain = get_rtexture_target(rndr, sw_hndl);
+    auto swapchain = get_rtexture_target(rndr, rndr->rtargets.swapchain);
     swapchain->frames[fif].view = sw->image_views[cur_fif->cur_im_ind];
     swapchain->frames[fif].image = sw->images[cur_fif->cur_im_ind];
     swapchain->frames[fif].state = {};
@@ -1935,40 +1873,33 @@ rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info)
     return hndl;
 }
 
-rmaterial_handle upsert_rmaterial(renderer *rndr, const rmaterial_handle &rhndl, const rmaterial_desc &ctinfo)
+rmaterial_handle create_rmaterial(renderer *rndr)
 {
-    auto hndl = is_valid(rhndl) ? rhndl : reserve_slot(&rndr->materials);
+    auto hndl = reserve_slot(&rndr->materials);
     if (!is_valid(hndl)) {
-        wlog("No more slots left for %s", ctinfo.name);
+        wlog("No more slots left for materials");
         return {};
     }
-
-    // The SSBO chunk is acquired on the render thread when the item is first placed - the chunk free list is render owned
-    rproxy_upsert_rmaterial_event ev{};
-    ev.hndl = hndl;
-    ev.dstate = ctinfo.dstate;
-    ev.override_mask = ctinfo.dstate_override_mask;
-    ev.bp_techs.size = ctinfo.bp_tech_count;
-    for (u32 i = 0; i < ctinfo.bp_tech_count; ++i) {
-        ev.bp_techs[i] = ctinfo.bp_techs[i];
-    }
-    asrt(spsc_push(&rndr->proxy_events.rmat_upsert_q, ev));
-    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_UPSERT_RMAT));
     return hndl;
 }
 
-rdrawable_handle upsert_rdrawable(renderer *rndr, const rdrawable_handle &cur, const rdrawable_desc &d)
+rdrawable_handle create_rdrawable(renderer *rndr)
 {
-    auto hndl = is_valid(cur) ? cur : reserve_slot(&rndr->drawables);
+    auto hndl = reserve_slot(&rndr->drawables);
     if (!is_valid(hndl)) {
         wlog("No more slots left for retained drawables");
         return {};
     }
-    rproxy_upsert_rdrawable_event ev{};
-    arr_copy(&ev.d.items, d.items, d.item_count);
-    ev.hndl = hndl;
-    asrt(spsc_push(&rndr->proxy_events.rdrawable_upsert_q, ev));
-    asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_UPSERT_RDRAWABLE));
+    return hndl;
+}
+
+rtransform_handle create_rtransform(renderer *rndr)
+{
+    auto hndl = reserve_slot(&rndr->transforms);
+    if (!is_valid(hndl)) {
+        wlog("No more slots left for transforms");
+        return {};
+    }
     return hndl;
 }
 
@@ -1996,7 +1927,8 @@ rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_tar
     }
     asrt(spsc_push(&rndr->proxy_events.rtex_target_create_q, ev));
     asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RTEX_TARGET));
-
+    // Hash the truncated name so the key matches the id the render thread sets on the item
+    hmap_insert(&rndr->rtargets.texture_id_map, make_rid(ev.name), hndl);
     return hndl;
 }
 
@@ -2026,6 +1958,8 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
     ev.desc.name = nullptr;
     asrt(spsc_push(&rndr->proxy_events.rbuf_target_create_q, ev));
     asrt(spsc_push(&rndr->proxy_events.frame_ops, (u8)RPROXY_EVENTQ_CREATE_RBUF_TARGET));
+    // Hash the truncated name so the key matches the id the render thread sets on the item
+    hmap_insert(&rndr->rtargets.buffer_id_map, make_rid(ev.name), hndl);
     return hndl;
 }
 
@@ -2083,16 +2017,24 @@ bool destroy_rshader(renderer *rndr, const rshader_handle &hndl)
     return destroy_rtype(rndr, &rndr->shaders, hndl, de);
 }
 
-bool destroy_rmaterial(renderer *rndr, const rmaterial_handle &hndl)
+// The item is placed on the render thread so we can't read its id here - find the id map entry by handle instead. A
+// stale handle won't match anything, so this is safe to call before knowing whether the destroy succeeds.
+template<typename T>
+intern void remove_target_id_map_entry(hmap<rid, slot_handle<T>> *id_map, const slot_handle<T> &hndl)
 {
-    rproxy_destroy_event de{};
-    de.type = RPROXY_DESTROY_EVENT_MATERIAL;
-    de.mat = hndl;
-    return destroy_rtype(rndr, &rndr->materials, hndl, de);
+    auto iter = hmap_begin(id_map);
+    while (iter) {
+        if (iter->val == hndl) {
+            hmap_erase(id_map, iter);
+            return;
+        }
+        iter = hmap_next(id_map, iter);
+    }
 }
 
 bool destroy_rtexture_target(renderer *rndr, const rtexture_target_handle &hndl)
 {
+    remove_target_id_map_entry(&rndr->rtargets.texture_id_map, hndl);
     rproxy_destroy_event de{};
     de.type = RPROXY_DESTROY_EVENT_TEXTURE_TARGET;
     de.ttar = hndl;
@@ -2101,18 +2043,26 @@ bool destroy_rtexture_target(renderer *rndr, const rtexture_target_handle &hndl)
 
 bool destroy_rbuffer_target(renderer *rndr, const rbuffer_target_handle &hndl)
 {
+    remove_target_id_map_entry(&rndr->rtargets.buffer_id_map, hndl);
     rproxy_destroy_event de{};
     de.type = RPROXY_DESTROY_EVENT_BUFFER_TARGET;
     de.btar = hndl;
     return destroy_rtype(rndr, &rndr->rtargets.buffers, hndl, de);
 }
 
+bool destroy_rmaterial(renderer *rndr, const rmaterial_handle &hndl)
+{
+    return free_slot(&rndr->materials, hndl);
+}
+
 bool destroy_rdrawable(renderer *rndr, const rdrawable_handle &hndl)
 {
-    rproxy_destroy_event de{};
-    de.type = RPROXY_DESTROY_EVENT_RDRAWABLE;
-    de.dhndl = hndl;
-    return destroy_rtype(rndr, &rndr->drawables, hndl, de);
+    return free_slot(&rndr->drawables, hndl);
+}
+
+bool destroy_rtransform(renderer *rndr, const rtransform_handle &hndl)
+{
+    return free_slot(&rndr->transforms, hndl);
 }
 
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl)
@@ -2120,7 +2070,7 @@ rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl)
     return get_slot_item(&rndr->rtargets.buffers, hndl);
 }
 
-rbuffer_target_handle find_rtarget_buffer(renderer *rndr, rid id)
+rbuffer_target_handle find_rbuffer_target(renderer *rndr, rid id)
 {
     auto fiter = hmap_find(&rndr->rtargets.buffer_id_map, id);
     return fiter ? fiter->val : rbuffer_target_handle{};

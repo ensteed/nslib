@@ -136,6 +136,10 @@ struct rdrawable;
 using rdrawable_handle = slot_handle<rdrawable>;
 using rdrawable_ref = slot_item_ref<rdrawable>;
 
+struct rtransform;
+using rtransform_handle = slot_handle<rtransform>;
+using rtransform_ref = slot_item_ref<rtransform>;
+
 struct rblueprint;
 using rblueprint_handle = slot_handle<rblueprint>;
 using rblueprint_ref = slot_item_ref<rblueprint>;

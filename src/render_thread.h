@@ -1,28 +1,11 @@
 #pragma once
+#include "sim_snapshot.h"
 #include "atomic_types.h"
-#include "renderer.h"
-#include "engine_rendering.h"
-#include "sim_region.h"
 #include "threads.h"
 
 namespace nslib
 {
 
-struct snapshot_draw {
-    u32 transform_idx;
-    rdraw_item item;
-};
-
-struct sim_snapshot
-{
-    mem_arena arena;
-    s64 step_anchor_ns;
-    u32 step_count;
-    f32 dt;
-    f64 elapsed;
-    void *imgui_data;
-    rblueprint_ref rbp; // becomes a handle after step 4
-};
 
 // When the render thread first starts, each frame needs to have an initial owner
 enum render_payload_init_owner_ind
@@ -88,6 +71,14 @@ struct render_thread
 
     // Shared payloads
     rt_triple_buffer tb{};
+
+    // Set each time we submit a snapshot to the render thread with the snapshot's step count
+    u32 published_step;
+
+    // When we get a new snapshot, if the write bit is not set, we set the confirmed step to the published step (we do
+    // this before setting the published step to the snapshot's step count) to indicate that we know the render thread
+    // processed that step.
+    u32 confirmed_step;
 };
 
 // Spawns the thread (unless mode == INLINE). Asserts cfg.build != nullptr.

@@ -1,5 +1,5 @@
 #pragma once
-#include "containers/slot_pool.h"
+#include "containers/slot_pool.h" // IWYU pragma: export
 #include "render_defs.h"
 #include "math/primitives.h"
 #include "math/vector4.h"

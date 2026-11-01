@@ -155,16 +155,6 @@ struct rtechnique_desc
     const char *name;
 };
 
-struct rmaterial_desc
-{
-    const char *name;
-    rtexture_handle slots[RMATERIAL_TEXTURE_COUNT];
-    rdraw_dyn_state dstate;
-    rdraw_state_override_flags dstate_override_mask;
-    const rmaterial_bp_technique *bp_techs;
-    u32 bp_tech_count{};
-};
-
 namespace err_code
 {
 enum render
@@ -374,7 +364,12 @@ struct rdraw_item
 
 struct rdrawable
 {
+    rtransform_handle tform;
     static_array<rdraw_item, MAX_SUBGEOM_COUNT> items;
+};
+
+struct rtransform {
+    u32 fif_remaining;
 };
 
 // This will cause targets to resize dynamically with the swapchain as well
@@ -405,7 +400,6 @@ struct rbuffer_target
 {
     // Set during build
     small_str name;
-    rid id;
     vkr_buffer_cfg cfg{};
     // Filled in during compile
     rbuffer_target_fif frames[MAX_FRAMES_IN_FLIGHT];
@@ -429,7 +423,6 @@ struct rtexture_target
 {
     // Set during build
     small_str name;
-    rid id;
     u32 flags;
     // We need to store this so we can resize the image
     vkr_image_cfg cfg{};
@@ -440,9 +433,13 @@ struct rtexture_target
 struct rresource_target_registry
 {
     slot_pool<rbuffer_target> buffers;
+    // Sim owned - only touched by create/destroy/find on the sim thread
     hmap<rid, rbuffer_target_handle> buffer_id_map;
     slot_pool<rtexture_target> textures;
+    // Sim owned - only touched by create/destroy/find on the sim thread
     hmap<rid, rtexture_target_handle> texture_id_map;
+    // Set once at init and never changed - lets the render thread get at the swapchain without the id map
+    rtexture_target_handle swapchain;
 };
 
 struct rbuffer_target_desc
@@ -466,12 +463,6 @@ struct rtexture_target_desc
     rtarget_texture_type type;
     svec2 dims;
     u32 flags;
-};
-
-struct rdrawable_desc
-{
-    const rdraw_item *items;
-    sizet item_count;
 };
 
 #define TEXTURE_TARGET_COLOR_HDR(pname)                                                                                                    \
@@ -553,7 +544,7 @@ using rtechnique_pool = slot_pool<rtechnique_info>;
 using rmaterial_pool = slot_pool<rmaterial_info>;
 using rgeometry_pool = slot_pool<rgeom_info>;
 using rdrawable_pool = slot_pool<rdrawable>;
-
+using rtransform_pool = slot_pool<rtransform>;
 struct rproxy_create_rtexture_target_event
 {
     rtexture_target_handle hndl;
@@ -585,20 +576,6 @@ struct rproxy_create_rtechnique_event
     small_str name;
 };
 
-struct rproxy_upsert_rmaterial_event
-{
-    rmaterial_handle hndl;
-    rdraw_dyn_state dstate;
-    rdraw_state_override_flags override_mask;
-    static_array<rmaterial_bp_technique, MAX_BP_COUNT> bp_techs;
-};
-
-struct rproxy_upsert_rdrawable_event
-{
-    rdrawable_handle hndl;
-    rdrawable d;
-};
-
 struct rproxy_create_rtexture_event
 {
     rtexture_handle hndl;
@@ -627,10 +604,8 @@ enum rproxy_destroy_event_type
     RPROXY_DESTROY_EVENT_BUFFER_TARGET,
     RPROXY_DESTROY_EVENT_SHADER,
     RPROXY_DESTROY_EVENT_TECHNIQUE,
-    RPROXY_DESTROY_EVENT_MATERIAL,
     RPROXY_DESTROY_EVENT_TEXTURE,
     RPROXY_DESTROY_EVENT_GEOM,
-    RPROXY_DESTROY_EVENT_RDRAWABLE
 };
 
 struct rproxy_destroy_event
@@ -642,10 +617,8 @@ struct rproxy_destroy_event
         rbuffer_target_handle btar;
         rshader_handle shdr;
         rtechnique_handle tech;
-        rmaterial_handle mat;
         rtexture_handle tex;
         rgeom_handle geom;
-        rdrawable_handle dhndl;
     };
 };
 
@@ -656,10 +629,8 @@ enum rproxy_eventq_type
     RPROXY_EVENTQ_CREATE_RBUF_TARGET,
     RPROXY_EVENTQ_CREATE_RSHDR,
     RPROXY_EVENTQ_CREATE_RTECH,
-    RPROXY_EVENTQ_UPSERT_RMAT,
     RPROXY_EVENTQ_CREATE_RTEX,
     RPROXY_EVENTQ_CREATE_RGEOM,
-    RPROXY_EVENTQ_UPSERT_RDRAWABLE,
     RPROXY_EVENTQ_DESTROY,
 };
 
@@ -672,10 +643,8 @@ struct rproxy_event_queues
     spsc_queue<rproxy_create_rbuffer_target_event, MAX_BUF_TARGET_CREATE_EVENTS_PER_FRAME> rbuf_target_create_q;
     spsc_queue<rproxy_create_rshader_event, MAX_SHDR_CREATE_EVENTS_PER_FRAME> rshdr_create_q;
     spsc_queue<rproxy_create_rtechnique_event, MAX_TECH_CREATE_EVENTS_PER_FRAME> rtech_create_q;
-    spsc_queue<rproxy_upsert_rmaterial_event, MAX_MAT_UPSERT_EVENTS_PER_FRAME> rmat_upsert_q;
     spsc_queue<rproxy_create_rtexture_event, MAX_TEX_CREATE_EVENTS_PER_FRAME> rtex_create_q;
     spsc_queue<rproxy_create_rgeom_event, MAX_GEOM_CREATE_EVENTS_PER_FRAME> rgeom_create_q;
-    spsc_queue<rproxy_upsert_rdrawable_event, MAX_RDRAWABLE_UPSERT_EVENTS_PER_FRAME> rdrawable_upsert_q;
     spsc_queue<rproxy_destroy_event, MAX_DESTROY_EVENTS_PER_FRAME> rdestroy_q;
 };
 
@@ -774,8 +743,8 @@ struct renderer
     // Master list of all drawables associated with
     rdrawable_pool drawables;
 
-    // Used to allocate slots for the transform SSBO
-    slot_allocator transforms;
+    // Used to allocate transforms for the transform SSBO
+    rtransform_pool transforms;
 
     // Frames in flight
     static_array<frame_context, MAX_FRAMES_IN_FLIGHT> fifs{};
@@ -906,25 +875,34 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
 rtexture_handle create_rtexture(renderer *rndr, const rtexture_desc &ctinfo);
 rgeom_handle create_rgeometry(renderer *rndr, const rgeom_desc &ci);
 rshader_handle create_rshader(renderer *rndr, const rshader_desc &sdr_info);
-rmaterial_handle upsert_rmaterial(renderer *rndr, const rmaterial_handle &cur, const rmaterial_desc &ctinfo);
 rtexture_target_handle create_rtexture_target(renderer *rndr, const rtexture_target_desc &ci);
 rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target_desc &ci);
-rdrawable_handle upsert_rdrawable(renderer *rndr, const rdrawable_handle &cur, const rdrawable_desc &d);
+
+// These just give out the handle - the slot is placed and data set in the snapshot
+rmaterial_handle create_rmaterial(renderer *rndr);
+rdrawable_handle create_rdrawable(renderer *rndr);
+rtransform_handle create_rtransform(renderer *rndr);
+
 
 bool destroy_rtechnique(renderer *rndr, const rtechnique_handle &hndl);
 bool destroy_rtexture(renderer *rndr, const rtexture_handle &hndl);
 bool destroy_rgeom(renderer *rndr, const rgeom_handle &hndl);
 bool destroy_rshader(renderer *rndr, const rshader_handle &hndl);
-bool destroy_rmaterial(renderer *rndr, const rmaterial_handle &hndl);
 bool destroy_rtexture_target(renderer *rndr, const rtexture_target_handle &hndl);
 bool destroy_rbuffer_target(renderer *rndr, const rbuffer_target_handle &hndl);
+
+bool destroy_rmaterial(renderer *rndr, const rmaterial_handle &hndl);
 bool destroy_rdrawable(renderer *rndr, const rdrawable_handle &hndl);
+bool destroy_rtransform(renderer *rndr, const rtransform_handle &hndl);
+
+// These should be called from the sim thread only - the id maps are updated by the create/destroy calls above, so a
+// target is findable as soon as it is created
+rtexture_target_handle find_rtexture_target(renderer *rndr, rid id);
+rbuffer_target_handle find_rbuffer_target(renderer *rndr, rid id);
 
 // These should be called from the render thread only
 rtexture_target *get_rtexture_target(renderer *rndr, rtexture_target_handle hndl);
-rtexture_target_handle find_rtexture_target(renderer *rndr, rid id);
 rbuffer_target *get_rbuffer_target(renderer *rndr, rbuffer_target_handle hndl);
-rbuffer_target_handle find_rbuffer_target(renderer *rndr, rid id);
 // Records any textures staged since the last frame in to cmd_buf, and queues their staging buffers for a deferred
 // free on fif. cmd_buf must already be open, and this must be recorded before any pass that samples those textures.
 void record_pending_uploads(renderer *rndr, VkCommandBuffer cmd_buf, idx_t fif);

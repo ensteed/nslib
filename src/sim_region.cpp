@@ -3,59 +3,55 @@
 
 namespace nslib
 {
-
-void set_camera_fov(camera *cam, f32 fov, camera_fov_type ft)
+void set_camera_fov(camera_tbl *tbl, idx_t cam, f32 fov, camera_fov_type ft)
 {
-    cam->fov = fov;
-    cam->fov_type = ft;
-    mark_comp_dirty(cam);
+    tbl->entries[cam].fov = fov;
+    tbl->entries[cam].fov_type = ft;
+    mark_comp_updated(tbl, cam);
 }
 
-void set_camera_near_far(camera *cam, const vec2 &near_far)
+void set_camera_near_far(camera_tbl *tbl, idx_t cam, const vec2 &near_far)
 {
-    cam->near_far = near_far;
-    mark_comp_dirty(cam);
+    tbl->entries[cam].near_far = near_far;
+    mark_comp_updated(tbl, cam);
 }
 
-void set_camera_aspect(camera *cam, f32 ar)
+void set_camera_aspect(camera_tbl *tbl, idx_t cam, f32 ar)
 {
-    cam->aspect = ar;
-    mark_comp_dirty(cam);
+    tbl->entries[cam].aspect = ar;
+    mark_comp_updated(tbl, cam);
 }
 
-void set_camera_proj_type(camera *cam, camera_proj_type pt)
+void set_camera_proj_type(camera_tbl *tbl, idx_t cam, camera_proj_type pt)
 {
-    cam->ptype = pt;
-    mark_comp_dirty(cam);
+    tbl->entries[cam].ptype = pt;
+    mark_comp_updated(tbl, cam);
 }
 
-void handle_dirty_proc(transform *tf, transform_system *tfs)
+void update_transform_pos(transform_tbl *tbl, idx_t tform, const vec3 &pos)
 {
-    if (!is_comp_dirty(*tf)) {
+    auto tf = &tbl->entries[tform];
+    if (mark_comp_updated(tbl, tform)) {
         tf->prev = tf->current;
-        mark_comp_dirty(tf);
     }
-    if (!is_valid(tf->active_idx)) {
-        tf->active_idx = (idx_t)tfs->active_set.size;
-        arr_push_back(&tfs->active_set, tf->ent_id);
-    }
-}
-
-void update_transform_pos(transform *tf, transform_system *tfs, const vec3 &pos)
-{
-    handle_dirty_proc(tf, tfs);
     tf->current.world_pos = pos;
 }
 
-void update_transform_orientation(transform *tf, transform_system *tfs, const quat &q)
+void update_transform_orientation(transform_tbl *tbl, idx_t tform, const quat &q)
 {
-    handle_dirty_proc(tf, tfs);
+    auto tf = &tbl->entries[tform];
+    if (mark_comp_updated(tbl, tform)) {
+        tf->prev = tf->current;
+    }
     tf->current.orientation = q;
 }
 
-void update_transform_scale(transform *tf, transform_system *tfs, const vec3 &s)
+void update_transform_scale(transform_tbl *tbl, idx_t tform, const vec3 &s)
 {
-    handle_dirty_proc(tf, tfs);
+    auto tf = &tbl->entries[tform];
+    if (mark_comp_updated(tbl, tform)) {
+        tf->prev = tf->current;
+    }
     tf->current.scale = s;
 }
 
@@ -76,16 +72,6 @@ mat4 build_mat4_from_trs(const transform_trs &trs)
 mat4 interpolate_tranform(const transform &tf, f32 alpha)
 {
     return build_mat4_from_trs(interpolate_trs(tf.prev, tf.current, alpha));
-}
-
-void init_comp_system(transform_system *sys, mem_arena *arena, sizet initial_capacity)
-{
-    arr_init(&sys->active_set, arena, initial_capacity);
-}
-
-void terminate_comp_system(transform_system *sys)
-{
-    arr_terminate(&sys->active_set);
 }
 
 void init_static_model(static_mesh *sm, mem_arena *arena)
@@ -116,11 +102,11 @@ intern void terminate_comp_db(comp_db *cdb)
     arr_terminate(&cdb->comp_tables);
 }
 
-sizet add_entities(sizet count, sim_region *reg)
+sizet add_entities(sim_region *reg, sizet count)
 {
-    sizet ind = reg->ents.size;
+    idx_t ind = reg->ents.size;
     arr_resize(&reg->ents, ind + count);
-    for (sizet i = 0; i < count; ++i) {
+    for (idx_t i = 0; i < count; ++i) {
         reg->ents[ind + i].id = ++reg->last_id;
         reg->ents[ind + i].cdb = &reg->cdb;
         auto iter = hmap_insert(&reg->entmap, reg->ents[ind + i].id, ind + i);
@@ -129,9 +115,9 @@ sizet add_entities(sizet count, sim_region *reg)
     return ind;
 }
 
-entity *add_entity(const entity &copy, sim_region *reg)
+entity *add_entity(sim_region *reg, const entity &copy)
 {
-    sizet ind = reg->ents.size;
+    idx_t ind = reg->ents.size;
     arr_emplace_back(&reg->ents, copy);
     reg->ents[ind].id = ++reg->last_id;
     reg->ents[ind].cdb = &reg->cdb;
@@ -140,9 +126,9 @@ entity *add_entity(const entity &copy, sim_region *reg)
     return &reg->ents[ind];
 }
 
-entity *add_entity(const char *name, sim_region *reg)
+entity *add_entity(sim_region *reg, const char *name)
 {
-    sizet ind = reg->ents.size;
+    idx_t ind = reg->ents.size;
     // Name lives in the same arena as the array that owns the entity
     arr_emplace_back(&reg->ents, entity{++reg->last_id, string(reg->ents.arena, name), &reg->cdb});
     auto iter = hmap_insert(&reg->entmap, reg->ents[ind].id, ind);
@@ -150,28 +136,27 @@ entity *add_entity(const char *name, sim_region *reg)
     return &reg->ents[ind];
 }
 
-entity *get_entity(u32 ent_id, sim_region *reg)
+entity *get_entity(sim_region *reg, ent_id entity)
 {
-    auto fiter = hmap_find(&reg->entmap, ent_id);
+    auto fiter = hmap_find(&reg->entmap, entity);
     if (fiter) {
         return &reg->ents[fiter->val];
     }
     return nullptr;
 }
 
-bool remove_entity(u32 ent_id, sim_region *reg)
+bool remove_entity(sim_region *reg, ent_id entity)
 {
-    sizet ent_ind{};
-
-    auto rem = hmap_remove(&reg->entmap, ent_id, &ent_ind);
+    idx_t ent_ind{};
+    auto rem = hmap_remove(&reg->entmap, entity, &ent_ind);
     if (!rem) {
         return rem;
     }
-    asrt(ent_ind != INVALID_ID);
+    asrt(ent_ind != INVALID_IDX);
     asrt(ent_ind < reg->ents.size);
     // Remove all components for this entity
     for (u32 cti = 0; cti < reg->cdb.comp_tables.size; ++cti) {
-        reg->cdb.comp_tables[cti].rem_func(ent_id, &reg->cdb);
+        reg->cdb.comp_tables[cti].rem_func(&reg->cdb, entity);
     }
     // Remove the entity
     if (arr_swap_remove(&reg->ents, ent_ind)) {
@@ -184,9 +169,9 @@ bool remove_entity(u32 ent_id, sim_region *reg)
     return false;
 }
 
-bool remove_entity(entity *ent, sim_region *reg)
+bool remove_entity(sim_region *reg, entity *ent)
 {
-    return remove_entity(ent->id, reg);
+    return remove_entity(reg, ent->id);
 }
 
 void init_sim_region(sim_region *reg, mem_arena *arena)
