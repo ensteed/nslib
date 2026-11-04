@@ -25,14 +25,14 @@ enum render_thread_mode
 
 // Runs on the render thread. Touch only m, p, and immutable assets - reaching through user
 // to read live sim state works in LOCKSTEP and corrupts in PIPELINED.
-using render_build_cb = void (*)(rmanifest *m, const sim_snapshot *p, void *user);
+using build_manifest_cb = void (*)(rmanifest *m, const sim_snapshot &ss, void *user);
 
 struct render_thread_cfg
 {
     renderer *rndr; // already initialized
     render_thread_mode mode;
     sizet frame_payload_arena_size;
-    render_build_cb build; // required
+    build_manifest_cb build; // required
     void *build_user;
     s64 fixed_timestep_ns;
 };

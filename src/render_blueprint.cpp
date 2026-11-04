@@ -239,15 +239,10 @@ rblueprint *get_render_blueprint(renderer *rndr, rblueprint_handle hndl)
     return get_slot_item(&rndr->blueprints, hndl);
 }
 
-rblueprint_ref find_render_blueprint(renderer *rndr, rid bpid)
+rblueprint_handle find_render_blueprint(renderer *rndr, rid bpid)
 {
-    rblueprint_ref ret{};
     auto fiter = hmap_find(&rndr->blueprint_id_map, bpid);
-    if (fiter) {
-        ret.hndl = fiter->val;
-        ret.item = get_render_blueprint(rndr, ret.hndl);
-    }
-    return ret;
+    return fiter ? fiter->val : rblueprint_handle{};
 }
 
 void clean_render_blueprint(renderer *rndr, rblueprint *rbp)

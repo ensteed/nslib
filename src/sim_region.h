@@ -2,6 +2,7 @@
 
 #include "math/matrix4.h"
 #include "containers/slot_allocator.h"
+#include "math/primitives.h"
 #include "rid.h"
 #include "render_defs.h"
 #include "containers/slot_pool.h"
@@ -9,9 +10,6 @@
 
 namespace nslib
 {
-
-const u32 MAX_VIEWPORT_PASS_COUNT = 8;
-
 enum comp_type
 {
     COMP_TYPE_TRANSFORM,
@@ -250,6 +248,10 @@ struct scene_viewport
 {
     rid bp;
     ent_id camera;
+    rect vp;
+    vec2 depth_mm;
+    rect scissor;
+    u32 layer_mask;
     static_array<scene_viewport_pass, MAX_VIEWPORT_PASS_COUNT> passes;
 };
 

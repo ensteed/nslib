@@ -81,9 +81,9 @@ struct rshader_desc
 
 struct rbp_info
 {
-    rblueprint_handle bp;
-    // Pass ind
-    idx_t pid;
+    // Pass id - must use rid as we cannot resolve the sim side rid without getting bp pointer (which would violate
+    // thread boundary)
+    rid pid;
     // Subpass ind
     idx_t spi{0};
 };
@@ -136,11 +136,14 @@ struct rtechnique_pass_desc
     // Should leave as this unless doing something with depth bounds test turned on. Otherwise this isn't even looked at.
     vec2 depth_bounds{0.0f, 1.0f};
     rlogic_op logic_op;
-    // Must match exactly the number of attachments in the blueprint or else will fail to create
-    rattachment_blend_info atts_blending[MAX_FRAMEBUFFER_ATTACHMENT_COUNT];
-    sizet att_count;
+    
+    // The same blending is used for all attachments, so we just need to store the one and copy it into each attachment
+    // render side
+    rattachment_blend_info atts_blending;
+
     rtechnique_desc_flags tmask;
     rshader_handle shader;
+    
     rbp_info bp_info{};
     idx_t geom_buffer_layout;
 
@@ -151,6 +154,7 @@ struct rtechnique_pass_desc
 struct rtechnique_desc
 {
     const rtechnique_pass_desc *passes;
+    rblueprint_handle rbp;
     sizet pass_count;
     const char *name;
 };
@@ -235,7 +239,7 @@ struct rmaterial_info
     idx_t mat_ssbo;
     rdraw_dyn_state dstate;
     rdraw_state_override_flags override_mask;
-    static_array<rmaterial_bp_technique, MAX_BP_COUNT> bp_techs;
+    static_array<rtechnique_handle, MAX_MATERIAL_TECHNIQUE_COUNT> techs;
     // Used to track how many fifs are left to process after update
     u32 fif_dirty;
 };
@@ -266,6 +270,7 @@ struct rtechnique_pass_entry
 struct rtechnique_info
 {
     small_str name;
+    rblueprint_handle rbp;
     static_array<rtechnique_pass_entry, MAX_BP_PASS_COUNT> rpass_plines;
 };
 
@@ -365,6 +370,8 @@ struct rdraw_item
 struct rdrawable
 {
     rtransform_handle tform;
+    // Which layers (in the layer_mask in viewport) is this drawable part of
+    u32 layers;
     static_array<rdraw_item, MAX_SUBGEOM_COUNT> items;
 };
 
@@ -572,6 +579,7 @@ struct rproxy_create_rshader_event
 struct rproxy_create_rtechnique_event
 {
     rtechnique_handle hndl;
+    rblueprint_handle rbp;
     static_array<rtechnique_pass_desc, MAX_BP_PASS_COUNT> passes;
     small_str name;
 };

@@ -225,7 +225,7 @@ idx_t find_rbp_pass(rblueprint *rbp, rid id);
 rblueprint_ref create_render_blueprint(renderer *rndr, const char *name);
 bool destroy_render_blueprint(renderer *rndr, rblueprint_handle hndl);
 rblueprint *get_render_blueprint(renderer *rndr, rblueprint_handle hndl);
-rblueprint_ref find_render_blueprint(renderer *rndr, rid bpid);
+rblueprint_handle find_render_blueprint(renderer *rndr, rid bpid);
 
 void clean_render_blueprint(renderer *rndr, rblueprint *rbp);
 bool compile_render_blueprint(renderer *rndr, rblueprint *rbp);

@@ -176,12 +176,6 @@ struct technique
     rtechnique_handle rhndl;
 };
 
-struct mat_blueprint_mapping
-{
-    rid bpid;
-    rid tech_id;
-};
-
 enum material_bits
 {
     MATERIAL_USE_COLOR_BIT = ASSET_USER_BASE_BIT,
@@ -199,8 +193,8 @@ struct material
     ASSET(MATERIAL, mat);
     vec4 col;
 
-    // Render blueprint to technique mapping
-    array<mat_blueprint_mapping> bp_techniques;
+    // Techniques contain which blueprint they are for
+    array<rid> techniques;
 
     // Techniuqe overrides (if override_mask contains bit for thing to override)
     // NOTE: The bits set in rmask here that don't pertain to bits in override_mask do nothing if set. For example,
@@ -220,7 +214,7 @@ struct material
 pup_func(material)
 {
     pup_member(col);
-    pup_member(bp_techniques);
+    pup_member(techniques);
     pup_member(textures);
 }
 

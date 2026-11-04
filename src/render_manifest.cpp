@@ -44,7 +44,7 @@ struct render_job_cb_params
     // Job draw calls
     const array<mdraw_call> *dcs;
     const array<idx_t> *instanced_dcs;
-    // This job's offset 
+    // This job's offset
     u32 job_instance_offset;
     u64 cmd_buf;
 };
@@ -322,7 +322,6 @@ rmanifest *create_manifest(const create_rmanifest_params &p)
     rmanifest *m = mem_calloc<rmanifest>(1, &p.rndr->manifest_flinear);
     m->rndr = p.rndr;
     m->fif = p.fif;
-    m->rbp = p.rbp;
     m->frame_sdata = p.frame_sdata;
     arr_init(&m->jobs, &p.rndr->manifest_flinear, 24);
     arr_init(&m->passes, &p.rndr->manifest_flinear, 12);
@@ -369,6 +368,7 @@ intern const vkr_framebuffer *get_or_create_framebuffer(renderer *rndr,
     vkr_framebuffer_cfg cfg{};
     cfg.meta.layers = 1;
     cfg.meta.rpass = vk_rpass;
+    cfg.meta.dims = mp.dims;
 
     // The slot attachments might not be in the same order - ie slot 0 -> att 3, slot 1 -> att 1, slot 2 -> no att, slot
     // 3 ->att 0, slot 4 -> att 2, so we set the cfg att count to the highest att ind we find + 1. But we keep track of
@@ -377,28 +377,11 @@ intern const vkr_framebuffer *get_or_create_framebuffer(renderer *rndr,
 
     for (u32 si = 0; si < mp.slot_assignments.size; ++si) {
         auto cur_sl = &mp.slot_assignments[si];
-        bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t.hndl);
-        bool b_cond = cur_sl->type == mslot_target_type::BUFFER && is_valid(cur_sl->b);
-        asrt(t_cond || b_cond);
-
         // If is attachment, we add to framebuffer
         u32 att_ind = rbp_pass.slots[si].att_ind;
         if (is_valid(att_ind)) {
             asrt(att_ind < MAX_FRAMEBUFFER_ATTACHMENT_COUNT);
             const rtexture_target_fif *cur_t = &m.textures[cur_sl->t.hndl.sid.si];
-
-            // Can't use the value from cfg - swapchain images don't have correct data in the cfg field as they were
-            // never actually created..
-            uvec2 tex_dims = cur_t->image.dims.xy;
-
-            // The frame buffer can only be as big as the smallest texture - so that's what we set it to
-            if (cfg.meta.dims.x == 0 || tex_dims.x < cfg.meta.dims.x) {
-                cfg.meta.dims.x = tex_dims.x;
-            }
-            if (cfg.meta.dims.y == 0 || tex_dims.y < cfg.meta.dims.y) {
-                cfg.meta.dims.y = tex_dims.y;
-            }
-
             if (att_ind >= cfg.att_count) {
                 cfg.att_count = att_ind + 1;
             }
@@ -408,7 +391,6 @@ intern const vkr_framebuffer *get_or_create_framebuffer(renderer *rndr,
             rformat tex_format = get_rformat(cur_t->image.format);
             cv[*cv_size] = get_vk_clear_value(cur_sl->t.clear_val, tex_format);
             ++(*cv_size);
-
             ++att_cnt;
         }
     }
@@ -717,6 +699,40 @@ intern void update_draw_ssbo(rmanifest *m, mrender_job *cur_rj, u32 job_instance
     }
 }
 
+intern void adjust_dims_for_pass(uvec2 *dims, const rmanifest *m, const rbp_pass &rbpp, const mpass_slot_assignment &sa, u32 slot_ind)
+{
+    // If is attachment we find the least dimension
+    u32 att_ind = rbpp.slots[slot_ind].att_ind;
+    if (is_valid(att_ind)) {
+        const rtexture_target_fif *cur_t = &m->textures[sa.t.hndl.sid.si];
+
+        // Can't use the value from cfg - swapchain images don't have correct data in the cfg field as they were
+        // never actually created..
+        uvec2 tex_dims = cur_t->image.dims.xy;
+
+        // The frame buffer can only be as big as the smallest texture - so that's what we set it to
+        if (dims->x == 0 || tex_dims.x < dims->x) {
+            dims->x = tex_dims.x;
+        }
+        if (dims->y == 0 || tex_dims.y < dims->y) {
+            dims->y = tex_dims.y;
+        }
+    }
+}
+
+uvec2 get_mpass_dims(const rmanifest *m, const rbp_pass &rbpp, const mpass_slot_assignment *sa, sizet sa_count)
+{
+    uvec2 ret{};
+    for (u32 si = 0; si < sa_count; ++si) {
+        auto cur_sl = &sa[si];
+        bool t_cond = cur_sl->type == mslot_target_type::TEXTURE && is_valid(cur_sl->t.hndl);
+        bool b_cond = cur_sl->type == mslot_target_type::BUFFER && is_valid(cur_sl->b);
+        asrt(t_cond || b_cond);
+        adjust_dims_for_pass(&ret, m, rbpp, *cur_sl, si);
+    }
+    return ret;
+}
+
 bool execute_manifest(rmanifest *m)
 {
     idx_t fif = m->fif;
@@ -750,7 +766,8 @@ bool execute_manifest(rmanifest *m)
         auto cur_rj = &m->jobs[rji];
         auto mp = &m->passes[cur_rj->mp];
         auto mv = &m->views[cur_rj->mv];
-        auto rbp_pass = &m->rbp.item->passes[mp->rbpp];
+        auto rbp = get_render_blueprint(m->rndr, mp->rbp);
+        auto rbp_pass = &rbp->passes[mp->rbpp];
         auto vk_rpass = (VkRenderPass)rbp_pass->vk_handle;
 
         // Must have all slots assigned
@@ -801,7 +818,7 @@ bool execute_manifest(rmanifest *m)
                  cur_rj->mv,
                  rbp_pass->name,
                  rbp_pass->vk_handle,
-                 m->rbp.item->name);
+                 rbp->name);
         }
         vkr_cmd_end_rpass(buf);
 
@@ -810,7 +827,7 @@ bool execute_manifest(rmanifest *m)
         update_manifest_pass_states(m, *rbp_pass, *mp, fif);
 
         // Need to do this at the end so we pass the correct offset to the callback
-        job_instance_offset += cur_rj->dcs.size;        
+        job_instance_offset += cur_rj->dcs.size;
     }
     vkr_end_cmd_buf(buf);
 
@@ -839,12 +856,31 @@ intern rdraw_dyn_state get_dynamic_state(const rmaterial_info &mat, const rtechn
     return ret;
 }
 
+void update_pass_data(rmanifest *m, idx_t pass, const void *pass_data)
+{
+    // SSBO per pass data update
+    sizet blocksz = m->rndr->desc_info.pass_ssbo.block_size;
+    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.pass_ssbo.fif_block_count + pass);
+    void *dst = (void *)((sizet)m->rndr->desc_info.pass_ssbo.buffer.mem_info.pMappedData + buf_offset);
+    if (pass_data) {
+        memcpy(dst, pass_data, blocksz);
+    }
+    else {
+        memset(dst, 0, blocksz);
+    }
+}
+
 void update_view_data(rmanifest *m, idx_t view, const void *view_data)
 {
     sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
     sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.view_ssbo.fif_block_count + view);
     void *dst = (u8 *)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset;
-    memcpy(dst, view_data, blocksz);
+    if (view_data) {
+        memcpy(dst, view_data, blocksz);
+    }
+    else {
+        memset(dst, 0, blocksz);
+    }
 }
 
 void update_transform_data(rmanifest *m, idx_t transform, const void *transform_data)
@@ -867,53 +903,48 @@ idx_t push_pass(rmanifest *m, const mpass_params &p)
 {
     idx_t pind = (idx_t)m->passes.size;
     arr_resize(&m->passes, pind + 1);
-    m->passes[pind].rbpp = p.rbpp;
+    auto rbp = get_render_blueprint(m->rndr, p.rbp);
+    auto rbpp = &rbp->passes[p.rbpp];
+    auto added_p = &m->passes[pind];
+    added_p->rbp = p.rbp;
+    added_p->rbpp = p.rbpp;
+
     if (p.assignments && p.assignment_count != 0) {
-        asrt(p.assignment_count == m->rbp.item->passes[p.rbpp].slots.size);
-        arr_resize(&m->passes[pind].slot_assignments, p.assignment_count);
-        for (sizet i = 0; i < m->passes[pind].slot_assignments.size; ++i) {
-            m->passes[pind].slot_assignments[i] = p.assignments[i];
+        asrt(p.assignment_count == rbpp->slots.size);
+        arr_resize(&added_p->slot_assignments, p.assignment_count);
+        for (sizet i = 0; i < added_p->slot_assignments.size; ++i) {
+            added_p->slot_assignments[i] = p.assignments[i];
         }
     }
+
+    // Calculate pass dims - framebuffer will use this directly
+    added_p->dims = get_mpass_dims(m, *rbpp, added_p->slot_assignments.data, added_p->slot_assignments.size);
+
     // SSBO per pass data update
-    sizet blocksz = m->rndr->desc_info.pass_ssbo.block_size;
-    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.pass_ssbo.fif_block_count + pind);
-    void *dst = (void *)((sizet)m->rndr->desc_info.pass_ssbo.buffer.mem_info.pMappedData + buf_offset);
-    if (p.pass_sdata) {
-        memcpy(dst, p.pass_sdata, blocksz);
-    }
-    else {
-        memset(dst, 0, blocksz);
-    }
+    if (p.pass_sdata) update_pass_data(m, pind, p.pass_sdata);
     return pind;
 }
 
-u32 push_slot_assignment(rmanifest *m, idx_t pid, const mpass_slot_assignment &sa)
+u32 push_slot_assignment(rmanifest *m, idx_t mpass_i, const mpass_slot_assignment &sa)
 {
-    // We cannot add more assignments than slots!
-    asrt(m->passes[pid].slot_assignments.size < m->rbp.item->passes[m->passes[pid].rbpp].slots.size);
+    auto mpass = &m->passes[mpass_i];
+    auto rbp = get_render_blueprint(m->rndr, mpass->rbp);
+    auto rbpp = &rbp->passes[mpass->rbpp];
 
-    u32 sa_ind = m->passes[pid].slot_assignments.size++;
-    m->passes[pid].slot_assignments[sa_ind] = sa;
+    // We cannot add more assignments than slots!
+    asrt(mpass->slot_assignments.size < rbpp->slots.size);
+    u32 sa_ind = mpass->slot_assignments.size++;
+    mpass->slot_assignments[sa_ind] = sa;
+    adjust_dims_for_pass(&mpass->dims, m, *rbpp, sa, sa_ind);
     return sa_ind;
 }
 
 idx_t push_view(rmanifest *m, const mview_params &p)
 {
-    idx_t ind = (idx_t)m->views.size;
+    idx_t mview = (idx_t)m->views.size;
     arr_push_back(&m->views, p.vdata);
-
-    // SSBO per pass data update
-    sizet blocksz = m->rndr->desc_info.view_ssbo.block_size;
-    sizet buf_offset = blocksz * (m->fif * m->rndr->desc_info.view_ssbo.fif_block_count + ind);
-    void *dst = (void *)((sizet)m->rndr->desc_info.view_ssbo.buffer.mem_info.pMappedData + buf_offset);
-    if (p.view_sdata) {
-        memcpy(dst, p.view_sdata, blocksz);
-    }
-    else {
-        memset(dst, 0, blocksz);
-    }
-    return ind;
+    if (p.view_sdata) update_view_data(m, mview, p.view_sdata);
+    return mview;
 }
 
 idx_t push_render_job(rmanifest *m, const mrender_job_params &p)
@@ -955,29 +986,36 @@ u32 push_draw(rmanifest *m, const mdraw_params &dp)
         return push_cnt;
     }
 
-    for (u32 i = 0; i < tptr->rpass_plines.size; ++i) {
-        auto cur_pl = &tptr->rpass_plines[i];
-        auto dstate = get_dynamic_state(*mptr, *cur_pl);
-        for (u32 rji = 0; rji < m->jobs.size; ++rji) {
-            mrender_job *cur_rj = &m->jobs[rji];
-            mpass *cur_mp = &m->passes[cur_rj->mp];
-            if (cur_mp->rbpp == cur_pl->bp_pass) {
-                u32 dc_ind = (u32)cur_rj->dcs.size;
-                arr_resize(&cur_rj->dcs, dc_ind + 1);
-                mdraw_call *cur_d = &cur_rj->dcs[dc_ind];
+    for (u32 rji = 0; rji < m->jobs.size; ++rji) {
+        mrender_job *cur_rj = &m->jobs[rji];
+        auto *cur_v = &m->views[cur_rj->mv];
+        mpass *cur_mp = &m->passes[cur_rj->mp];
 
-                cur_d->subgeom = dp.subgeom;
-                cur_d->transform_idx = dp.transform_idx;
-                cur_d->geom = dp.geom.sid.si;
-                cur_d->mat = dp.mat.sid.si;
-                cur_d->pl = cur_pl->pline.sid.si;
-                cur_d->sort_key = pack_mdraw_sort_key(*cur_d);
-                cur_d->dstate = dstate;
-                cur_d->inst_count = 1;
-                ++push_cnt;
-            }
+        // Now cull the drawable from the job based on view/pipeline if needed
+        if (!test_flags(cur_v->layer_mask, dp.layers)) continue;
+        if (cur_mp->rbp != tptr->rbp) continue;
+
+        for (u32 i = 0; i < tptr->rpass_plines.size; ++i) {
+            auto cur_pl = &tptr->rpass_plines[i];
+            if (cur_mp->rbpp != cur_pl->bp_pass) continue;
+            auto dstate = get_dynamic_state(*mptr, *cur_pl);
+
+            // Okay so the drawable should be included in this job, add it
+            u32 dc_ind = (u32)cur_rj->dcs.size;
+            arr_resize(&cur_rj->dcs, dc_ind + 1);
+            mdraw_call *cur_d = &cur_rj->dcs[dc_ind];
+            cur_d->subgeom = dp.subgeom;
+            cur_d->transform_idx = dp.transform_idx;
+            cur_d->geom = dp.geom.sid.si;
+            cur_d->mat = dp.mat.sid.si;
+            cur_d->pl = cur_pl->pline.sid.si;
+            cur_d->sort_key = pack_mdraw_sort_key(*cur_d);
+            cur_d->dstate = dstate;
+            cur_d->inst_count = 1;
+            ++push_cnt;
         }
     }
+
     return push_cnt;
 }
 

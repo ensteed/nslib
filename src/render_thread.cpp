@@ -1,6 +1,6 @@
 #include "render_thread.h"
 #include "render_manifest.h"
-#include "engine_rendering.h"
+#include "render_shader_data.h"
 #include "logging.h"
 
 #if defined(USE_IMGUI)
@@ -58,7 +58,7 @@ intern const u32 FRESH_BIT = make_flag(2);
 // only difference between the modes is which thread the call happens on.
 intern bool render_one_frame(render_thread *rt)
 {
-    const sim_snapshot *p = &rt->tb.payloads[rt->tb.read_idx & ~FRESH_BIT];
+    const sim_snapshot *ss = &rt->tb.payloads[rt->tb.read_idx & ~FRESH_BIT];
     reset_arena(&rt->cfg.rndr->arenas.scratch_flinear);
 
     u8 fif = begin_render_frame(rt->cfg.rndr);
@@ -68,17 +68,17 @@ intern bool render_one_frame(render_thread *rt)
         return true;
     }
 
-    frame_ubo_data fd{.sim_elapsed = p->elapsed,
-                      .sim_dt = p->dt,
-                      .sim_frame_count = p->step_count,
+    frame_ubo_data fd{.sim_elapsed = ss->elapsed,
+                      .sim_dt = ss->dt,
+                      .sim_frame_count = ss->step_count,
                       .render_elapsed = 0.0,
                       .render_dt = 0.0f,
                       .render_frame_count = rt->cfg.rndr->finished_frames + 1};
 
-    create_rmanifest_params cp{.rndr = rt->cfg.rndr, .rbp = p->rbp, .fif = fif, .frame_sdata = &fd};
+    create_rmanifest_params cp{.rndr = rt->cfg.rndr, .fif = fif, .frame_sdata = &fd};
     rmanifest *m = create_manifest(cp);
     
-    rt->cfg.build(m, p, rt->cfg.build_user);
+    rt->cfg.build(m, *ss, rt->cfg.build_user);
     return end_render_frame(m);
 }
 

@@ -27,6 +27,8 @@ inline constexpr u8 MAX_BP_SUBPASS_COUNT = 8;
 inline constexpr u8 MAX_BP_PASS_COUNT = 8;
 // Max number of blueprints
 inline constexpr u8 MAX_BP_COUNT = 8;
+// Max number of techniques per material
+inline constexpr u8 MAX_MATERIAL_TECHNIQUE_COUNT = 8;
 // Max number of resource requirements per subpass
 inline constexpr u8 MAX_BP_RESOURCE_REQUIREMENT_COUNT = 8;
 // Max number of blueprint pass attachments supported
@@ -45,6 +47,7 @@ inline constexpr u32 MAX_CREATE_EVENTS_PER_FRAME =
     MAX_TECH_CREATE_EVENTS_PER_FRAME + MAX_MAT_UPSERT_EVENTS_PER_FRAME + MAX_TEX_CREATE_EVENTS_PER_FRAME +
     MAX_GEOM_CREATE_EVENTS_PER_FRAME + MAX_RDRAWABLE_UPSERT_EVENTS_PER_FRAME + MAX_DESTROY_EVENTS_PER_FRAME;
 inline constexpr u32 MAX_UPLOADS_PER_FRAME = MAX_TEX_CREATE_EVENTS_PER_FRAME + MAX_GEOM_CREATE_EVENTS_PER_FRAME;
+const u32 MAX_VIEWPORT_PASS_COUNT = 8;
 
 inline constexpr const char *SWAPCHAIN_NAME = "swapchain";
 // Cannot be constexpr since make_rid is not

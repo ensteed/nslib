@@ -1085,20 +1085,22 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
     rtechnique_info *rt_info = place_slot(&rndr->techniques, ev.hndl);
     strncpy(rt_info->name, ev.name, SMALL_STR_LEN - 1);
 
+    rt_info->rbp = ev.rbp;
+    auto rbp_bp = get_render_blueprint(rndr, rt_info->rbp);
+    asrt(rbp_bp);
+
     for (u32 i = 0; i < ev.passes.size; ++i) {
         auto cur_desc = &ev.passes[i];
-        auto rbp_bp = get_render_blueprint(rndr, cur_desc->bp_info.bp);
-        asrt(rbp_bp);
-
-        asrt(cur_desc->bp_info.pid < rbp_bp->passes.size);
-        auto rbp_pass = &rbp_bp->passes[cur_desc->bp_info.pid];
-        asrt(cur_desc->bp_info.spi < rbp_pass->subpasses.size);
+        auto rbpp_i = find_rbp_pass(rbp_bp, cur_desc->bp_info.pid);
+        asrt(rbpp_i < rbp_bp->passes.size);
+        auto rbpp = &rbp_bp->passes[rbpp_i];
+        asrt(cur_desc->bp_info.spi < rbpp->subpasses.size);
 
         auto shdr = get_slot_item(&rndr->shaders, cur_desc->shader);
         asrt(shdr);
 
         // Stream group stuff
-        idx_t geom_gp = find_geometry_stream_group(rndr, rbp_pass->geom_streams_group);
+        idx_t geom_gp = find_geometry_stream_group(rndr, rbpp->geom_streams_group);
         geom_stream_group *gsg = get_idxn_arr_item(rndr->geom_groups, geom_gp);
         asrt(gsg);
         asrt(cur_desc->geom_buffer_layout < gsg->layouts.size);
@@ -1106,7 +1108,7 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
         asrt(vert_layout);
 
         vkr_pipeline_cfg cfg{};
-        cfg.rpass = (VkRenderPass)rbp_pass->vk_handle;
+        cfg.rpass = (VkRenderPass)rbpp->vk_handle;
         cfg.subpass = cur_desc->bp_info.spi;
         cfg.vert_desc = vert_layout->vert_layout;
         cfg.layout_hndl = rndr->desc_info.pline_layout;
@@ -1202,10 +1204,10 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
 
         // We are setting all color attachments to have same blending - not all GPUs support different blending per att, so this is easier
         // to manage and more compatible.
-        cfg.col_blend.attachments.size = get_rbp_slot_count(*rbp_pass, RBP_RES_USAGE_FLAG_COLOR_ATTACHMENT);
+        cfg.col_blend.attachments.size = get_rbp_slot_count(*rbpp, RBP_RES_USAGE_FLAG_COLOR_ATTACHMENT);
         for (u32 i = 0; i < cfg.col_blend.attachments.size; ++i) {
             auto cfg_att = &cfg.col_blend.attachments[i];
-            auto desc_att = &cur_desc->atts_blending[i];
+            auto desc_att = &cur_desc->atts_blending;
             cfg_att->blendEnable = desc_att->blend_enable;
             // Directly converts - just typedeffed u32
             cfg_att->colorWriteMask = desc_att->write_mask;
@@ -1240,7 +1242,7 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
         /////////////////////
         // Create pipeline //
         /////////////////////
-        key_t key = ((u64)ev.hndl.sid.si << 32) | ((u64)cur_desc->bp_info.pid << 16) | (u64)cur_desc->bp_info.spi;
+        key_t key = ((u64)ev.hndl.sid.si << 32) | ((u64)rbpp_i << 16) | (u64)cur_desc->bp_info.spi;
         ilog("Creating new pipeline for key %lu", key);
         auto new_slot = acquire_slot(&rndr->pline_cache.items);
         asrt(is_valid(new_slot) && "Out of pipeline slots");
@@ -1250,7 +1252,7 @@ intern void process_rtechnique_create_event(renderer *rndr, const rproxy_create_
         asrt(hmap_insert(&rndr->pline_cache.key_lut, key, new_slot.hndl));
 
         // Set the technique values
-        rt_info->rpass_plines[i].bp_pass = cur_desc->bp_info.pid;
+        rt_info->rpass_plines[i].bp_pass = rbpp_i;
         rt_info->rpass_plines[i].subpass = cur_desc->bp_info.spi;
         rt_info->rpass_plines[i].pline = new_slot.hndl;
 
@@ -1533,7 +1535,6 @@ bool end_render_frame(rmanifest *m)
 {
     PROFILE_SCOPE("end_render_frame");
     asrt(m);
-    asrt(is_valid(m->rbp));
     auto dev = &m->rndr->vk.inst.device;
     auto *cur_frame = &m->rndr->fifs[m->fif];
 
@@ -1710,6 +1711,7 @@ rtechnique_handle create_rtechnique(renderer *rndr, const rtechnique_desc &tdesc
 
     rproxy_create_rtechnique_event ev{};
     ev.hndl = hndl;
+    ev.rbp = tdesc.rbp;
     strncpy(ev.name, tdesc.name, SMALL_STR_LEN - 1);
     ev.passes.size = tdesc.pass_count;
     for (sizet i = 0; i < tdesc.pass_count; ++i) {

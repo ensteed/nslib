@@ -226,7 +226,7 @@ void terminate_asset(technique *tech)
 
 void init_asset(material *mat)
 {
-    arr_init(&mat->bp_techniques, mat->fl);
+    arr_init(&mat->techniques, mat->fl);
     mat->flags |= make_flag(ASSET_DIRTY_BIT);
 }
 

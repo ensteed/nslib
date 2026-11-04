@@ -145,6 +145,7 @@ struct mdraw_params
     idx_t subgeom;
     rmaterial_handle mat;
     rtechnique_handle tech;
+    u32 layers;
 };
 
 struct mdraw_call
@@ -219,6 +220,7 @@ struct mpass_slot_assignment
 
 struct mpass_params
 {
+    rblueprint_handle rbp;
     // Render blueprint pass idx
     idx_t rbpp;
     // Which rectangle area type to use
@@ -232,7 +234,6 @@ struct mpass_params
     };
     mpass_slot_assignment *assignments;
     sizet assignment_count;
-    // Pass SSBO data
     const void *pass_sdata;
 };
 
@@ -240,9 +241,12 @@ struct mpass
 {
     // These need to match exactly in size with the rbp slot count
     static_array<mpass_slot_assignment, MAX_BP_PASS_SLOT_COUNT> slot_assignments;
+    // Render blueprint
+    rblueprint_handle rbp;
     // Render blueprint pass idx
     idx_t rbpp;
-
+    // This is calculated as the smallest attachment texture from assignments when adding the pass
+    uvec2 dims;
     // Coordinates x,y and width/height of the render area normalized to the framebuffer size
     // Anything outside this area has no render operation
     rect_size_mode ra_size_mode{rect_size_mode::NORMALIZED};
@@ -261,7 +265,6 @@ struct mview
     rect vp{0.0f, 0.0f, 1.0f, 1.0f};
     // How do we map the NDC to the depth buffer
     vec2 vp_depth_min_max{0.0f, 1.0f};
-
     // Coordinates x,y and width/height of a scissor normalized to the framebuffer size
     // The scene is cut off by the rasterizer to fit in this window
     rect_size_mode scissor_size_mode{rect_size_mode::NORMALIZED};
@@ -270,6 +273,7 @@ struct mview
         rect norm_scissor{0.0f, 0.0f, 1.0f, 1.0f};
         srect scissor;
     };
+    u32 layer_mask;
 };
 
 struct mview_params
@@ -317,7 +321,6 @@ struct rmanifest
 {
     renderer *rndr;
     u8 fif;
-    rblueprint_ref rbp;
     const void *frame_sdata;
     array<rbuffer_target_fif> buffers;
     array<rtexture_target_fif> textures;
@@ -329,8 +332,6 @@ struct rmanifest
 struct create_rmanifest_params
 {
     renderer *rndr;
-    // Blueprint handle for this frame
-    rblueprint_ref rbp;
     // Frame in flight
     u8 fif;
     // Frame SSBO buffer data
@@ -358,6 +359,7 @@ rmanifest *create_manifest(const create_rmanifest_params &p);
 // submitted and presented there.
 bool execute_manifest(rmanifest *m);
 
+void update_pass_data(rmanifest *m, idx_t pass, const void *pass_data);
 void update_view_data(rmanifest *m, idx_t view, const void *data);
 void update_transform_data(rmanifest *m, idx_t transform, const void *data);
 void update_material_data(rmanifest *m, rmaterial_handle mh, const void *data);

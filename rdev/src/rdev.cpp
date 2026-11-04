@@ -78,7 +78,7 @@ const manifest_max_counts MANIFEST_MAX_COUNTS{
     .buffer_targets = 10,
 };
 
-const rproxy_asset_max_counts RASSET_MAX_COUNTS {
+const rproxy_asset_max_counts RASSET_MAX_COUNTS{
     .shaders = 10,
     .techniques = 10,
     .materials = 10,
@@ -102,6 +102,9 @@ struct rdev_app_ctxt
     render_thread rt;
     sim_region rgn;
     asset_cache cg;
+    hmap<rid, render_job_cb *> rjob_cbs;
+    array<scene_viewport> viewports;
+
     s64 accum_ns;
     s64 step_anchor_ns;
     u32 step_count;
@@ -158,7 +161,8 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         f32 factor = 4;
         vec4 horizontal = {right, -(f32)delta.y * factor};
         vec4 vertical = {{0, 0, 1}, (f32)delta.x * factor};
-        update_transform_orientation(tf_tbl, camt_idx, math::orientation(vertical) * math::orientation(horizontal) * camt->current.orientation);
+        update_transform_orientation(
+            tf_tbl, camt_idx, math::orientation(vertical) * math::orientation(horizontal) * camt->current.orientation);
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
@@ -210,6 +214,10 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     // Make our movement keymap not care about any modifiers at all - we always move no matter what
     app->movement_km.kmod_mask = KEYMOD_NONE;
     app->movement_km.mbutton_mask = MBUTTON_MASK_NONE;
+}
+
+intern void setup_viewports(rdev_app_ctxt *app) {
+    
 }
 
 intern void create_entity_grid(sim_region *region, const geometry &cube_geom, const geometry &rect_geom, rdev_app_ctxt *app)
@@ -358,7 +366,7 @@ intern void create_materials(material_pool *mat_pool, technique *tech, texture_p
     // Disable all culling
     default_mat.item->overrides.rmask = 0;
     default_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
-    arr_emplace_back(&default_mat.item->bp_techniques, FWD_PBR_RBP_ID, tech->id);
+    arr_emplace_back(&default_mat.item->techniques, tech->id);
     app->default_mat = default_mat.hndl;
 
     material_item_ref daniel_mat = create_asset(mat_pool, "daniel");
@@ -366,7 +374,7 @@ intern void create_materials(material_pool *mat_pool, technique *tech, texture_p
     daniel_mat.item->overrides.rmask = 0;
     daniel_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
     daniel_mat.item->textures[MAT_SAMPLER_SLOT_ALBEDO].id = find_asset(tex_pool, "daniel-face").item->id;
-    arr_emplace_back(&daniel_mat.item->bp_techniques, FWD_PBR_RBP_ID, tech->id);
+    arr_emplace_back(&daniel_mat.item->techniques, tech->id);
     app->daniel_mat = daniel_mat.item->id;
 
     material_item_ref maria_mat = create_asset(mat_pool, "maria");
@@ -374,11 +382,16 @@ intern void create_materials(material_pool *mat_pool, technique *tech, texture_p
     maria_mat.item->overrides.rmask = 0;
     maria_mat.item->override_mask |= RASTER_OVERRIDE_STATE_CULLING;
     maria_mat.item->textures[MAT_SAMPLER_SLOT_ALBEDO].id = find_asset(tex_pool, "maria-face").item->id;
-    arr_emplace_back(&maria_mat.item->bp_techniques, FWD_PBR_RBP_ID, tech->id);
+    arr_emplace_back(&maria_mat.item->techniques, tech->id);
     app->maria_mat = maria_mat.item->id;
 }
 
-intern void rdev_build_frame(rmanifest *m, const sim_snapshot *p, void *user);
+// Runs on the render thread. Reads live sim state through app, which is only safe because
+// LOCKSTEP has the sim blocked in submit_render_frame for the duration of this call.
+intern void rdev_build_manifest(rmanifest *m, const sim_snapshot &ss, void *user)
+{
+    build_manifest(m, ss);
+}
 
 intern b8 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
 {
@@ -442,7 +455,7 @@ intern b8 init_rdev(platform_ctxt *ctxt, rdev_app_ctxt *app)
     rt_cfg.rndr = &app->rndr;
     rt_cfg.frame_payload_arena_size = 20 * KB_SIZE;
     rt_cfg.mode = nslib::RENDER_THREAD_MODE_INLINE;
-    rt_cfg.build = rdev_build_frame;
+    rt_cfg.build = rdev_build_manifest;
     rt_cfg.build_user = app;
     if (!init_render_thread(&app->rt, &ctxt->arenas.free_list, rt_cfg)) return false;
 
@@ -490,8 +503,9 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
         auto right = math::right_vec(cam_tform->current.orientation);
         vec3 forward_or_up = cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->current.orientation)
                                                                   : math::target_vec(cam_tform->current.orientation);
-        update_transform_pos(
-            tf_tbl, cam_tform_idx, cam_tform->current.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
+        update_transform_pos(tf_tbl,
+                             cam_tform_idx,
+                             cam_tform->current.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
@@ -507,63 +521,6 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     }
 
     update_transforms(&app->rgn);
-}
-
-intern void build_manifest(rmanifest *m, const sim_snapshot *rfp)
-{
-    #if 0
-    auto bp_main_pass = find_rbp_pass(m->rbp.item, MAIN_PASS_ID);
-    auto imgui_pass = find_rbp_pass(m->rbp.item, IMGUI_PASS_ID);
-
-    pass_ssbo_data pdata{};
-
-    auto text_target = find_rtexture_target(m->rndr, SWAPCHAIN_ID);
-    auto text_target_ptr = get_rtexture_target(m->rndr, text_target);
-    asrt(text_target_ptr);
-    pdata.resolution = text_target_ptr->cfg.dims.xy;
-    pdata.inv_resolution = 1.0f / pdata.resolution;
-
-    mpass_params p{};
-    p.rbpp = bp_main_pass;
-    p.pass_sdata = &pdata;
-    auto mp_id = push_pass(m, p);
-    push_slot_assignment(m, mp_id, MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0f, 1.0f, 1.0f, 1.0f)));
-    push_slot_assignment(m, mp_id, MPASS_TEXTURE_SA_DS(find_rtexture_target(m->rndr, MAIN_PASS_DEPTH_ID), 1.0f, 0));
-
-    idx_t imgui_id = push_pass(m, {.rbpp = imgui_pass});
-    push_slot_assignment(m, imgui_id, MPASS_TEXTURE_SA_CCF(find_rtexture_target(m->rndr, SWAPCHAIN_ID), vec4(0.0f, 1.0f, 1.0f, 1.0f)));
-
-    auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
-    auto cam = get_camera(cam_tbl, find_camera(cam_tbl, app->cam_id));
-
-    view_ssbo_data vdata{};
-    vdata.view = cam->view;
-    vdata.proj = cam->proj;
-    vdata.view_proj = cam->proj * cam->view;
-    vdata.inv_view_proj = math::inverse(vdata.view_proj);
-
-    mview_params vp{};
-    vp.view_sdata = &vdata;
-    vp.vdata.norm_scissor = {0.0, 0.0, 1, 1};
-
-    auto view_id = push_view(m, vp);
-    auto imgui_view_id = push_view(m, {});
-
-    push_render_job(m, {.pass = mp_id, .view = view_id, .max_draw_calls = MAX_INSTANCES, .cb = draw_geometry, .cb_user = nullptr});
-#if defined(USE_IMGUI)
-    push_render_job(m, {.pass = imgui_id, .view = imgui_view_id, .cb = draw_imgui, .cb_user = rfp->imgui_data});
-#endif
-
-    prepare_and_draw_region(m, &app->rgn, &app->cg, default_mat);
-    #endif
-}
-
-// Runs on the render thread. Reads live sim state through app, which is only safe because
-// LOCKSTEP has the sim blocked in submit_render_frame for the duration of this call.
-intern void rdev_build_frame(rmanifest *m, const sim_snapshot *p, void *user)
-{
-    auto app = (rdev_app_ctxt *)user;
-    build_manifest(m, p);
 }
 
 constexpr f64 MAX_CATCHUP_FRAMES = 4;
@@ -595,6 +552,7 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
         app->accum_ns -= FIXED_STEP_NS;
         app->step_anchor_ns += FIXED_STEP_NS;
         ++app->step_count;
+        app->rgn.cdb.cur_step = app->step_count;
         clear_input_events(ctxt);
     }
 
@@ -603,12 +561,19 @@ intern bool run_frame(platform_ctxt *ctxt, rdev_app_ctxt *app)
     ImGui::ShowDebugLogWindow();
 #endif
 
-    sim_snapshot *rp = get_write_slot(&app->rt);
-    rp->step_count = app->step_count;
-    rp->step_anchor_ns = app->step_anchor_ns;
-    rp->elapsed = elapsed;
-    rp->dt = ctxt->time_pts.dt;
-    rp->rbp = find_render_blueprint(&app->rndr, FWD_PBR_RBP_ID);
+    sim_snapshot *ss = get_write_slot(&app->rt);
+    build_snapshot_params ssp{
+        .step_count = app->step_count,
+        .step_anchor_ns = app->step_anchor_ns,
+        .dt = ctxt->time_pts.dt,
+        .elapsed = elapsed,
+        .sr = app->rgn,
+        .cg = app->cg,
+        .rjob_cbs = app->rjob_cbs,
+        .vps = app->viewports.data,
+        .vp_count = app->viewports.size,
+    };
+    build_snapshot(ss, ssp);
     bool res = submit_render_frame(&app->rt);
 
     // Window events live for the whole outer frame - the render thread reads them through the submit above

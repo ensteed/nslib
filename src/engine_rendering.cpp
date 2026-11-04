@@ -1,8 +1,5 @@
-#include "render_manifest.h"
-#include "sim_region.h"
 #include "engine_rendering.h"
-#include "model.h"
-#include "renderer.h"
+#include "sim_snapshot.h"
 
 namespace nslib
 {
@@ -243,55 +240,12 @@ void update_cameras(sim_region *sr)
     // }
 }
 
-void enqueue_draws(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
-{
-    auto tf_tbl = get_transform_tbl(&sr->cdb);
-    auto sm_tbl = get_static_mesh_tbl(&sr->cdb);
-    auto techpool = get_asset_pool<technique>(cg);
-    auto geompool = get_asset_pool<geometry>(cg);
-    auto mpool = get_asset_pool<material>(cg);
-
-    for (u32 i = 0; i < sm_tbl->entries.size; ++i) {
-        static_mesh *sm = &sm_tbl->entries[i];
-        idx_t tfind = find_transform(tf_tbl, sm->entity);
-        asrt(is_valid(tfind));
-
-        geometry_item_ref gref = find_asset<geometry>(geompool, sm->geom_id);
-        if (!is_valid(gref)) {
-            // TODO: Probably have a default mesh?
-            wlog("No geometry found for %s", ls(sr->ents[i].name));
-            continue;
-        }
-
-        for (u32 mi = 0; mi < sm->mat_mapping.size; ++mi) {
-            material_item_ref mref = find_asset<material>(mpool, sm->mat_mapping[mi].mat_id);
-            material *mat = is_valid(mref) ? mref.item : def_material;
-
-            for (u32 bpi = 0; bpi < mat->bp_techniques.size; ++bpi) {
-                if (mat->bp_techniques[bpi].bpid == m->rbp.item->id) {
-                    technique_item_ref tref = find_asset<technique>(techpool, mat->bp_techniques[bpi].tech_id);
-                    asrt(is_valid(tref));
-
-                    mdraw_params dp{};
-                    dp.geom = gref.item->rhndl;
-                    dp.subgeom = find_subgeom_by_mat_slot(gref.item, sm->mat_mapping[mi].sm_mat_slot);
-                    dp.mat = mat->rhndl;
-                    dp.tech = tref.item->rhndl;
-                    dp.transform_idx = tfind;
-                    asrt(tref.item->passes.size > 0);
-                    push_draw(m, dp);
-                }
-            }
-        }
-    }
-}
-
 void prepare_and_draw_region(rmanifest *m, sim_region *sr, asset_cache *cg, material *def_material)
 {
     prepare_materials(m, cg);
     prepare_transforms(m, sr);
     // prepare_cameras(m, sr);
-    enqueue_draws(m, sr, cg, def_material);
+    // enqueue_draws(m, sr, cg, def_material);
 }
 
 u32 setup_geometry_stream_group(renderer *rndr)
@@ -440,15 +394,11 @@ intern rtexture_flags get_rtexture_flags(asset_flags flags)
     return test_flags(flags, make_flag(TEXTURE_CUBEMAP_BIT)) ? RTEXTURE_FLAG_CUBEMAP : RTEXTURE_FLAG_NONE;
 }
 
-intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp, rblueprint_ref bp)
+intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_pass &src, shader_pool *sp)
 {
-    idx_t pass_idx = find_rbp_pass(bp.item, src.bp_pass);
-    asrt(is_valid(pass_idx));
-
     shader_item_ref shdr = find_asset(sp, src.shader);
     dst->shader = is_valid(shdr) ? shdr.item->rhndl : rshader_handle{};
-    dst->bp_info.bp = bp.hndl;
-    dst->bp_info.pid = pass_idx;
+    dst->bp_info.pid = src.bp_pass;
     dst->bp_info.spi = src.bp_subpass;
     dst->geom_buffer_layout = src.gsg_layout;
 
@@ -487,36 +437,30 @@ intern void set_technique_pass_desc(rtechnique_pass_desc *dst, const technique_p
         break; // irrelevant, test disabled
     }
 
-    // blend_mode → per-attachment blend state (set all slots uniformly;
-    // create_rtechnique only reads as many as the blueprint pass has)
-    rcolor_component_flags write_all = RCOLOR_COMPONENT_R | RCOLOR_COMPONENT_G | RCOLOR_COMPONENT_B | RCOLOR_COMPONENT_A;
-    u32 att_cnt = get_rbp_slot_count(bp.item->passes[pass_idx]);
-    for (u32 i = 0; i < att_cnt; ++i) {
-        auto *att = &dst->atts_blending[i];
-        att->write_mask = write_all;
-        switch (src.bm) {
-        case BLEND_MODE_OPAQUE:
-        case BLEND_MODE_MASKED: // alpha cutoff handled in shader, no HW blending
-            att->blend_enable = false;
-            att->color = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ZERO, RBLEND_OP_ADD};
-            att->alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ZERO, RBLEND_OP_ADD};
-            break;
-        case BLEND_MODE_TRANSPARENT:
-            att->blend_enable = true;
-            att->color = {RBLEND_FACTOR_SRC_ALPHA, RBLEND_FACTOR_ONE_MINUS_SRC_ALPHA, RBLEND_OP_ADD};
-            att->alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ONE_MINUS_SRC_ALPHA, RBLEND_OP_ADD};
-            break;
-        case BLEND_MODE_ADDITIVE:
-            att->blend_enable = true;
-            att->color = {RBLEND_FACTOR_SRC_ALPHA, RBLEND_FACTOR_ONE, RBLEND_OP_ADD};
-            att->alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ONE, RBLEND_OP_ADD};
-            break;
-        case BLEND_MODE_CONSTANT:
-            att->blend_enable = true;
-            att->color = {RBLEND_FACTOR_CONSTANT_ALPHA, RBLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, RBLEND_OP_ADD};
-            att->alpha = {RBLEND_FACTOR_CONSTANT_ALPHA, RBLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, RBLEND_OP_ADD};
-            break;
-        }
+    // We use the same blend mode for all attachments so we only send the one shared blending info
+    dst->atts_blending.write_mask = RCOLOR_COMPONENT_R | RCOLOR_COMPONENT_G | RCOLOR_COMPONENT_B | RCOLOR_COMPONENT_A;
+    switch (src.bm) {
+    case BLEND_MODE_OPAQUE:
+    case BLEND_MODE_MASKED: // alpha cutoff handled in shader, no HW blending
+        dst->atts_blending.blend_enable = false;
+        dst->atts_blending.color = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ZERO, RBLEND_OP_ADD};
+        dst->atts_blending.alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ZERO, RBLEND_OP_ADD};
+        break;
+    case BLEND_MODE_TRANSPARENT:
+        dst->atts_blending.blend_enable = true;
+        dst->atts_blending.color = {RBLEND_FACTOR_SRC_ALPHA, RBLEND_FACTOR_ONE_MINUS_SRC_ALPHA, RBLEND_OP_ADD};
+        dst->atts_blending.alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ONE_MINUS_SRC_ALPHA, RBLEND_OP_ADD};
+        break;
+    case BLEND_MODE_ADDITIVE:
+        dst->atts_blending.blend_enable = true;
+        dst->atts_blending.color = {RBLEND_FACTOR_SRC_ALPHA, RBLEND_FACTOR_ONE, RBLEND_OP_ADD};
+        dst->atts_blending.alpha = {RBLEND_FACTOR_ONE, RBLEND_FACTOR_ONE, RBLEND_OP_ADD};
+        break;
+    case BLEND_MODE_CONSTANT:
+        dst->atts_blending.blend_enable = true;
+        dst->atts_blending.color = {RBLEND_FACTOR_CONSTANT_ALPHA, RBLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, RBLEND_OP_ADD};
+        dst->atts_blending.alpha = {RBLEND_FACTOR_CONSTANT_ALPHA, RBLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, RBLEND_OP_ADD};
+        break;
     }
 }
 
@@ -576,13 +520,14 @@ bool register_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_ar
     rtechnique_desc tdesc{};
     tdesc.name = ls(tech->name);
     tdesc.pass_count = tech->passes.size;
-    auto bp = find_render_blueprint(rndr, tech->bpid);
+    tdesc.rbp = find_render_blueprint(rndr, tech->bpid);
 
     rtechnique_pass_desc *tmp_passes = mem_alloc<rtechnique_pass_desc>(scratch, tdesc.pass_count);
     for (u32 i = 0; i < tech->passes.size; ++i) {
-        set_technique_pass_desc(&tmp_passes[i], tech->passes[i], sp, bp);
+        set_technique_pass_desc(&tmp_passes[i], tech->passes[i], sp);
     }
     tdesc.passes = tmp_passes;
+    
     tech->rhndl = create_rtechnique(rndr, tdesc);
     mem_free(tmp_passes, scratch);
     return get_and_log_upload_asset_result(tech);
@@ -810,6 +755,26 @@ u32 unregister_transforms(renderer *rndr, transform *const tfs[], u32 count)
         if (unregister_transform(rndr, tfs[i])) ++cnt;
     }
     return cnt;
+}
+
+void build_snapshot(sim_snapshot *ss, const build_snapshot_params &ssp)
+{
+    ss->step_count = ssp.step_count;
+    ss->step_anchor_ns = ssp.step_anchor_ns;
+    ss->elapsed = ssp.elapsed;
+    ss->dt = ssp.dt;
+
+    // Viewports
+    ss->viewport_ss_count = ssp.vp_count;
+    ss->viewports = mem_alloc<viewport_ss_entry>(&ss->arena, ss->viewport_ss_count);
+    for (u32 view_i = 0; view_i < ssp.vp_count; ++view_i) {
+        auto cur_src_v = &ssp.vps[view_i];
+        auto cur_dst_v = &ss->viewports[view_i];
+
+        // cur_dst_v->rbp = find_render_blueprint(ssp.rndr, rblueprint_handle hndl) cur_dst_v->layer_mask = cur_src_v->layer_mask;
+        // ss->viewports[view_i] ss->viewports[view_i].passes.size = cur_v->passes.size;
+        // viewport_ss_entry *vp_entry =.layer_mask = cur_v->
+    }
 }
 
 } // namespace nslib
