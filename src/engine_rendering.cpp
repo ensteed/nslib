@@ -520,7 +520,7 @@ bool register_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_ar
     rtechnique_desc tdesc{};
     tdesc.name = ls(tech->name);
     tdesc.pass_count = tech->passes.size;
-    tdesc.rbp = find_render_blueprint(rndr, tech->bpid);
+    tdesc.rbp = find_render_blueprint(*rndr, tech->bpid);
 
     rtechnique_pass_desc *tmp_passes = mem_alloc<rtechnique_pass_desc>(scratch, tdesc.pass_count);
     for (u32 i = 0; i < tech->passes.size; ++i) {
@@ -759,6 +759,7 @@ u32 unregister_transforms(renderer *rndr, transform *const tfs[], u32 count)
 
 void build_snapshot(sim_snapshot *ss, const build_snapshot_params &ssp)
 {
+    auto camt = get_camera_tbl(ssp.sr.cdb);
     ss->step_count = ssp.step_count;
     ss->step_anchor_ns = ssp.step_anchor_ns;
     ss->elapsed = ssp.elapsed;
@@ -770,6 +771,43 @@ void build_snapshot(sim_snapshot *ss, const build_snapshot_params &ssp)
     for (u32 view_i = 0; view_i < ssp.vp_count; ++view_i) {
         auto cur_src_v = &ssp.vps[view_i];
         auto cur_dst_v = &ss->viewports[view_i];
+        cur_dst_v->rbp = find_render_blueprint(*ssp.rndr, cur_src_v->bp);
+
+        cur_dst_v->vdata.layer_mask = cur_src_v->layer_mask;
+        cur_dst_v->vdata.scissor_size_mode = rect_size_mode::NORMALIZED;
+        cur_dst_v->vdata.norm_scissor = cur_src_v->scissor;
+        cur_dst_v->vdata.vp_size_mode = rect_size_mode::NORMALIZED;
+        cur_dst_v->vdata.vp = cur_src_v->vp;
+        cur_dst_v->vdata.vp_depth_min_max = cur_src_v->depth_mm;
+
+        auto camc_idx = find_camera(camt, cur_src_v->camera);
+        if (is_valid(camc_idx)) {
+            auto camc = get_camera(*camt, camc_idx);
+            cur_dst_v->sdata.proj = camc->proj;
+            cur_dst_v->sdata.view = camc->view;
+            cur_dst_v->sdata.proj_view = camc->proj_view;
+            cur_dst_v->sdata.inv_proj_view = camc->inv_proj_view;
+        }
+
+        cur_dst_v->passes.size = cur_src_v->passes.size;
+        for (u32 src_pass_i = 0; src_pass_i < cur_src_v->passes.size; ++src_pass_i) {
+            auto src_vp_pass = &cur_src_v->passes[src_pass_i];
+            auto dst_vp_pass = &cur_dst_v->passes[src_pass_i];
+
+            // Default to draw_geometry if no callback is provided for viewport, at least for now
+            auto entry = hmap_find(&ssp.rjob_cbs, src_vp_pass->draw_cb);
+            dst_vp_pass->draw_cb = entry ? entry->val : draw_geometry;
+            // TODO: This should probably be set with callback - need to handle imgui data for example
+            dst_vp_pass->cb_user = nullptr;
+            dst_vp_pass->rbpp = src_vp_pass->bp_pass;
+            dst_vp_pass->rndr_area = src_vp_pass->render_area;
+
+            for (u32 src_target_i = 0; src_target_i < src_vp_pass->targets.size; ++src_target_i) {
+                auto src_target = &src_vp_pass->targets[src_target_i];
+                
+                // Find associated dest target ind....
+            }
+        }
 
         // cur_dst_v->rbp = find_render_blueprint(ssp.rndr, rblueprint_handle hndl) cur_dst_v->layer_mask = cur_src_v->layer_mask;
         // ss->viewports[view_i] ss->viewports[view_i].passes.size = cur_v->passes.size;

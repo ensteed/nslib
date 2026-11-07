@@ -166,10 +166,7 @@ idx_t add_rbp_resource_slot(rblueprint *rbp, idx_t pid, const rbp_resource_slot_
     return ind;
 }
 
-idx_t add_rbp_resource_requirement(rblueprint *rbp,
-                                                  idx_t pid,
-                                                  const rbp_resource_requirement &req,
-                                                  idx_t spid)
+idx_t add_rbp_resource_requirement(rblueprint *rbp, idx_t pid, const rbp_resource_requirement &req, idx_t spid)
 {
     auto ind = rbp->passes[pid].subpasses[spid].resources.size++;
     asrt(ind < rbp->passes[pid].subpasses[spid].resources.capacity);
@@ -239,9 +236,14 @@ rblueprint *get_render_blueprint(renderer *rndr, rblueprint_handle hndl)
     return get_slot_item(&rndr->blueprints, hndl);
 }
 
-rblueprint_handle find_render_blueprint(renderer *rndr, rid bpid)
+const rblueprint *get_render_blueprint(const renderer &rndr, rblueprint_handle hndl)
 {
-    auto fiter = hmap_find(&rndr->blueprint_id_map, bpid);
+    return get_slot_item(rndr.blueprints, hndl);
+}
+
+rblueprint_handle find_render_blueprint(const renderer &rndr, rid bpid)
+{
+    auto fiter = hmap_find(&rndr.blueprint_id_map, bpid);
     return fiter ? fiter->val : rblueprint_handle{};
 }
 

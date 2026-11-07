@@ -212,10 +212,7 @@ u32 get_rbp_slot_count(const rbp_pass &rbp, rbp_resource_usage_flags flags = RBP
 bool is_usage_attachment(rbp_resource_usage usage);
 
 idx_t add_rbp_resource_slot(rblueprint *rbp, idx_t pid, const rbp_resource_slot_desc &desc);
-idx_t add_rbp_resource_requirement(rblueprint *rbp,
-                                                  idx_t pid,
-                                                  const rbp_resource_requirement &req,
-                                                  idx_t spid = 0);
+idx_t add_rbp_resource_requirement(rblueprint *rbp, idx_t pid, const rbp_resource_requirement &req, idx_t spid = 0);
 idx_t add_rbp_subpass(rblueprint *rbp, idx_t pid);
 
 idx_t add_rbp_pass(rblueprint *rbp, const rbp_pass_desc &pdesc);
@@ -225,7 +222,8 @@ idx_t find_rbp_pass(rblueprint *rbp, rid id);
 rblueprint_ref create_render_blueprint(renderer *rndr, const char *name);
 bool destroy_render_blueprint(renderer *rndr, rblueprint_handle hndl);
 rblueprint *get_render_blueprint(renderer *rndr, rblueprint_handle hndl);
-rblueprint_handle find_render_blueprint(renderer *rndr, rid bpid);
+const rblueprint *get_render_blueprint(const renderer &rndr, rblueprint_handle hndl);
+rblueprint_handle find_render_blueprint(const renderer &rndr, rid bpid);
 
 void clean_render_blueprint(renderer *rndr, rblueprint *rbp);
 bool compile_render_blueprint(renderer *rndr, rblueprint *rbp);

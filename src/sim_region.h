@@ -44,7 +44,7 @@ using ent_id = u32;
     {                                                                                                                                      \
         return get_comp_tbl<comp_name, system_t>(cdb);                                                                                     \
     }                                                                                                                                      \
-    inline const comp_name##_tbl *get_##comp_name##_tbl(const comp_db *cdb)                                                                \
+    inline const comp_name##_tbl *get_##comp_name##_tbl(const comp_db &cdb)                                                                \
     {                                                                                                                                      \
         return get_comp_tbl<comp_name, system_t>(cdb);                                                                                     \
     }                                                                                                                                      \
@@ -68,11 +68,11 @@ using ent_id = u32;
     {                                                                                                                                      \
         return find_comp<comp_name, system_t>(ctbl, entity);                                                                               \
     }                                                                                                                                      \
-    inline idx_t find_##comp_name(const comp_db *cdb, ent_id entity)                                                                       \
+    inline idx_t find_##comp_name(const comp_db &cdb, ent_id entity)                                                                       \
     {                                                                                                                                      \
         return find_comp<comp_name, system_t>(cdb, entity);                                                                                \
     }                                                                                                                                      \
-    inline idx_t find_##comp_name(const entity *ent)                                                                                       \
+    inline idx_t find_##comp_name(const entity &ent)                                                                                       \
     {                                                                                                                                      \
         return find_comp<comp_name, system_t>(ent);                                                                                        \
     }                                                                                                                                      \
@@ -80,15 +80,15 @@ using ent_id = u32;
     {                                                                                                                                      \
         return get_comp(ctbl, comp_idx);                                                                                                   \
     }                                                                                                                                      \
-    inline const comp_name *get_##comp_name(const comp_name##_tbl *ctbl, idx_t comp_idx)                                                   \
+    inline const comp_name *get_##comp_name(const comp_name##_tbl &ctbl, idx_t comp_idx)                                                   \
     {                                                                                                                                      \
         return get_comp(ctbl, comp_idx);                                                                                                   \
     }                                                                                                                                      \
-    inline sizet get_##comp_name##_ind(const comp_name##_tbl *ctbl, const comp_name *comp)                                                 \
+    inline sizet get_##comp_name##_ind(const comp_name##_tbl *ctbl, const comp_name &comp)                                                 \
     {                                                                                                                                      \
         return get_comp_ind<comp_name, system_t>(ctbl, comp);                                                                              \
     }                                                                                                                                      \
-    inline sizet get_##comp_name##_ind(const comp_db *cdb, const comp_name *comp)                                                          \
+    inline sizet get_##comp_name##_ind(const comp_db &cdb, const comp_name &comp)                                                          \
     {                                                                                                                                      \
         return get_comp_ind<comp_name, system_t>(cdb, comp);                                                                               \
     }                                                                                                                                      \
@@ -166,11 +166,14 @@ struct camera
     f32 fov;
     f32 aspect;
     vec2 near_far;
+    camera_proj_type ptype{CAMERA_PROJ_TYPE_PERSPECTIVE};
+    camera_fov_type fov_type{CAMERA_FOV_TYPE_VERTICAL};
+
+    // Cached - remade on update no need to serialize
     mat4 proj;
     mat4 view;
     mat4 proj_view;
-    camera_proj_type ptype{CAMERA_PROJ_TYPE_PERSPECTIVE};
-    camera_fov_type fov_type{CAMERA_FOV_TYPE_VERTICAL};
+    mat4 inv_proj_view;
 };
 
 pup_func(camera)
@@ -180,7 +183,6 @@ pup_func(camera)
     pup_member(aspect);
     pup_member(near_far);
     pup_member(proj);
-    pup_member(view);
     pup_enum_member(camera_proj_type, u8, ptype);
     pup_enum_member(camera_fov_type, u8, fov_type);
 }
@@ -234,6 +236,7 @@ struct scene_viewport_pass
 {
     rid bp_pass;
     rid draw_cb; // optional; invalid = use the pass default
+    rect render_area{0.0f, 0.0f, 1.0f, 1.0f};
     static_array<view_target_assignment, MAX_BP_PASS_SLOT_COUNT> targets;
 };
 
@@ -248,9 +251,9 @@ struct scene_viewport
 {
     rid bp;
     ent_id camera;
-    rect vp;
+    rect vp{0.0f, 0.0f, 1.0f, 1.0f};
     vec2 depth_mm;
-    rect scissor;
+    rect scissor{0.0f, 0.0f, 1.0f, 1.0f};
     u32 layer_mask;
     static_array<scene_viewport_pass, MAX_VIEWPORT_PASS_COUNT> passes;
 };
@@ -373,10 +376,10 @@ comp_table<T, SysData> *get_comp_tbl(comp_db *cdb)
 }
 
 template<typename T, typename SysData>
-const comp_table<T, SysData> *get_comp_tbl(const comp_db *cdb)
+const comp_table<T, SysData> *get_comp_tbl(const comp_db &cdb)
 {
-    if (T::type_id < cdb->comp_tables.size) {
-        return (const comp_table<T, SysData> *)cdb->comp_tables[T::type_id].tbl;
+    if (T::type_id < cdb.comp_tables.size) {
+        return (const comp_table<T, SysData> *)cdb.comp_tables[T::type_id].tbl;
     }
     return nullptr;
 }
@@ -441,16 +444,16 @@ idx_t find_comp(const comp_table<T, SysData> *ctbl, ent_id entity)
 }
 
 template<typename T, typename SysData>
-idx_t find_comp(const comp_db *cdb, ent_id entity)
+idx_t find_comp(const comp_db &cdb, ent_id entity)
 {
     auto ctbl = get_comp_tbl<T, SysData>(cdb);
     return find_comp(ctbl, entity);
 }
 
 template<typename T, typename SysData>
-idx_t find_comp(const entity *ent)
+idx_t find_comp(const entity &ent)
 {
-    return find_comp<T, SysData>(ent->cdb, ent->id);
+    return find_comp<T, SysData>(*ent.cdb, ent.id);
 }
 
 template<typename T, typename SysData>
@@ -461,20 +464,20 @@ T *get_comp(comp_table<T, SysData> *ctbl, idx_t comp_idx)
 }
 
 template<typename T, typename SysData>
-const T *get_comp(const comp_table<T, SysData> *ctbl, idx_t comp_idx)
+const T *get_comp(const comp_table<T, SysData> &ctbl, idx_t comp_idx)
 {
-    asrt(comp_idx < ctbl->entries.size);
-    return &ctbl->entries[comp_idx];
+    asrt(comp_idx < ctbl.entries.size);
+    return &ctbl.entries[comp_idx];
 }
 
 template<typename T, typename SysData>
-sizet get_comp_ind(const comp_table<T, SysData> *ctbl, const T *comp)
+sizet get_comp_ind(const comp_table<T, SysData> *ctbl, const T &comp)
 {
-    return (comp - ctbl->entries.data);
+    return ((&comp) - ctbl->entries.data);
 }
 
 template<typename T, typename SysData>
-sizet get_comp_ind(const comp_db *cdb, const T *comp)
+sizet get_comp_ind(const comp_db &cdb, const T &comp)
 {
     return get_comp_ind(get_comp_tbl<T, SysData>(cdb), comp);
 }

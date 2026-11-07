@@ -24,15 +24,17 @@ struct material_ss_update
     static_array<rmaterial_bp_technique, MAX_BP_COUNT> bp_techs;
 };
 
-struct viewport_ss_entry_pass {
-    idx_t rbpp;    
+struct viewport_ss_entry_pass
+{
+    rid rbpp;
     rect rndr_area;
     static_array<mpass_slot_assignment, MAX_BP_PASS_SLOT_COUNT> targets;
-    render_job_cb* draw_cb; // optional; invalid = use the pass default
+    render_job_cb *draw_cb; // optional; invalid = use the pass default
     void *cb_user;
 };
 
-struct viewport_ss_entry {
+struct viewport_ss_entry
+{
     rblueprint_handle rbp;
     mview vdata;
     view_ssbo_data sdata;

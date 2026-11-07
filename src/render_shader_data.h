@@ -27,8 +27,8 @@ struct view_ssbo_data
 {
     mat4 view;
     mat4 proj;
-    mat4 view_proj;
-    mat4 inv_view_proj;
+    mat4 proj_view;
+    mat4 inv_proj_view;
 };
 
 struct pass_ssbo_data

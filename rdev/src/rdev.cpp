@@ -9,15 +9,14 @@
 #include "render_manifest.h"
 #include "render_thread.h"
 #include "vkr_texture_pool.h" // IWYU pragma: export
+#ifdef PROFILING_ENABLED
 #include "profiling.h"
-using namespace nslib;
-
+#endif
 #ifdef USE_IMGUI
     #include "imgui/imgui.h"
 #endif
 
-// intern constexpr const char * MAIN_PASS_COLOR_NAME = "main-pass-color";
-// intern const rid MAIN_PASS_COLOR_ID = make_rid("main-pass-color");
+using namespace nslib;
 
 intern constexpr const char *FWD_PBR_RBP = "fwd-pbr";
 intern const rid FWD_PBR_RBP_ID = make_rid(FWD_PBR_RBP);
@@ -152,7 +151,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
         auto app = (rdev_app_ctxt *)data;
         auto cam_ent = get_entity(&app->rgn, app->cam_id);
         auto tf_tbl = get_transform_tbl(cam_ent->cdb);
-        idx_t camt_idx = find_transform(cam_ent);
+        idx_t camt_idx = find_transform(*cam_ent);
         auto camt = get_transform(tf_tbl, camt_idx);
 
         auto delta = t.ev->mmotion.norm_delta;
