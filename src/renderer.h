@@ -136,14 +136,14 @@ struct rtechnique_pass_desc
     // Should leave as this unless doing something with depth bounds test turned on. Otherwise this isn't even looked at.
     vec2 depth_bounds{0.0f, 1.0f};
     rlogic_op logic_op;
-    
+
     // The same blending is used for all attachments, so we just need to store the one and copy it into each attachment
     // render side
     rattachment_blend_info atts_blending;
 
     rtechnique_desc_flags tmask;
     rshader_handle shader;
-    
+
     rbp_info bp_info{};
     idx_t geom_buffer_layout;
 
@@ -375,7 +375,10 @@ struct rdrawable
     static_array<rdraw_item, MAX_SUBGEOM_COUNT> items;
 };
 
-struct rtransform {
+struct rtransform
+{
+    transform_trs cur;
+    transform_trs prev;
     u32 fif_remaining;
 };
 
@@ -890,7 +893,6 @@ rbuffer_target_handle create_rbuffer_target(renderer *rndr, const rbuffer_target
 rmaterial_handle create_rmaterial(renderer *rndr);
 rdrawable_handle create_rdrawable(renderer *rndr);
 rtransform_handle create_rtransform(renderer *rndr);
-
 
 bool destroy_rtechnique(renderer *rndr, const rtechnique_handle &hndl);
 bool destroy_rtexture(renderer *rndr, const rtexture_handle &hndl);

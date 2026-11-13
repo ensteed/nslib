@@ -320,4 +320,10 @@ void make_unit_sphere(geometry *geom, u32 precision);
 
 idx_t find_subgeom_by_mat_slot(const geometry *geom, idx_t mat_slot);
 
+DEFINE_ASSET_POOL_TYPE(geometry);
+DEFINE_ASSET_POOL_TYPE(texture);
+DEFINE_ASSET_POOL_TYPE(material);
+DEFINE_ASSET_POOL_TYPE(technique);
+DEFINE_ASSET_POOL_TYPE(shader);
+
 } // namespace nslib

@@ -156,25 +156,25 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
 
         auto delta = t.ev->mmotion.norm_delta;
 
-        vec3 right = math::right_vec(camt->current.orientation);
+        vec3 right = math::right_vec(camt->trs.orientation);
         f32 factor = 4;
         vec4 horizontal = {right, -(f32)delta.y * factor};
         vec4 vertical = {{0, 0, 1}, (f32)delta.x * factor};
         update_transform_orientation(
-            tf_tbl, camt_idx, math::orientation(vertical) * math::orientation(horizontal) * camt->current.orientation);
+            tf_tbl, camt_idx, math::orientation(vertical) * math::orientation(horizontal) * camt->trs.orientation);
     };
 
     auto move_forward_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
         auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
-        auto cam = get_camera(cam_tbl, find_camera(cam_tbl, app->cam_id));
+        auto cam = get_camera(cam_tbl, find_camera(*cam_tbl, app->cam_id));
         f32 amnt = (t.ev->key.action - 1) * -2 + 1;
         (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) ? app->movement.y += amnt : app->movement.y -= amnt;
     };
     auto move_back_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
         auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
-        auto cam = get_camera(cam_tbl, find_camera(cam_tbl, app->cam_id));
+        auto cam = get_camera(cam_tbl, find_camera(*cam_tbl, app->cam_id));
         f32 amnt = (t.ev->key.action - 1) * -2 + 1;
         (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) ? app->movement.y -= amnt : app->movement.y += amnt;
     };
@@ -190,7 +190,7 @@ intern void setup_camera_controller(platform_ctxt *ctxt, rdev_app_ctxt *app)
     auto ortho_zoom_action = [](const input_trigger &t, void *data) {
         auto app = (rdev_app_ctxt *)data;
         auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
-        idx_t cam_idx = find_camera(cam_tbl, app->cam_id);
+        idx_t cam_idx = find_camera(*cam_tbl, app->cam_id);
         auto cam = get_camera(cam_tbl, cam_idx);
         if (cam->ptype != CAMERA_PROJ_TYPE_ORTHO) return;
         set_camera_fov(cam_tbl, cam_idx, cam->fov * (1.0f - t.ev->mwheel.delta.y * 0.1f));
@@ -495,16 +495,16 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
     // Move the cam if needed
     auto cam_tbl = get_camera_tbl(&app->rgn.cdb);
     auto tf_tbl = get_transform_tbl(&app->rgn.cdb);
-    auto cam = get_camera(cam_tbl, find_camera(cam_tbl, app->cam_id));
+    auto cam = get_camera(cam_tbl, find_camera(*cam_tbl, app->cam_id));
     if (app->movement != svec2{}) {
-        idx_t cam_tform_idx = find_transform(tf_tbl, app->cam_id);
+        idx_t cam_tform_idx = find_transform(*tf_tbl, app->cam_id);
         auto cam_tform = get_transform(tf_tbl, cam_tform_idx);
-        auto right = math::right_vec(cam_tform->current.orientation);
-        vec3 forward_or_up = cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->current.orientation)
-                                                                  : math::target_vec(cam_tform->current.orientation);
+        auto right = math::right_vec(cam_tform->trs.orientation);
+        vec3 forward_or_up = cam->ptype == CAMERA_PROJ_TYPE_ORTHO ? math::up_vec(cam_tform->trs.orientation)
+                                                                  : math::target_vec(cam_tform->trs.orientation);
         update_transform_pos(tf_tbl,
                              cam_tform_idx,
-                             cam_tform->current.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
+                             cam_tform->trs.world_pos + (right * app->movement.x + forward_or_up * app->movement.y) * (f32)dt * 10);
     }
     static double update_tm = 0.0;
     static double render_tm = 0.0;
@@ -515,7 +515,7 @@ intern void simulate(platform_ctxt *ctxt, rdev_app_ctxt *app, f64 dt)
         auto curtf = &tf_tbl->entries[i];
         if (curtf->entity != app->cam_id) {
             vec4 axis_angle{(i % 3 == 0) * 1.0f, (i % 3 == 2) * 1.0f, (i % 3 == 1) * 1.0f, (f32)dt};
-            update_transform_orientation(tf_tbl, (idx_t)i, curtf->current.orientation * math::orientation(axis_angle));
+            update_transform_orientation(tf_tbl, (idx_t)i, curtf->trs.orientation * math::orientation(axis_angle));
         }
     }
 

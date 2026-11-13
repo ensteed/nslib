@@ -4,6 +4,7 @@
 
 namespace nslib
 {
+    
 struct drawable_ss_update
 {
     rdrawable_handle hndl;
@@ -13,7 +14,7 @@ struct drawable_ss_update
 struct transform_ss_update
 {
     rtransform_handle hndl;
-    mat4 transform;
+    transform_trs trs;
 };
 
 struct material_ss_update
@@ -44,10 +45,10 @@ struct viewport_ss_entry
 struct sim_snapshot
 {
     mem_arena arena;
-    s64 step_anchor_ns;
     u32 step_count;
-    f32 dt;
+    s64 step_anchor_ns;
     f64 elapsed;
+    f32 dt;
     void *imgui_data;
 
     material_ss_update *mat_updates;

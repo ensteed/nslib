@@ -222,7 +222,7 @@ struct mpass_params
 {
     rblueprint_handle rbp;
     // Render blueprint pass idx
-    idx_t rbpp;
+    rid rbpp;
     // Which rectangle area type to use
     rect_size_mode rsm{rect_size_mode::NORMALIZED};
     union

@@ -696,6 +696,13 @@ inline matrix3<float> operator-(const matrix3<float> &lhs, const matrix3<float> 
 
 #endif
 
+struct transform_trs
+{
+    vec3 world_pos;
+    quat orientation;
+    vec3 scale{1};
+};
+
 using s8mat4 = matrix4<s8>;
 using s16mat4 = matrix4<s16>;
 using smat4 = matrix4<s32>;

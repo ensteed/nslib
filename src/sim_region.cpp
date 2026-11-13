@@ -31,28 +31,22 @@ void set_camera_proj_type(camera_tbl *tbl, idx_t cam, camera_proj_type pt)
 void update_transform_pos(transform_tbl *tbl, idx_t tform, const vec3 &pos)
 {
     auto tf = &tbl->entries[tform];
-    if (mark_comp_updated(tbl, tform)) {
-        tf->prev = tf->current;
-    }
-    tf->current.world_pos = pos;
+    mark_comp_updated(tbl, tform);
+    tf->trs.world_pos = pos;
 }
 
 void update_transform_orientation(transform_tbl *tbl, idx_t tform, const quat &q)
 {
     auto tf = &tbl->entries[tform];
-    if (mark_comp_updated(tbl, tform)) {
-        tf->prev = tf->current;
-    }
-    tf->current.orientation = q;
+    mark_comp_updated(tbl, tform);
+    tf->trs.orientation = q;
 }
 
 void update_transform_scale(transform_tbl *tbl, idx_t tform, const vec3 &s)
 {
     auto tf = &tbl->entries[tform];
-    if (mark_comp_updated(tbl, tform)) {
-        tf->prev = tf->current;
-    }
-    tf->current.scale = s;
+    mark_comp_updated(tbl, tform);
+    tf->trs.scale = s;
 }
 
 transform_trs interpolate_trs(const transform_trs &prev, const transform_trs &current, f32 alpha)
@@ -67,11 +61,6 @@ transform_trs interpolate_trs(const transform_trs &prev, const transform_trs &cu
 mat4 build_mat4_from_trs(const transform_trs &trs)
 {
     return math::model_tform(trs.world_pos, trs.orientation, trs.scale);
-}
-
-mat4 interpolate_tranform(const transform &tf, f32 alpha)
-{
-    return build_mat4_from_trs(interpolate_trs(tf.prev, tf.current, alpha));
 }
 
 void init_static_model(static_mesh *sm, mem_arena *arena)
@@ -141,6 +130,15 @@ entity *get_entity(sim_region *reg, ent_id entity)
     auto fiter = hmap_find(&reg->entmap, entity);
     if (fiter) {
         return &reg->ents[fiter->val];
+    }
+    return nullptr;
+}
+
+const entity *get_entity(const sim_region &reg, ent_id entity)
+{
+    auto fiter = hmap_find(&reg.entmap, entity);
+    if (fiter) {
+        return &reg.ents[fiter->val];
     }
     return nullptr;
 }

@@ -64,7 +64,7 @@ using ent_id = u32;
     {                                                                                                                                      \
         return add_comp<comp_name, system_t>(ent, copy);                                                                                   \
     }                                                                                                                                      \
-    inline idx_t find_##comp_name(const comp_name##_tbl *ctbl, ent_id entity)                                                              \
+    inline idx_t find_##comp_name(const comp_name##_tbl &ctbl, ent_id entity)                                                              \
     {                                                                                                                                      \
         return find_comp<comp_name, system_t>(ctbl, entity);                                                                               \
     }                                                                                                                                      \
@@ -109,19 +109,10 @@ using ent_id = u32;
     pup_member(entity);                                                                                                                    \
     pup_member(flags)
 
-struct transform_trs
-{
-    vec3 world_pos;
-    quat orientation;
-    vec3 scale{1};
-};
-
 struct transform
 {
     COMP(TRANSFORM)
-    transform_trs prev;
-    transform_trs current;
-    mat4 cached;
+    transform_trs trs;
     rtransform_handle rhndl;
 };
 
@@ -143,6 +134,8 @@ struct static_mesh
 {
     COMP(STATIC_MESH)
     rid geom_id;
+    // Which layers this should be in
+    u32 layers;
     array<material_subgeom_mapping> mat_mapping{};
     rdrawable_handle rhndl;
 };
@@ -218,7 +211,6 @@ pup_func(view_target_clear_value)
 
 struct view_target_assignment
 {
-    small_str rbp_slot_name;
     view_target_type type;
     rid target_id;
     view_target_clear_value clear_val;
@@ -226,7 +218,6 @@ struct view_target_assignment
 
 pup_func(view_target_assignment)
 {
-    pup_member(rbp_slot_name);
     pup_member(type);
     pup_member(target_id);
     pup_member(clear_val);
@@ -434,9 +425,9 @@ idx_t add_comp(entity *ent, const T &copy = {})
 }
 
 template<typename T, typename SysData>
-idx_t find_comp(const comp_table<T, SysData> *ctbl, ent_id entity)
+idx_t find_comp(const comp_table<T, SysData> &ctbl, ent_id entity)
 {
-    auto fiter = hmap_find(&ctbl->entc_hm, entity);
+    auto fiter = hmap_find(&ctbl.entc_hm, entity);
     if (!fiter) {
         return INVALID_IDX;
     }
@@ -447,7 +438,7 @@ template<typename T, typename SysData>
 idx_t find_comp(const comp_db &cdb, ent_id entity)
 {
     auto ctbl = get_comp_tbl<T, SysData>(cdb);
-    return find_comp(ctbl, entity);
+    return find_comp(*ctbl, entity);
 }
 
 template<typename T, typename SysData>
@@ -536,6 +527,7 @@ sizet add_entities(sim_region *reg, sizet count);
 entity *add_entity(sim_region *reg, const entity &copy);
 entity *add_entity(sim_region *reg, const char *name);
 entity *get_entity(sim_region *reg, ent_id entity);
+const entity *get_entity(const sim_region &reg, ent_id entity);
 bool remove_entity(sim_region *reg, ent_id entity);
 bool remove_entity(sim_region *reg, entity *ent);
 
@@ -553,6 +545,5 @@ void update_transform_scale(transform_tbl *tbl, idx_t tform, const vec3 &s);
 
 transform_trs interpolate_trs(const transform_trs &prev, const transform_trs &current, f32 alpha);
 mat4 build_mat4_from_trs(const transform_trs &trs);
-mat4 interpolate_tranform(const transform &tf, f32 alpha);
 
 } // namespace nslib

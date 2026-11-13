@@ -904,10 +904,11 @@ idx_t push_pass(rmanifest *m, const mpass_params &p)
     idx_t pind = (idx_t)m->passes.size;
     arr_resize(&m->passes, pind + 1);
     auto rbp = get_render_blueprint(m->rndr, p.rbp);
-    auto rbpp = &rbp->passes[p.rbpp];
+    auto rbpp_element = hmap_find(&rbp->pass_idmap, p.rbpp);
+    auto rbpp = &rbp->passes[rbpp_element->val];
     auto added_p = &m->passes[pind];
     added_p->rbp = p.rbp;
-    added_p->rbpp = p.rbpp;
+    added_p->rbpp = rbpp_element->val;
 
     if (p.assignments && p.assignment_count != 0) {
         asrt(p.assignment_count == rbpp->slots.size);

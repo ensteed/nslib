@@ -282,10 +282,10 @@ asset_item_const_ref<T> find_asset(const asset_pool<T> &pool, rid id)
 template<typename T>
 asset_item_const_ref<T> find_asset(const asset_pool<T> &pool, const char *name)
 {
-    for (auto iter = hmap_begin(&pool->amap); is_valid(iter); iter = hmap_next(&pool->amap, iter)) {
+    for (auto iter = hmap_begin(&pool.amap); iter; iter = hmap_next(&pool.amap, iter)) {
         auto item = get_asset(pool, iter->val);
         if (strcmp(name, str_cstr(item->name)) == 0) {
-            asset_item_ref<const T> ret{};
+            asset_item_const_ref<T> ret{};
             ret.hndl = iter->val;
             ret.item = item;
             return ret;
@@ -311,17 +311,17 @@ asset_item_ref<T> find_asset(asset_cache *cache, const char *name)
 }
 
 template<typename T>
-asset_item_ref<const T> find_asset(const asset_cache &cache, rid id)
+asset_item_const_ref<T> find_asset(const asset_cache &cache, rid id)
 {
     auto pool = get_asset_pool<T>(cache);
-    return pool ? find_asset(pool, id) : asset_item_ref<const T>{};
+    return pool ? find_asset(*pool, id) : asset_item_const_ref<T>{};
 }
 
 template<typename T>
-asset_item_ref<const T> find_asset(const asset_cache &cache, const char *name)
+asset_item_const_ref<T> find_asset(const asset_cache &cache, const char *name)
 {
     auto pool = get_asset_pool<T>(cache);
-    return pool ? find_asset(pool, name) : asset_item_ref<const T>{};
+    return pool ? find_asset(*pool, name) : asset_item_const_ref<T>{};
 }
 
 template<typename T>
@@ -398,5 +398,99 @@ asset_pool<T> *create_asset_pool(asset_cache *cache, sizet memory_budget, u32 it
 
     return (asset_pool<T> *)cache->pools[T::type_id];
 }
+
+#define DEFINE_ASSET_POOL_TYPE(asset_type)                                                                                               \
+    using asset_type##_pool = asset_pool<asset_type>;                                                                                    \
+    using asset_type##_handle = asset_handle<asset_type>;                                                                                \
+    using asset_type##_item_ref = asset_item_ref<asset_type>;                                                                            \
+    using asset_type##_item_const_ref = asset_item_const_ref<asset_type>;                                                                \
+    inline asset_type##_pool *create_##asset_type##_pool(asset_cache *cache, sizet memory_budget, u32 item_budget)                       \
+    {                                                                                                                                    \
+        return create_asset_pool<asset_type>(cache, memory_budget, item_budget);                                                         \
+    }                                                                                                                                    \
+    inline asset_type##_pool *get_##asset_type##_pool(asset_cache *cache)                                                                \
+    {                                                                                                                                    \
+        return get_asset_pool<asset_type>(cache);                                                                                        \
+    }                                                                                                                                    \
+    inline const asset_type##_pool *get_##asset_type##_pool(const asset_cache &cache)                                                    \
+    {                                                                                                                                    \
+        return get_asset_pool<asset_type>(cache);                                                                                        \
+    }                                                                                                                                    \
+    inline bool destroy_##asset_type##_pool(asset_cache *cache)                                                                          \
+    {                                                                                                                                    \
+        return destroy_asset_pool<asset_type>(cache);                                                                                    \
+    }                                                                                                                                    \
+    inline asset_type##_item_ref create_##asset_type(asset_type##_pool *pool, const char *name = nullptr)                                \
+    {                                                                                                                                    \
+        return create_asset(pool, name);                                                                                                 \
+    }                                                                                                                                    \
+    inline asset_type##_item_ref create_##asset_type(asset_type##_pool *pool, const asset_type &copy, const char *new_name)              \
+    {                                                                                                                                    \
+        return create_asset(pool, copy, new_name);                                                                                       \
+    }                                                                                                                                    \
+    inline asset_type##_item_ref create_##asset_type(asset_cache *cache, const char *name = nullptr)                                     \
+    {                                                                                                                                    \
+        return create_asset<asset_type>(cache, name);                                                                                    \
+    }                                                                                                                                    \
+    inline asset_type##_item_ref create_##asset_type(asset_cache *cache, const asset_type &copy, const char *new_name)                   \
+    {                                                                                                                                    \
+        return create_asset(cache, copy, new_name);                                                                                      \
+    }                                                                                                                                    \
+    inline asset_type *get_##asset_type(asset_type##_pool *pool, asset_type##_handle hndl)                                               \
+    {                                                                                                                                    \
+        return get_asset(pool, hndl);                                                                                                    \
+    }                                                                                                                                    \
+    inline const asset_type *get_##asset_type(const asset_type##_pool &pool, asset_type##_handle hndl)                                   \
+    {                                                                                                                                    \
+        return get_asset(pool, hndl);                                                                                                    \
+    }                                                                                                                                    \
+    inline asset_type *get_##asset_type(asset_cache *cache, asset_type##_handle hndl)                                                    \
+    {                                                                                                                                    \
+        return get_asset(cache, hndl);                                                                                                   \
+    }                                                                                                                                    \
+    inline const asset_type *get_##asset_type(const asset_cache &cache, asset_type##_handle hndl)                                        \
+    {                                                                                                                                    \
+        return get_asset(cache, hndl);                                                                                                   \
+    }                                                                                                                                    \
+    inline asset_type##_item_ref find_##asset_type(asset_type##_pool *pool, rid id)                                                      \
+    {                                                                                                                                    \
+        return find_asset(pool, id);                                                                                                     \
+    }                                                                                                                                    \
+    inline asset_type##_item_ref find_##asset_type(asset_type##_pool *pool, const char *name)                                            \
+    {                                                                                                                                    \
+        return find_asset(pool, name);                                                                                                   \
+    }                                                                                                                                    \
+    inline asset_type##_item_const_ref find_##asset_type(const asset_type##_pool &pool, rid id)                                          \
+    {                                                                                                                                    \
+        return find_asset(pool, id);                                                                                                     \
+    }                                                                                                                                    \
+    inline asset_type##_item_const_ref find_##asset_type(const asset_type##_pool &pool, const char *name)                                \
+    {                                                                                                                                    \
+        return find_asset(pool, name);                                                                                                   \
+    }                                                                                                                                    \
+    inline asset_type##_item_ref find_##asset_type(asset_cache *cache, rid id)                                                           \
+    {                                                                                                                                    \
+        return find_asset<asset_type>(cache, id);                                                                                        \
+    }                                                                                                                                    \
+    inline asset_type##_item_ref find_##asset_type(asset_cache *cache, const char *name)                                                 \
+    {                                                                                                                                    \
+        return find_asset<asset_type>(cache, name);                                                                                      \
+    }                                                                                                                                    \
+    inline asset_type##_item_const_ref find_##asset_type(const asset_cache &cache, rid id)                                               \
+    {                                                                                                                                    \
+        return find_asset<asset_type>(cache, id);                                                                                        \
+    }                                                                                                                                    \
+    inline asset_type##_item_const_ref find_##asset_type(const asset_cache &cache, const char *name)                                     \
+    {                                                                                                                                    \
+        return find_asset<asset_type>(cache, name);                                                                                      \
+    }                                                                                                                                    \
+    inline bool destroy_##asset_type(asset_type##_pool *pool, asset_type##_handle hndl)                                                  \
+    {                                                                                                                                    \
+        return destroy_asset(pool, hndl);                                                                                                \
+    }                                                                                                                                    \
+    inline bool destroy_##asset_type(asset_cache *cache, asset_type##_handle hndl)                                                       \
+    {                                                                                                                                    \
+        return destroy_asset(cache, hndl);                                                                                               \
+    }
 
 } // namespace nslib

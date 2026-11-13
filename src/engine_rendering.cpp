@@ -187,21 +187,21 @@ void prepare_materials(rmanifest *m, asset_cache *cg)
     }
 }
 
-void prepare_transforms(rmanifest *m, sim_region *sr)
+void prepare_transforms(rmanifest *, sim_region *)
 {
-    transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
-    for (u32 i = 0; i < tf_tbl->entries.size; ++i) {
-        transform *tf = &tf_tbl->entries[i];
-        if (is_valid(tf->active_idx)) {
-            transform_ssbo_data update_d{.model = interpolate_tranform(*tf, 1.0)};
-            update_transform_data(m, i, &update_d);
-        }
-        // else if (tf->rfif_dirty > 0) {
-        //     transform_ssbo_data update_d{.model = tf->cached};
-        //     --tf->rfif_dirty;
-        //     update_transform_data(m, i, &update_d);
-        // }
-    }
+    // transform_tbl *tf_tbl = get_transform_tbl(&sr->cdb);
+    // for (u32 i = 0; i < tf_tbl->entries.size; ++i) {
+    //     transform *tf = &tf_tbl->entries[i];
+    //     if (is_valid(tf->active_idx)) {
+    //         //transform_ssbo_data update_d{.model = interpolate_tranform(*tf, 1.0)};
+    //         //update_transform_data(m, i, &update_d);
+    //     }
+    //     // else if (tf->rfif_dirty > 0) {
+    //     //     transform_ssbo_data update_d{.model = tf->cached};
+    //     //     --tf->rfif_dirty;
+    //     //     update_transform_data(m, i, &update_d);
+    //     // }
+    // }
 }
 
 void update_cameras(sim_region *sr)
@@ -527,7 +527,7 @@ bool register_technique(renderer *rndr, technique *tech, shader_pool *sp, mem_ar
         set_technique_pass_desc(&tmp_passes[i], tech->passes[i], sp);
     }
     tdesc.passes = tmp_passes;
-    
+
     tech->rhndl = create_rtechnique(rndr, tdesc);
     mem_free(tmp_passes, scratch);
     return get_and_log_upload_asset_result(tech);
@@ -780,7 +780,7 @@ void build_snapshot(sim_snapshot *ss, const build_snapshot_params &ssp)
         cur_dst_v->vdata.vp = cur_src_v->vp;
         cur_dst_v->vdata.vp_depth_min_max = cur_src_v->depth_mm;
 
-        auto camc_idx = find_camera(camt, cur_src_v->camera);
+        auto camc_idx = find_camera(*camt, cur_src_v->camera);
         if (is_valid(camc_idx)) {
             auto camc = get_camera(*camt, camc_idx);
             cur_dst_v->sdata.proj = camc->proj;
@@ -789,6 +789,7 @@ void build_snapshot(sim_snapshot *ss, const build_snapshot_params &ssp)
             cur_dst_v->sdata.inv_proj_view = camc->inv_proj_view;
         }
 
+        // Viewport passes
         cur_dst_v->passes.size = cur_src_v->passes.size;
         for (u32 src_pass_i = 0; src_pass_i < cur_src_v->passes.size; ++src_pass_i) {
             auto src_vp_pass = &cur_src_v->passes[src_pass_i];
@@ -802,10 +803,23 @@ void build_snapshot(sim_snapshot *ss, const build_snapshot_params &ssp)
             dst_vp_pass->rbpp = src_vp_pass->bp_pass;
             dst_vp_pass->rndr_area = src_vp_pass->render_area;
 
-            for (u32 src_target_i = 0; src_target_i < src_vp_pass->targets.size; ++src_target_i) {
-                auto src_target = &src_vp_pass->targets[src_target_i];
-                
-                // Find associated dest target ind....
+            dst_vp_pass->targets.size = src_vp_pass->targets.size;
+            for (u32 target_i = 0; target_i < src_vp_pass->targets.size; ++target_i) {
+                auto src_target = &src_vp_pass->targets[target_i];
+                auto dst_target = &dst_vp_pass->targets[target_i];
+                dst_target->type = src_target->type == VIEW_TARGET_TYPE_BUFFER ? mslot_target_type::BUFFER : mslot_target_type::TEXTURE;
+                if (src_target->type == VIEW_TARGET_TYPE_BUFFER) {
+                    auto b_hndl = hmap_find(&ssp.rndr->rtargets.buffer_id_map, src_target->target_id);
+                    dst_target->b = b_hndl ? b_hndl->val : rbuffer_target_handle{};
+                }
+                else {
+                    auto t_hndl = hmap_find(&ssp.rndr->rtargets.texture_id_map, src_target->target_id);
+                    dst_target->t.hndl = t_hndl ? t_hndl->val : rtexture_target_handle{};
+                    dst_target->t.clear_val.type = mpass_clear_value::COLOR_TYPE_FLOAT;
+                    dst_target->t.clear_val.depth = src_target->clear_val.depth;
+                    dst_target->t.clear_val.stencil = src_target->clear_val.stencil;
+                    dst_target->t.clear_val.fc = src_target->clear_val.color;
+                }
             }
         }
 
@@ -813,6 +827,40 @@ void build_snapshot(sim_snapshot *ss, const build_snapshot_params &ssp)
         // ss->viewports[view_i] ss->viewports[view_i].passes.size = cur_v->passes.size;
         // viewport_ss_entry *vp_entry =.layer_mask = cur_v->
     }
+
+    // Transform updates
+    auto tf_tbl = get_transform_tbl(ssp.sr.cdb);
+    ss->tf_update_count = tf_tbl->aset.items.size;
+    ss->tf_updates = mem_alloc<transform_ss_update>(&ss->arena, ss->tf_update_count);
+    for (u32 i = 0; i < ss->tf_update_count; ++i) {
+        auto src_tf = get_transform(*tf_tbl, tf_tbl->aset.items[i]);
+        auto dst = &ss->tf_updates[i];
+        dst->trs = src_tf->trs;
+        dst->hndl = src_tf->rhndl;
+    }
+
+    // Drawable updates
+    auto sm_tbl = get_static_mesh_tbl(ssp.sr.cdb);
+    auto matp = get_asset_pool<material>(ssp.cg);
+    
+    ss->draw_update_count = sm_tbl->aset.items.size;
+    ss->draw_updates = mem_alloc<drawable_ss_update>(&ss->arena, ss->draw_update_count);
+    for (u32 i = 0; i < ss->draw_update_count; ++i) {
+        auto src_sm = get_static_mesh(*sm_tbl, sm_tbl->aset.items[i]);
+        auto src_tf_idx = find_transform(*tf_tbl, src_sm->entity);
+        auto src_tf = get_transform(*tf_tbl, src_tf_idx);
+        
+        auto dst = &ss->draw_updates[i];
+        dst->d.layers = src_sm->layers;
+        dst->d.tform = src_tf->rhndl;
+        dst->hndl = src_sm->rhndl;
+        dst->d.items.size = src_sm->mat_mapping.size;
+        //dst->d.tform = 
+        for (u32 smi = 0; smi < src_sm->mat_mapping.size; ++smi) {
+            auto 
+        }
+    }
+    
 }
 
 } // namespace nslib
